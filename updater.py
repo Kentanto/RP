@@ -7,7 +7,7 @@ GITHUB_REPO = "Kentanto/RP"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 LOCAL_VERSION_FILE = "version.txt"
 DOWNLOAD_FOLDER = "dist/updates"
-GAME_PATH = "dist/minigame.exe"
+GAME_PATH = "dist\minigame.exe"
 
 def get_local_version():
     if os.path.exists(LOCAL_VERSION_FILE):
