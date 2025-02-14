@@ -7,7 +7,7 @@ GITHUB_REPO = "Kentanto/RP"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 LOCAL_VERSION_FILE = "version.txt"
 DOWNLOAD_FOLDER = "dist/updates"
-GAME_PATH = "dist\minigame.exe"
+GAME_PATH = "minigame.exe"
 
 def get_local_version():
     if os.path.exists(LOCAL_VERSION_FILE):
@@ -25,7 +25,7 @@ def get_latest_version():
         print(f"Failed to fetch latest version: {e}")
         return None
 
-def download_latest_release(download_url, save_path):
+def download_file(download_url, save_path):
     response = requests.get(download_url, stream=True)
     response.raise_for_status()
     
@@ -49,26 +49,37 @@ def update_game():
         response.raise_for_status()
         assets = response.json().get("assets", [])
         
-        exe_asset = next((asset for asset in assets if asset["name"].endswith(".exe")), None)
-        
-        if not exe_asset:
-            print("No executable found in the latest release.")
+        if not assets:
+            print("No assets found in the latest release.")
             return
         
-        exe_url = exe_asset["browser_download_url"]
-        save_path = os.path.join(DOWNLOAD_FOLDER, "minigame.exe")
+        # Download all assets
+        for asset in assets:
+            asset_name = asset["name"]
+            download_url = asset["browser_download_url"]
+            
+            # Define save path based on the file name
+            if "minigame.exe" in asset_name:
+                save_path = os.path.join(DOWNLOAD_FOLDER, "minigame.exe")
+            elif "icon" in asset_name:
+                save_path = os.path.join(DOWNLOAD_FOLDER, "icons", asset_name)
+            elif "db" in asset_name or "database" in asset_name:
+                save_path = os.path.join(DOWNLOAD_FOLDER, "database", asset_name)
+            else:
+                save_path = os.path.join(DOWNLOAD_FOLDER, asset_name)
+            
+            print(f"Downloading {asset_name}...")
+            download_file(download_url, save_path)
         
-        print("Downloading update...")
-        download_latest_release(exe_url, save_path)
+        # Replace the old game executable with the new one
+        os.replace(os.path.join(DOWNLOAD_FOLDER, "minigame.exe"), GAME_PATH)
         
-        print("Replacing old game with the new version...")
-        os.replace(save_path, GAME_PATH)
-        
+        # Update the version file
         with open(LOCAL_VERSION_FILE, "w") as f:
             f.write(latest_version)
     
     print("Update check complete. Launching game...")
-    
+
     # Make sure the game exists before launching
     if os.path.exists(GAME_PATH):
         subprocess.Popen([GAME_PATH], cwd="dist")
