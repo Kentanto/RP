@@ -1,1 +1,1 @@
-# RP
+this is a text and ui game featuring stats, artifacts, and some small minigames.
