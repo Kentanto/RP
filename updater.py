@@ -2,20 +2,24 @@ import requests
 import os
 import sys
 import subprocess
+import glob
 
 GITHUB_REPO = "Kentanto/RP"
-LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}"
 LOCAL_VERSION_FILE = "version.txt"
 DOWNLOAD_FOLDER = "dist/updates"
-GAME_PATH = "minigame.exe"
+GAME_BASE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "minigame_V*.exe")
+
 
 def get_local_version():
+    """Get the version from the local version file."""
     if os.path.exists(LOCAL_VERSION_FILE):
         with open(LOCAL_VERSION_FILE, "r") as f:
             return f.read().strip()
     return "0.0.0"
 
 def get_latest_version():
+    """Get the latest version from the GitHub API."""
     try:
         response = requests.get(LATEST_RELEASE_URL)
         response.raise_for_status()
@@ -26,6 +30,7 @@ def get_latest_version():
         return None
 
 def download_file(download_url, save_path):
+    """Download a file from the given URL and save it to the specified path."""
     response = requests.get(download_url, stream=True)
     response.raise_for_status()
     
@@ -35,7 +40,18 @@ def download_file(download_url, save_path):
         for chunk in response.iter_content(chunk_size=8192):
             file.write(chunk)
 
+def find_game_executable():
+    """Search for the folder matching minigame_V*.exe and return the path to minigame.exe."""
+    game_folders = glob.glob(GAME_BASE_PATH)
+    if game_folders:
+        game_folder = game_folders[0]  # Return the first match
+        game_executable_path = os.path.join(game_folder, "minigame.exe")
+        if os.path.exists(game_executable_path):
+            return game_executable_path
+    return None
+
 def update_game():
+    """Update the game by downloading the latest version if available."""
     latest_version = get_latest_version()
     local_version = get_local_version()
     
@@ -72,7 +88,9 @@ def update_game():
             download_file(download_url, save_path)
         
         # Replace the old game executable with the new one
-        os.replace(os.path.join(DOWNLOAD_FOLDER, "minigame.exe"), GAME_PATH)
+        new_game_path = find_game_executable()
+        if new_game_path:
+            os.replace(os.path.join(DOWNLOAD_FOLDER, "minigame.exe"), new_game_path)
         
         # Update the version file
         with open(LOCAL_VERSION_FILE, "w") as f:
@@ -80,11 +98,11 @@ def update_game():
     
     print("Update check complete. Launching game...")
 
-    # Make sure the game exists before launching
-    if os.path.exists(GAME_PATH):
-        subprocess.Popen([GAME_PATH], cwd="dist")
+    game_executable = find_game_executable()
+    if game_executable:
+        subprocess.Popen([game_executable], cwd=os.path.dirname(game_executable))
     else:
-        print("Error: minigame.exe not found!")
+        print("Error: No minigame executable found!")
 
     sys.exit()
 

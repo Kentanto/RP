@@ -5,6 +5,7 @@ import random
 import sqlite3
 import os
 import pygame
+import sys
 DB_PATH = 'artifact_project\\database\\artifacts.db'
 
 pygame.init()
@@ -29,8 +30,16 @@ artifact_text_color = (147, 112, 219)  # Purple color for artifacts
 
 font = pygame.font.SysFont(None, 55)
 
-background_image = pygame.image.load("python\\artifact_project\\icons\\background_menu.png")
+
+if getattr(sys, 'frozen', False):
+    base_path = sys._MEIPASS
+else:
+    base_path = os.path.dirname(__file__)
+
+background_image_path = os.path.join(base_path, "icons", "background_menu.png")
+background_image = pygame.image.load(background_image_path)
 background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
+
 
 class Button:
     def __init__(self, text, x, y, width, height, hover_color=(255, 255, 255, 128)):
