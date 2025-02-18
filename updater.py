@@ -9,9 +9,9 @@ LOCAL_VERSION_FILE = "version.txt"
 DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "Game")
 GAME_FILES_FOLDER = os.path.join(DOWNLOAD_FOLDER, "files")
 CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
-GAME_EXE_PATH = os.path.join(CURRENT_DIR, "files", "minigame.exe")
-
-
+UPDATER_DIR = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__)
+GAME_FILES_DIR = os.path.join(UPDATER_DIR, "files")
+GAME_EXE_PATH = os.path.join(GAME_FILES_DIR, "minigame.exe")
 
 
 def get_local_version():
@@ -46,7 +46,7 @@ def download_file(download_url, save_path):
             file.write(chunk)
 
 def find_game_executable():
-    """Search for minigame.exe in the files directory."""
+    """Search for minigame.exe in the files directory next to updater."""
     print(f"Looking for game at: {GAME_EXE_PATH}")
     if os.path.exists(GAME_EXE_PATH):
         return GAME_EXE_PATH
