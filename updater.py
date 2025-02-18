@@ -9,7 +9,9 @@ LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/lates
 LOCAL_VERSION_FILE = "version.txt"
 DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "Game")
 GAME_FILES_FOLDER = os.path.join(DOWNLOAD_FOLDER, "files")
-GAME_BASE_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "minigame.py")
+CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
+GAME_EXE_PATH = os.path.join(CURRENT_DIR, "files", "minigame.exe")
+
 
 
 
@@ -45,13 +47,10 @@ def download_file(download_url, save_path):
             file.write(chunk)
 
 def find_game_executable():
-    """Search for the folder matching minigame_V*.exe and return the path to minigame.exe."""
-    game_folders = glob.glob(GAME_BASE_PATH)
-    if game_folders:
-        game_folder = game_folders[0]
-        game_executable_path = os.path.join(game_folder, "minigame.py")
-        if os.path.exists(game_executable_path):
-            return game_executable_path
+    """Search for minigame.exe in the files directory."""
+    print(f"Looking for game at: {GAME_EXE_PATH}")
+    if os.path.exists(GAME_EXE_PATH):
+        return GAME_EXE_PATH
     return None
 
 def update_game():
@@ -88,7 +87,7 @@ def update_game():
         
         new_game_path = find_game_executable()
         if new_game_path:
-            os.replace(os.path.join(DOWNLOAD_FOLDER, "minigame.py"), new_game_path)
+            os.replace(os.path.join(DOWNLOAD_FOLDER, "minigame.exe"), new_game_path)
         
         with open(LOCAL_VERSION_FILE, "w") as f:
             f.write(latest_version)
@@ -97,9 +96,10 @@ def update_game():
 
     game_executable = find_game_executable()
     if game_executable:
-        subprocess.Popen([game_executable], cwd=os.path.dirname(game_executable))
+        print(f"Launching game from: {game_executable}")
+        subprocess.Popen(game_executable, cwd=os.path.dirname(game_executable))
     else:
-        print("Error: No minigame executable found!")
+        print(f"Game not found in: {os.path.dirname(GAME_EXE_PATH)}")
 
     sys.exit()
 
