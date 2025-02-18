@@ -74,13 +74,12 @@ def update_game():
             asset_name = asset["name"]
             download_url = asset["browser_download_url"]
             
-            # Place updater.exe in the main game folder
-            if "updater" in asset_name:
-                save_path = os.path.join(DOWNLOAD_FOLDER, asset_name)
-            # Everything else goes in the files subfolder
-            else:
-                save_path = os.path.join(GAME_FILES_FOLDER, asset_name)
-            
+            # Skip updating updater.exe while it's running
+            if "updater" in asset_name.lower():
+                print("Skipping updater.exe update while running")
+                continue
+                
+            save_path = os.path.join(GAME_FILES_FOLDER, asset_name)
             print(f"Downloading {asset_name}...")
             download_file(download_url, save_path)
         
