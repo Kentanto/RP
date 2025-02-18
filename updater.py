@@ -2,7 +2,6 @@ import requests
 import os
 import sys
 import subprocess
-import glob
 
 GITHUB_REPO = "Kentanto/RP"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -87,7 +86,7 @@ def update_game():
         
         new_game_path = find_game_executable()
         if new_game_path:
-            os.replace(os.path.join(DOWNLOAD_FOLDER, "minigame.exe"), new_game_path)
+            os.replace(os.path.join(DOWNLOAD_FOLDER,"files", "minigame.exe"), new_game_path)
         
         with open(LOCAL_VERSION_FILE, "w") as f:
             f.write(latest_version)
