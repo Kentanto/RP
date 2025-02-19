@@ -9,8 +9,8 @@ LOCAL_VERSION_FILE = "version.txt"
 DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "Game")
 GAME_FILES_FOLDER = os.path.join(DOWNLOAD_FOLDER, "files")
 CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
-UPDATER_DIR = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__)
-GAME_FILES_DIR = os.path.join(UPDATER_DIR, "files")
+LAUNCHER_DIR = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__)
+GAME_FILES_DIR = os.path.join(LAUNCHER_DIR, "files") if os.path.exists(os.path.join(LAUNCHER_DIR, "version.txt")) else os.path.join(DOWNLOAD_FOLDER, "files")
 GAME_EXE_PATH = os.path.join(GAME_FILES_DIR, "minigame.exe")
 
 
@@ -75,7 +75,6 @@ def update_game():
             asset_name = asset["name"]
             download_url = asset["browser_download_url"]
             
-            # Skip updating updater.exe while it's running
             if "updater" in asset_name.lower():
                 print("Skipping updater.exe update while running")
                 continue
