@@ -14,6 +14,7 @@ GAME_FILES_DIR = os.path.join(UPDATER_DIR, "files")
 GAME_EXE_PATH = os.path.join(GAME_FILES_DIR, "minigame.exe")
 
 
+
 def get_local_version():
     """Get the version from the local version file."""
     if os.path.exists(LOCAL_VERSION_FILE):
@@ -79,7 +80,7 @@ def update_game():
                 print("Skipping updater.exe update while running")
                 continue
                 
-            save_path = os.path.join(GAME_FILES_FOLDER, asset_name)
+            save_path = os.path.join(GAME_FILES_DIR, asset_name)
             print(f"Downloading {asset_name}...")
             download_file(download_url, save_path)
         
@@ -95,7 +96,8 @@ def update_game():
     game_executable = find_game_executable()
     if game_executable:
         print(f"Launching game from: {game_executable}")
-        subprocess.Popen(game_executable, cwd=os.path.dirname(game_executable))
+        subprocess.Popen(GAME_EXE_PATH, cwd=os.path.dirname(GAME_EXE_PATH))
+
     else:
         print(f"Game not found in: {os.path.dirname(GAME_EXE_PATH)}")
 
