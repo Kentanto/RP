@@ -1040,6 +1040,12 @@ def skill_tree_menu():
                             selected_skill.unlocked_paths.append(clicked_upgrade["unlocks"])
                         skill_points -= clicked_upgrade.cost if isinstance(clicked_upgrade, SkillUpgrade) else clicked_upgrade["cost"]
                         save_skill_progress(selected_skill.name, selected_skill.level, selected_skill.active_upgrades, selected_skill.unlocked_paths)
+                        
+                elif not any(((mouse_pos[0] - skill_data["position"][0])**2 +
+                              (mouse_pos[1] - skill_data["position"][1])**2 <=
+                               node_radius**2) for skill_data in branch_points.values()):
+                    selected_skill = None
+
 
             pygame.display.flip()
 
