@@ -1,10 +1,9 @@
 import os
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+import pygame
 import secrets
 import random
 import sqlite3
-import os
-import pygame #type: ignore
 import sys
 import time
 import threading
@@ -12,6 +11,42 @@ DB_PATH = 'database\\artifacts.db'
 base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "songs")
 
 pygame.init()
+pygame.display.set_caption("Athas system")
+
+screen_width = 800
+screen_height = 600
+screen = pygame.display.set_mode((screen_width, screen_height))
+font_large = pygame.font.SysFont(None, 55)
+font_medium = pygame.font.SysFont(None, 40)
+font_small = pygame.font.SysFont(None, 30)
+font = pygame.font.SysFont(None, 55)
+
+
+white = (255, 255, 255)
+black = (0, 0, 0)
+blue = (0, 0, 255)
+purple = (128, 0, 128)
+gold = (255, 215, 0)
+red = (255, 0, 0)
+green = (0, 255, 0)
+yellow = (255, 255, 0)
+orange = (255, 165, 0)
+brown = (139, 69, 19)
+gray = (128, 128, 128)
+light_gray = (200, 200, 200)
+dark_gray = (50, 50, 50)
+dark_green = (0, 100, 0)
+light_green = (150, 255, 150)
+dark_red = (139, 0, 0)
+light_red = (255, 150, 150)
+dark_yellow = (128, 128, 0)
+light_yellow = (255, 255, 150)
+dark_blue = (0, 0, 125)
+light_blue = (100, 100, 255)
+hover_color = (0, 150, 255)
+stat_text_color = (218, 165, 32)
+artifact_text_color = (147, 112, 219)
+    
 
 def initial_startup():
     fade_in()
@@ -56,14 +91,14 @@ def fade_in():
                       "fearless.mp3",
                       "brass.mp3",
                       "erika.mp3",
-                      "departure.mp3"]
+                      "departure.mp3",
+                      "watchTheMoon.mp3"]
 
     pygame.mixer.init()
     
     random_song = random.choice(music_playlist)
     chosen_song = random_song
     
-    # Track song path resolution
     if getattr(sys, 'frozen', False):
         song_path = os.path.join(os.path.dirname(sys.executable), "songs", chosen_song)
     else:
@@ -72,7 +107,7 @@ def fade_in():
     song_durations = {
         "feelGood.mp3": 53,
         "haldis.mp3": 73,
-        "spell.mp3": 57,
+        "spell.mp3": 62,
         "mortals.mp3": 44,
         "worldBurn.mp3": 59,
         "shakeDown.mp3": 53,
@@ -92,6 +127,7 @@ def fade_in():
         "brass.mp3": 55,
         "erika.mp3": 45,
         "departure.mp3": 47,
+        "watchTheMoon.mp3": 61,
     }
 
     
@@ -153,42 +189,7 @@ def fade_in():
 
 
 
-screen_width = 800
-screen_height = 600
-screen = pygame.display.set_mode((screen_width, screen_height))
-font_large = pygame.font.SysFont(None, 55)
-font_medium = pygame.font.SysFont(None, 40)
-font_small = pygame.font.SysFont(None, 30)
 
-pygame.display.set_caption("Athas system")
-
-white = (255, 255, 255)
-black = (0, 0, 0)
-blue = (0, 0, 255)
-purple = (128, 0, 128)
-gold = (255, 215, 0)
-red = (255, 0, 0)
-green = (0, 255, 0)
-yellow = (255, 255, 0)
-orange = (255, 165, 0)
-brown = (139, 69, 19)
-gray = (128, 128, 128)
-light_gray = (200, 200, 200)
-dark_gray = (50, 50, 50)
-dark_green = (0, 100, 0)
-light_green = (150, 255, 150)
-dark_red = (139, 0, 0)
-light_red = (255, 150, 150)
-dark_yellow = (128, 128, 0)
-light_yellow = (255, 255, 150)
-dark_blue = (0, 0, 125)
-light_blue = (100, 100, 255)
-hover_color = (0, 150, 255)
-stat_text_color = (218, 165, 32)
-artifact_text_color = (147, 112, 219)
-
-
-font = pygame.font.SysFont(None, 55)
 
 
 if getattr(sys, 'frozen', False):
@@ -266,10 +267,8 @@ def initialize_database():
                   active_upgrades TEXT,
                   unlocked_paths TEXT)''')
     
-    # Check if skills need initialization
     c.execute("SELECT COUNT(*) FROM skills")
     if c.fetchone()[0] == 0:
-        # Initialize default skills
         c.execute("INSERT INTO skills (name, level, active_upgrades, unlocked_paths) VALUES (?, ?, ?, ?)",
                  ("Fireball", 0, "[]", "[]"))
         c.execute("INSERT INTO skills (name, level, active_upgrades, unlocked_paths) VALUES (?, ?, ?, ?)",
@@ -783,8 +782,54 @@ def skill_tree_menu():
     Back_Button = Button("Back", 10, 10, 100, 40, hover_color)
     info_width = 400
     info_height = 300
+    tree_center_x = screen_width // 2
+    tree_center_y = 200
+    node_radius = 25
+    node_spacing = 120
+    last_clicked_skill = None
+    last_click_time = 0
+    double_click_threshold = 500
+    selected_skill = None
+    hovered_node = None    
     
-    # Example skill definitions with upgrade paths and requirements
+    branch_points = {
+        "Fireball": {
+            "position": (tree_center_x - node_spacing * 2, tree_center_y),
+            "upgrade_positions": {
+                "Core: Flame Mastery": (tree_center_x - node_spacing * 2, tree_center_y + node_spacing),
+                "Path: Inferno": (tree_center_x - node_spacing * 3, tree_center_y + node_spacing * 2),
+                "Path: Explosion": (tree_center_x - node_spacing, tree_center_y + node_spacing * 2),
+                "Inferno: Meteor": (tree_center_x - node_spacing * 3, tree_center_y + node_spacing * 3),
+                "Explosion: Shockwave": (tree_center_x - node_spacing, tree_center_y + node_spacing * 3)
+            },
+            "icons": {
+                "Core: Flame Mastery": "⚔️",
+                "Path: Inferno": "🔥",
+                "Path: Explosion": "💥",
+                "Inferno: Meteor": "☄️",
+                "Explosion: Shockwave": "⭐"
+            }
+        },
+        "Ice Shard": {
+            "position": (tree_center_x + node_spacing * 2, tree_center_y),
+            "upgrade_positions": {
+                "Core: Ice Mastery": (tree_center_x + node_spacing * 2, tree_center_y + node_spacing),
+                "Path: Frost": (tree_center_x + node_spacing, tree_center_y + node_spacing * 2),
+                "Path: Pierce": (tree_center_x + node_spacing * 3, tree_center_y + node_spacing * 2),
+                "Frost: Glacial": (tree_center_x + node_spacing, tree_center_y + node_spacing * 3),
+                "Pierce: Chain": (tree_center_x + node_spacing * 3, tree_center_y + node_spacing * 3)
+            },
+            "icons": {
+                "Core: Ice Mastery": "❄️",
+                "Path: Frost": "🌨️",
+                "Path: Pierce": "⚡",
+                "Frost: Glacial": "🌡️",
+                "Pierce: Chain": "⛓️"
+            }
+        }
+    }
+    
+    # Load skills with progress
     fireball = Skill(
         "Fireball",
         "Launches a ball of fire at enemies",
@@ -817,158 +862,216 @@ def skill_tree_menu():
     c = conn.cursor()
     c.execute("SELECT name, level, active_upgrades, unlocked_paths FROM skills")
     skill_data = c.fetchall()
-    conn.close()
-    
-    for data in skill_data:
-        name, level, active_upgrades, unlocked_paths = data
-        for skill in [fireball, ice_shard]:
-            if skill.name == name:
-                skill.level = level
-                skill.active_upgrades = eval(active_upgrades)
-                skill.unlocked_paths = eval(unlocked_paths)
+    conn.close()  
     
     skills = [fireball, ice_shard]
-    skill_points = 10
+    for skill in skills:
+        progress = load_skill_progress(skill.name)
+        if progress:
+            skill.level = progress["level"]
+            skill.active_upgrades = progress["active_upgrades"]
+            skill.unlocked_paths = progress["unlocked_paths"]
+    
+    skill_points = 100000
     selected_skill = None
+    hovered_node = None
     
     while True:
+        current_time = pygame.time.get_ticks()
         screen.fill(white)
         screen.blit(background_image, (0, 0))
         Back_Button.draw(screen)
         
         points_text = font_medium.render(f"Skill Points: {skill_points}", True, gold)
-        screen.blit(points_text, (screen_width - 200, 20))
+        screen.blit(points_text, (screen_width // 2 - points_text.get_width() // 2, 10))
         
-        icon_size = 80
-        grid_spacing = 100
-        start_x = (screen_width - (len(skills) * grid_spacing)) // 2
-        icon_y = 150
+        mouse_pos = pygame.mouse.get_pos()
         
-        for i, skill in enumerate(skills):
-            icon_x = start_x + (i * grid_spacing)
+        
+        # Draw main skill nodes first
+        for skill in skills:
+            skill_data = branch_points[skill.name]
+            skill_pos = skill_data["position"]
             
-            pygame.draw.rect(screen, dark_gray, (icon_x, icon_y, icon_size, icon_size), border_radius=15)
+            # Draw main skill node
+            skill_hovered = ((mouse_pos[0] - skill_pos[0])**2 + (mouse_pos[1] - skill_pos[1])**2 <= node_radius**2)
+            node_color = light_blue if skill_hovered else dark_gray
+            pygame.draw.circle(screen, node_color, skill_pos, node_radius)
+            
+            # Draw skill name and level
+            name_text = font_small.render(skill.name, True, white)
             level_text = font_small.render(f"Lv.{skill.level}", True, white)
-            screen.blit(level_text, (icon_x + 5, icon_y + icon_size - 25))
+            screen.blit(name_text, (skill_pos[0] - name_text.get_width()//2, skill_pos[1] - 40))
+            screen.blit(level_text, (skill_pos[0] - level_text.get_width()//2, skill_pos[1] + 40))
             
-            icon_text = font_medium.render(skill.name[0], True, gold)
-            text_x = icon_x + (icon_size - icon_text.get_width()) // 2
-            text_y = icon_y + (icon_size - icon_text.get_height()) // 2
-            screen.blit(icon_text, (text_x, text_y))
-            
-            mouse_pos = pygame.mouse.get_pos()
-            is_hovered = (icon_x <= mouse_pos[0] <= icon_x + icon_size and 
-                         icon_y <= mouse_pos[1] <= icon_y + icon_size)
-            
-            if is_hovered or selected_skill == skill:
-                info_x = max(10, min(icon_x - (info_width - icon_size) // 2, 
-                                   screen_width - info_width - 10))
-                info_y = icon_y + icon_size + 20
-                
-                info_surface = pygame.Surface((info_width, info_height), pygame.SRCALPHA)
-                opacity = 255 if selected_skill == skill else 180
-                pygame.draw.rect(info_surface, (40, 40, 40, opacity), 
-                               info_surface.get_rect(), border_radius=15)
-                screen.blit(info_surface, (info_x, info_y))
-                
-                name_text = font_medium.render(skill.name, True, gold)
-                level_info = font_small.render(f"Level {skill.level}/{skill.max_level}", True, white)
-                desc_text = font_small.render(skill.description, True, white)
-                
-                screen.blit(name_text, (info_x + 20, info_y + 20))
-                screen.blit(level_info, (info_x + info_width - 120, info_y + 20))
-                screen.blit(desc_text, (info_x + 20, info_y + 60))
-                
-                stats_y = info_y + 100
-                current_stats = skill.get_current_stats()
-                for stat, value in current_stats.items():
-                    stat_text = font_small.render(f"{stat}: {value:.1f}", True, stat_text_color)
-                    screen.blit(stat_text, (info_x + 20, stats_y))
-                    stats_y += 30
-                
-                upgrade_y = info_y + 180
+            # Only draw upgrade paths if skill is selected
+            if selected_skill == skill:
+                # Draw connections
                 for upgrade in skill.upgrades:
-                    if skill.level >= upgrade["level_req"]:
-                        color = green if skill_points >= upgrade["cost"] else red
-                        upgrade_text = font_small.render(
-                            f"{upgrade['name']} - Cost: {upgrade['cost']} SP", 
-                            True, color
-                        )
-                        screen.blit(upgrade_text, (info_x + 20, upgrade_y))
-                        upgrade_y += 30
+                    if upgrade["name"] in skill_data["upgrade_positions"]:
+                        upgrade_pos = skill_data["upgrade_positions"][upgrade["name"]]
+                        color = gold if upgrade in skill.active_upgrades else gray
+                        pygame.draw.line(screen, color, skill_pos, upgrade_pos, 3)
                 
-                if skill.level < skill.max_level and skill_points > 0:
-                    level_up_rect = pygame.Rect(info_x + info_width - 120, 
-                                              info_y + info_height - 50, 100, 30)
-                    pygame.draw.rect(screen, green, level_up_rect, border_radius=5)
-                    level_text = font_small.render("Level Up", True, white)
-                    screen.blit(level_text, (level_up_rect.centerx - level_text.get_width()//2, 
-                                           level_up_rect.centery - level_text.get_height()//2))
-
+                # Draw upgrade nodes with icons
+                for upgrade in skill.upgrades:
+                    if upgrade["name"] in skill_data["upgrade_positions"]:
+                        upgrade_pos = skill_data["upgrade_positions"][upgrade["name"]]
+                        upgrade_hovered = ((mouse_pos[0] - upgrade_pos[0])**2 + (mouse_pos[1] - upgrade_pos[1])**2 <= node_radius**2)
+                        
+                        # Node color based on state
+                        if upgrade in skill.active_upgrades:
+                            node_color = gold
+                        elif can_purchase_upgrade(skill, upgrade, skill_points):
+                            node_color = green if upgrade_hovered else dark_green
+                        else:
+                            node_color = red if upgrade_hovered else dark_red
+                        
+                        pygame.draw.circle(screen, node_color, upgrade_pos, node_radius - 5)
+                        
+                        # Draw upgrade icon
+                        icon_text = font_small.render(skill_data["icons"][upgrade["name"]], True, white)
+                        icon_pos = (upgrade_pos[0] - icon_text.get_width()//2, 
+                                  upgrade_pos[1] - icon_text.get_height()//2)
+                        screen.blit(icon_text, icon_pos)
+                        
+                        if upgrade_hovered:
+                            hovered_node = (skill, upgrade)
+                            draw_upgrade_info(upgrade, upgrade_pos, skill_points)
+            
+            if skill_hovered:
+                draw_skill_info(skill, skill_pos, skill_points)
+                hovered_node = (skill, None)
+        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 get_current_points()
                 cleanup()
                 pygame.quit()
                 sys.exit()
-                
+            
             if event.type == pygame.MOUSEBUTTONDOWN:
-                clicked_skill = None
-                for i, skill in enumerate(skills):
-                    icon_x = start_x + (i * grid_spacing)
-                    if (icon_x <= event.pos[0] <= icon_x + icon_size and 
-                        icon_y <= event.pos[1] <= icon_y + icon_size):
-                        clicked_skill = skill
+                if Back_Button.is_clicked(event):
+                    return
                 
+                # Handle node selection and clicks
+                clicked_skill = None
+                clicked_upgrade = None
+                
+                # Check for main skill node clicks
+                for skill in skills:
+                    skill_pos = branch_points[skill.name]["position"]
+                    if ((mouse_pos[0] - skill_pos[0])**2 + (mouse_pos[1] - skill_pos[1])**2 <= node_radius**2):
+                        clicked_skill = skill
+                        # Handle double click for main skill upgrade
+                        if (clicked_skill == last_clicked_skill and 
+                            current_time - last_click_time < double_click_threshold):
+                            if skill.level < skill.max_level and skill_points > 0:
+                                skill.level += 1
+                                skill_points -= 1
+                                save_skill_progress(skill.name, skill.level, 
+                                                 skill.active_upgrades, skill.unlocked_paths)
+                            last_clicked_skill = None  # Reset after successful upgrade
+                        else:
+                            last_clicked_skill = clicked_skill
+                            last_click_time = current_time
+                        break
+                
+                # Check for upgrade node clicks only if a skill is selected
+                if selected_skill:
+                    skill_data = branch_points[selected_skill.name]
+                    for upgrade in selected_skill.upgrades:
+                        if upgrade["name"] in skill_data["upgrade_positions"]:
+                            upgrade_pos = skill_data["upgrade_positions"][upgrade["name"]]
+                            if ((mouse_pos[0] - upgrade_pos[0])**2 + 
+                                (mouse_pos[1] - upgrade_pos[1])**2 <= node_radius**2):
+                                clicked_upgrade = upgrade
+                                break
+                
+                # Handle skill selection
                 if clicked_skill:
                     if selected_skill == clicked_skill:
-                        selected_skill = None
+                        if not clicked_upgrade:  # Only deselect if we didn't click an upgrade
+                            selected_skill = None
                     else:
                         selected_skill = clicked_skill
-                elif selected_skill:
-                    info_rect = pygame.Rect(info_x, info_y, info_width, info_height)
-                    if not info_rect.collidepoint(event.pos):
-                        selected_skill = None
-                    
-                        if selected_skill and selected_skill.level < selected_skill.max_level:
-                            if level_up_rect.collidepoint(event.pos) and skill_points > 0:
-                                selected_skill.level += 1
-                                skill_points -= 1
-            if Back_Button.is_clicked(event):
-                screen.fill(white)
-                screen.blit(background_image, (0, 0))
-                pygame.display.flip()
-                status_window()
-                
-                
-            if selected_skill:
-                for upgrade in selected_skill.upgrades:
-                    if (selected_skill.level >= upgrade["level_req"] and 
-                        skill_points >= upgrade["cost"]):
-                        if "requires" in upgrade and upgrade["requires"] not in selected_skill.unlocked_paths:
-                            continue
-                            
-                        upgrade_rect = pygame.Rect(info_x + 20, upgrade_y, 300, 25)
-                        if upgrade_rect.collidepoint(event.pos):
-                            selected_skill.active_upgrades.append(upgrade)
-                            if "unlocks" in upgrade:
-                                selected_skill.unlocked_paths.append(upgrade["unlocks"])
-                            skill_points -= upgrade["cost"]
-                            
-                            conn = sqlite3.connect(DB_PATH)
-                            c = conn.cursor()
-                            c.execute("""
-                                UPDATE skills 
-                                SET active_upgrades = ?, unlocked_paths = ?
-                                WHERE name = ?
-                            """, (str(selected_skill.active_upgrades), 
-                                str(selected_skill.unlocked_paths), 
-                                selected_skill.name))
-                            conn.commit()
-                            conn.close()
-
-
+                elif clicked_upgrade:
+                    if can_purchase_upgrade(selected_skill, clicked_upgrade, skill_points):
+                        selected_skill.active_upgrades.append(clicked_upgrade)
+                        if "unlocks" in clicked_upgrade:
+                            selected_skill.unlocked_paths.append(clicked_upgrade["unlocks"])
+                        skill_points -= clicked_upgrade["cost"]
+                        save_skill_progress(selected_skill.name, selected_skill.level,
+                                         selected_skill.active_upgrades, selected_skill.unlocked_paths)
+                elif not any(((mouse_pos[0] - skill_data["position"][0])**2 + 
+                            (mouse_pos[1] - skill_data["position"][1])**2 <= node_radius**2)
+                           for skill_data in branch_points.values()):
+                    selected_skill = None
+        
         pygame.display.flip()
+
+
+
+def draw_upgrade_info(upgrade, pos, skill_points):
+    info_width = 200
+    info_height = 100
+    info_x = max(10, min(pos[0] - info_width//2, screen_width - info_width - 10))
+    info_y = pos[1] - info_height - 40
+    
+    info_surface = pygame.Surface((info_width, info_height), pygame.SRCALPHA)
+    pygame.draw.rect(info_surface, (40, 40, 40, 230), info_surface.get_rect(), border_radius=10)
+    screen.blit(info_surface, (info_x, info_y))
+    
+    name_text = font_small.render(upgrade["name"], True, gold)
+    cost_text = font_small.render(f"Cost: {upgrade['cost']} SP", True, 
+                                green if skill_points >= upgrade["cost"] else red)
+    
+    screen.blit(name_text, (info_x + 10, info_y + 10))
+    screen.blit(cost_text, (info_x + 10, info_y + 40))
+
+def draw_skill_info(skill, pos, skill_points):
+    info_width = 400
+    info_height = 300
+    info_x = max(10, min(pos[0] - info_width//2, screen_width - info_width - 10))
+    info_y = pos[1] + 60
+    
+    # Draw info panel
+    info_surface = pygame.Surface((info_width, info_height), pygame.SRCALPHA)
+    pygame.draw.rect(info_surface, (40, 40, 40, 230), info_surface.get_rect(), border_radius=15)
+    screen.blit(info_surface, (info_x, info_y))
+    
+    # Draw skill details
+    name_text = font_medium.render(skill.name, True, gold)
+    level_info = font_small.render(f"Level {skill.level}/{skill.max_level}", True, white)
+    desc_text = font_small.render(skill.description, True, white)
+    
+    screen.blit(name_text, (info_x + 20, info_y + 20))
+    screen.blit(level_info, (info_x + info_width - 120, info_y + 20))
+    screen.blit(desc_text, (info_x + 20, info_y + 60))
+    
+    # Draw current stats
+    stats_y = info_y + 100
+    for stat, value in skill.get_current_stats().items():
+        stat_text = font_small.render(f"{stat}: {value:.1f}", True, stat_text_color)
+        screen.blit(stat_text, (info_x + 20, stats_y))
+        stats_y += 30
+        
+    # Draw level up button if available
+    if skill.level < skill.max_level and skill_points > 0:
+        button_rect = pygame.Rect(info_x + info_width - 120, info_y + info_height - 50, 100, 30)
+        pygame.draw.rect(screen, green, button_rect, border_radius=5)
+        level_text = font_small.render("Level Up", True, white)
+        screen.blit(level_text, (button_rect.centerx - level_text.get_width()//2, 
+                               button_rect.centery - level_text.get_height()//2))
+
+
+def can_purchase_upgrade(skill, upgrade, skill_points):
+    return (
+        skill.level >= upgrade["level_req"] and 
+        skill_points >= upgrade["cost"] and
+        ("requires" not in upgrade or upgrade["requires"] in skill.unlocked_paths) and
+        upgrade not in skill.active_upgrades
+    )
 
 def cleanup():
     pygame.mixer.music.stop()
