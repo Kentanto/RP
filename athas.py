@@ -836,6 +836,19 @@ def load_skill_progress(skill_name):
         }
     return None
 
+def create_circular_icon(image_path, size):
+    icon = pygame.image.load(image_path)
+    icon = pygame.transform.scale(icon, (size, size))
+    
+    circle_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+    pygame.draw.circle(circle_surface, (255, 255, 255), (size//2, size//2), size//2)
+    
+    masked_icon = pygame.Surface((size, size), pygame.SRCALPHA)
+    masked_icon.blit(icon, (0, 0))
+    masked_icon.blit(circle_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    
+    return masked_icon
+
 
 def skill_tree_menu():
     Back_Button = Button("Back", 10, 10, 100, 40, hover_color)
@@ -843,7 +856,7 @@ def skill_tree_menu():
     info_height = 300
     tree_center_x = screen_width // 2
     tree_center_y = 200
-    node_radius = 25
+    node_radius = 30
     node_spacing = 120
     last_clicked_skill = None
     last_click_time = 0
@@ -931,7 +944,7 @@ def skill_tree_menu():
                 {"damage": 2.0, "burn_damage": 40, "area": 3.0},
                 unlocks="True_Fire",
                 requires="inferno_branch",
-                description="Call down a massive meteor that creates a burning crater"),
+                description="all fire abilities double damage, your flame turns a hue of white"),
             SkillUpgrade("Cluster", 5, 200, 
                 {"damage": 1.8, "area": 3.0, "knockback": 8},
                 unlocks="Cluster",
@@ -948,7 +961,7 @@ def skill_tree_menu():
         "Ice Shard",
         "Fires a piercing shard of ice",
         {"damage": 30, "mana_cost": 15},
-        icon_path="icons/ice_shard.png",
+        icon_path="icons/ice_shard.jpg",
         upgrades=[
             SkillUpgrade("Ice Shard Mastery", 2, 50,
                 {"damage": 1.2, "mana_cost": 0.9},
@@ -968,7 +981,7 @@ def skill_tree_menu():
                 {"damage": 1.6, "freeze_chance": 0.5, "freeze_duration": 5, "area": 2.0},
                 unlocks="glacial_branch",
                 requires="frost_branch",
-                description="Create an expanding ice field that freezes enemies"),
+                description="Create an expanding ice field that slows enemies"),
             SkillUpgrade("Chain", 5, 200,
                 {"damage": 1.8, "penetration": 5, "chain_hits": 4, "chain_damage": 0.8},
                 unlocks="chain_branch",
@@ -982,6 +995,8 @@ def skill_tree_menu():
                          
     ]
 )
+    
+    
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -1012,141 +1027,161 @@ def skill_tree_menu():
         
         mouse_pos = pygame.mouse.get_pos()
         
-        
-        for skill in skills:
-            skill_data = branch_points[skill.name]
-            skill_pos = skill_data["position"]
-            
-            skill_hovered = ((mouse_pos[0] - skill_pos[0])**2 + (mouse_pos[1] - skill_pos[1])**2 <= node_radius**2)
-            node_color = light_blue if skill_hovered else dark_gray
-            pygame.draw.circle(screen, node_color, skill_pos, node_radius)
-            
-            name_text = font_small.render(skill.name, True, white)
-            level_text = font_small.render(f"Lv.{skill.level}", True, white)
-            screen.blit(name_text, (skill_pos[0] - name_text.get_width()//2, skill_pos[1] - 40))
-            screen.blit(level_text, (skill_pos[0] - level_text.get_width()//2, skill_pos[1] + 40))
+        if skills:
+            for skill in skills:    
+                skill_data = branch_points[skill.name]
+                skill_pos = skill_data["position"]
+                
+                skill_hovered = ((mouse_pos[0] - skill_pos[0])**2 + (mouse_pos[1] - skill_pos[1])**2 <= node_radius**2)
+                node_color = gray if skill_hovered else black
+                pygame.draw.circle(screen, node_color, skill_pos, node_radius+2.5)
+                
+                icon_size = node_radius * 2
+                if skill.icon_path and os.path.exists(skill.icon_path):
+                    circular_icon = create_circular_icon(skill.icon_path, icon_size)
+                    icon_rect = circular_icon.get_rect(center=skill_pos)
+                    screen.blit(circular_icon, icon_rect)
+                    
+                name_text = font_small.render(skill.name, True, white)
+                level_text = font_small.render(f"Lv.{skill.level}", True, white)
+                name_y = skill_pos[1] - (icon_size//2 + name_text.get_height() + 5)
+                level_y = skill_pos[1] + (icon_size//2 + 5)
+                
+                screen.blit(name_text, (skill_pos[0] - name_text.get_width()//2, name_y))
+                screen.blit(level_text, (skill_pos[0] - level_text.get_width()//2, level_y))
+                
+                if selected_skill and selected_skill.name == skill.name:    
+                    core_name = f"{skill.name} Mastery"
+                    core_pos = skill_data["upgrade_positions"][core_name]
+                    start, end = get_edge_points(skill_pos, core_pos, node_radius)
+                    core_unlocked = any(u.name == core_name if isinstance(u, SkillUpgrade) else u["name"] == core_name 
+                                    for u in selected_skill.active_upgrades)
+                    color = green if core_unlocked else gray
+                    pygame.draw.line(screen, color, start, end, 3)
+                            
+                    for source, targets in skill_data["connections"].items():
+                        if source in skill_data["upgrade_positions"]:
+                            source_pos = skill_data["upgrade_positions"][source]
+                            source_unlocked = any(u.name == source if isinstance(u, SkillUpgrade) else u["name"] == source 
+                                            for u in selected_skill.active_upgrades)
 
-            if selected_skill and selected_skill.name == skill.name:    
-                core_name = f"{skill.name} Mastery"
-                core_pos = skill_data["upgrade_positions"][core_name]
-                start, end = get_edge_points(skill_pos, core_pos, node_radius)
-                core_unlocked = any(u.name == core_name for u in selected_skill.active_upgrades)
-                color = green if core_unlocked else gray
-                pygame.draw.line(screen, color, start, end, 3)
-                        
-                for source, targets in skill_data["connections"].items():
-                    if source in skill_data["upgrade_positions"]:
-                        source_pos = skill_data["upgrade_positions"][source]
-                        source_unlocked = any(u.name == source for u in selected_skill.active_upgrades)
-                        
-                        for target in targets:
-                            if target in skill_data["upgrade_positions"]:
-                                target_pos = skill_data["upgrade_positions"][target]
-                                target_unlocked = any(u.name == target for u in selected_skill.active_upgrades)
-                                
-                                start, end = get_edge_points(source_pos, target_pos, node_radius)
-                                if source_unlocked and target_unlocked:
-                                    color = green
-                                elif source_unlocked:
-                                    color = gold
-                                else:
-                                    color = gray
+                            
+                            for target in targets:
+                                if target in skill_data["upgrade_positions"]:
+                                    target_pos = skill_data["upgrade_positions"][target]
+                                    target_unlocked = any(u.name == target if isinstance(u, SkillUpgrade) else u["name"] == target 
+                                                        for u in selected_skill.active_upgrades)
                                     
-                                pygame.draw.line(screen, color, start, end, 3)
+                                    start, end = get_edge_points(source_pos, target_pos, node_radius)
+                                    if source_unlocked and target_unlocked:
+                                        color = green
+                                    elif source_unlocked:
+                                        color = gold
+                                    else:
+                                        color = gray
+                                        
+                                    pygame.draw.line(screen, color, start, end, 3)
 
-                for upgrade in selected_skill.upgrades:
-                    upgrade_name = upgrade.name if isinstance(upgrade, SkillUpgrade) else upgrade["name"]
-                    if upgrade_name in skill_data["upgrade_positions"]:
-                        upgrade_pos = skill_data["upgrade_positions"][upgrade_name]
-                        upgrade_unlocked = upgrade in selected_skill.active_upgrades
-                        can_buy = can_purchase_upgrade(selected_skill, upgrade, skill_points)
-                        upgrade_hovered = ((mouse_pos[0] - upgrade_pos[0])**2 + (mouse_pos[1] - upgrade_pos[1])**2 <= node_radius**2)
-                        
-                        if upgrade_unlocked:
-                            node_color = dark_green if upgrade_hovered else green
-                        elif can_buy:
-                            node_color = gold
-                        else:
-                            node_color = dark_red if upgrade_hovered else red
-                        
-                        pygame.draw.circle(screen, node_color, upgrade_pos, node_radius - 5)
-                        icon_text = font_small.render(skill_data["icons"][upgrade_name], True, white)
-                        icon_pos = (upgrade_pos[0] - icon_text.get_width()//2, 
-                                upgrade_pos[1] - icon_text.get_height()//2)
-                        screen.blit(icon_text, icon_pos)
-
-                        if upgrade_hovered:
-                            hovered_node = (selected_skill, upgrade)
-                            draw_upgrade_info(upgrade, upgrade_pos, skill_points)
-
-                if skill_hovered:
-                    draw_skill_info(selected_skill, skill_pos, skill_points)
-                    hovered_node = (selected_skill, None)
-            
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                get_current_points()
-                cleanup()
-                pygame.quit()
-                sys.exit()
-            
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if Back_Button.is_clicked(event):
-                    return
-
-                clicked_skill = None
-                clicked_upgrade = None
-
-                for skill in skills:
-                    skill_pos = branch_points[skill.name]["position"]
-                    if ((mouse_pos[0] - skill_pos[0])**2 + (mouse_pos[1] - skill_pos[1])**2 <= node_radius**2):
-                        clicked_skill = skill
-
-                        if clicked_skill == last_clicked_skill and current_time - last_click_time < double_click_threshold:
-                            if skill.level < skill.max_level and skill_points > 0:
-                                skill.level += 1
-                                skill_points -= 1
-                                save_skill_progress(skill.name, skill.level, skill.active_upgrades, skill.unlocked_paths)
-                            last_clicked_skill = None
-                        else:
-                            last_clicked_skill = clicked_skill
-                            last_click_time = current_time
-                        break
-
-                if selected_skill:
-                    skill_data = branch_points[selected_skill.name]
                     for upgrade in selected_skill.upgrades:
                         upgrade_name = upgrade.name if isinstance(upgrade, SkillUpgrade) else upgrade["name"]
                         if upgrade_name in skill_data["upgrade_positions"]:
                             upgrade_pos = skill_data["upgrade_positions"][upgrade_name]
-                            if ((mouse_pos[0] - upgrade_pos[0])**2 + (mouse_pos[1] - upgrade_pos[1])**2 <= node_radius**2):
-                                clicked_upgrade = upgrade
-                                break
+                            upgrade_unlocked = upgrade in selected_skill.active_upgrades
+                            can_buy = can_purchase_upgrade(selected_skill, upgrade, skill_points)
+                            upgrade_hovered = ((mouse_pos[0] - upgrade_pos[0])**2 + (mouse_pos[1] - upgrade_pos[1])**2 <= node_radius**2)
+                            
+                            if upgrade_unlocked:
+                                node_color = dark_green if upgrade_hovered else green
+                            elif can_buy:
+                                node_color = gold
+                            else:
+                                node_color = dark_red if upgrade_hovered else red
+                            
+                            pygame.draw.circle(screen, node_color, upgrade_pos, node_radius - 5)
+                            icon_text = font_small.render(skill_data["icons"][upgrade_name], True, white)
+                            icon_pos = (upgrade_pos[0] - icon_text.get_width()//2, 
+                                    upgrade_pos[1] - icon_text.get_height()//2)
+                            screen.blit(icon_text, icon_pos)
 
-                if clicked_skill:
-                    if selected_skill == clicked_skill:
-                        if not clicked_upgrade:
-                            selected_skill = None
-                    else:
-                        selected_skill = clicked_skill
+                            if upgrade_hovered:
+                                hovered_node = (selected_skill, upgrade)
+                                draw_upgrade_info(upgrade, upgrade_pos, skill_points)
 
-                elif clicked_upgrade:
-                    if can_purchase_upgrade(selected_skill, clicked_upgrade, skill_points):
-                        selected_skill.active_upgrades.append(clicked_upgrade)
-                        if isinstance(clicked_upgrade, SkillUpgrade) and clicked_upgrade.unlocks:
-                            selected_skill.unlocked_paths.append(clicked_upgrade.unlocks)
-                        elif isinstance(clicked_upgrade, dict) and "unlocks" in clicked_upgrade:
-                            selected_skill.unlocked_paths.append(clicked_upgrade["unlocks"])
-                        skill_points -= clicked_upgrade.cost if isinstance(clicked_upgrade, SkillUpgrade) else clicked_upgrade["cost"]
-                        save_skill_progress(selected_skill.name, selected_skill.level, selected_skill.active_upgrades, selected_skill.unlocked_paths)
-                        
-                elif not any(((mouse_pos[0] - skill_data["position"][0])**2 +
-                              (mouse_pos[1] - skill_data["position"][1])**2 <=
-                               node_radius**2) for skill_data in branch_points.values()):
-                    selected_skill = None
+                    if skill_hovered:
+                        draw_skill_info(selected_skill, skill_pos, skill_points)
+                        hovered_node = (selected_skill, None)
+                
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    get_current_points()
+                    cleanup()
+                    pygame.quit()
+                    sys.exit()
+                
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if Back_Button.is_clicked(event):
+                        return
+
+                    clicked_skill = None
+                    clicked_upgrade = None
+
+                    for skill in skills:
+                        skill_pos = branch_points[skill.name]["position"]
+                        if ((mouse_pos[0] - skill_pos[0])**2 + (mouse_pos[1] - skill_pos[1])**2 <= node_radius**2):
+                            clicked_skill = skill
+
+                            if clicked_skill == last_clicked_skill and current_time - last_click_time < double_click_threshold:
+                                if skill.level < skill.max_level and skill_points > 0:
+                                    skill.level += 1
+                                    skill_points -= 1
+                                    save_skill_progress(skill.name, skill.level, skill.active_upgrades, skill.unlocked_paths)
+                                last_clicked_skill = None
+                            else:
+                                last_clicked_skill = clicked_skill
+                                last_click_time = current_time
+                            break
+
+                    if selected_skill:
+                        skill_data = branch_points[selected_skill.name]
+                        for upgrade in selected_skill.upgrades:
+                            upgrade_name = upgrade.name if isinstance(upgrade, SkillUpgrade) else upgrade["name"]
+                            if upgrade_name in skill_data["upgrade_positions"]:
+                                upgrade_pos = skill_data["upgrade_positions"][upgrade_name]
+                                if ((mouse_pos[0] - upgrade_pos[0])**2 + (mouse_pos[1] - upgrade_pos[1])**2 <= node_radius**2):
+                                    clicked_upgrade = upgrade
+                                    break
+
+                    if clicked_skill:
+                        if selected_skill == clicked_skill:
+                            if not clicked_upgrade:
+                                selected_skill = None
+                        else:
+                            selected_skill = clicked_skill
+
+                    elif clicked_upgrade:
+                        if can_purchase_upgrade(selected_skill, clicked_upgrade, skill_points):
+                            selected_skill.active_upgrades.append(clicked_upgrade)
+                            if isinstance(clicked_upgrade, SkillUpgrade) and clicked_upgrade.unlocks:
+                                selected_skill.unlocked_paths.append(clicked_upgrade.unlocks)
+                            elif isinstance(clicked_upgrade, dict) and "unlocks" in clicked_upgrade:
+                                selected_skill.unlocked_paths.append(clicked_upgrade["unlocks"])
+                            skill_points -= clicked_upgrade.cost if isinstance(clicked_upgrade, SkillUpgrade) else clicked_upgrade["cost"]
+                            save_skill_progress(selected_skill.name, selected_skill.level, selected_skill.active_upgrades, selected_skill.unlocked_paths)
+                            
+                    elif not any(((mouse_pos[0] - skill_data["position"][0])**2 +
+                                (mouse_pos[1] - skill_data["position"][1])**2 <=
+                                node_radius**2) for skill_data in branch_points.values()):
+                        selected_skill = None
 
 
-            pygame.display.flip()
+                pygame.display.flip()
+        else:
+            screen.fill(black)
+            screen.blit(background_image, (0, 0))
+            status_window()
+            break
+            
+
 
 
 
