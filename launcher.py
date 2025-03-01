@@ -76,22 +76,14 @@ def update_game():
             print("No assets found in the latest release.")
             return
         
+        os.makedirs(GAME_FILES_DIR, exist_ok=True)
+        
         for asset in assets:
             asset_name = asset["name"]
             download_url = asset["browser_download_url"]
-            
-            if "updater" in asset_name.lower():
-                print("Skipping updater.exe update while running")
-                continue
-                
             save_path = os.path.join(GAME_FILES_DIR, asset_name)
             print(f"Downloading {asset_name}...")
             download_file(download_url, save_path)
-        
-        new_game_path = find_game_executable()
-        if new_game_path:
-            os.replace(os.path.join(DOWNLOAD_FOLDER,"files", "athas.exe"), new_game_path)
-        
         with open(LOCAL_VERSION_FILE, "w") as f:
             f.write(latest_version)
     

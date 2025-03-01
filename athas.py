@@ -62,7 +62,6 @@ def organize_image_files():
     image_extensions = ('.png', '.jpg', '.jpeg', '.webp', '.ico')
     icons_dir = 'icons'
     
-    # Get the correct base path whether running as script or exe
     if getattr(sys, 'frozen', False):
         base_path = os.path.dirname(sys.executable)
     else:
@@ -70,19 +69,29 @@ def organize_image_files():
     
     icons_path = os.path.join(base_path, icons_dir)
     
-    # Create icons directory if it doesn't exist
     if not os.path.exists(icons_path):
         os.makedirs(icons_path)
         
-    # Move image files to icons directory
     for file in os.listdir(base_path):
         if file.lower().endswith(image_extensions):
             source = os.path.join(base_path, file)
             destination = os.path.join(icons_path, file)
             if not os.path.exists(destination):
                 os.rename(source, destination)
+    def send_launcher_back():
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            
+        launcher_path = os.path.join(base_path, "launcher.exe")
+        if os.path.exists(launcher_path):
+            parent_dir = os.path.dirname(base_path)
+            destination = os.path.join(parent_dir, "launcher.exe")
+            os.replace(launcher_path, destination)
+        send_launcher_back()
 
-# Add this line right after pygame.init()
+
 organize_image_files()
 
 def fade_out_music():
