@@ -17,6 +17,7 @@ GAME_EXE_PATH = os.path.join(GAME_FILES_DIR, "athas.exe")
 
 def get_local_version():
     """Get the version from the local version file."""
+    os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
     if os.path.exists(LOCAL_VERSION_FILE):
         with open(LOCAL_VERSION_FILE, "r") as f:
             return f.read().strip()
