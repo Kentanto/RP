@@ -103,6 +103,8 @@ def fade_out_music():
     threading.Thread(target=fade, daemon=True).start()
 
 def fade_in():
+    screen.fill(black)
+    screen.blit(background_image, (0, 0))
     music_playlist = ["feelGood.mp3",
                       "haldis.mp3",
                       "spell.mp3",
@@ -755,15 +757,17 @@ def status_window():
         
         pygame.display.flip()
         
-def get_edge_points(start_pos, end_pos, radius):
+def get_edge_points(start_pos, end_pos, radius, zoom_level):
     dx = end_pos[0] - start_pos[0]
     dy = end_pos[1] - start_pos[1]
     angle = math.atan2(dy, dx)
     
-    start_x = start_pos[0] + math.cos(angle) * radius
-    start_y = start_pos[1] + math.sin(angle) * radius
-    end_x = end_pos[0] - math.cos(angle) * radius
-    end_y = end_pos[1] - math.sin(angle) * radius
+    scaled_radius = (radius * zoom_level)
+    
+    start_x = start_pos[0] + math.cos(angle) * scaled_radius
+    start_y = start_pos[1] + math.sin(angle) * scaled_radius
+    end_x = end_pos[0] - math.cos(angle) * scaled_radius
+    end_y = end_pos[1] - math.sin(angle) * scaled_radius
     
     return (start_x, start_y), (end_x, end_y)
 
@@ -798,15 +802,37 @@ class Skill:
 
     def get_current_stats(self):
         stats = self.base_stats.copy()
-        multiplier = 1 + (self.level * 5)
+        
+        # Base level scaling (more controlled growth)
+        level_multiplier = 1 + (self.level * 0.1)  # 10% increase per level
+        
+        # Separate multipliers for different stat types
+        damage_multiplier = 1.0
+        mana_multiplier = 1.0
         
         for upgrade in self.active_upgrades:
             stat_boost = upgrade.stat_boost if isinstance(upgrade, SkillUpgrade) else upgrade["stat_boost"]
             for stat, boost in stat_boost.items():
-                if stat in stats:
-                    multiplier *= boost
-                    
-        return {stat: value * multiplier for stat, value in stats.items()}
+                if "damage" in stat.lower():
+                    # Additive stacking for damage boosts
+                    damage_multiplier += (boost - 1)
+                elif "mana" in stat.lower():
+                    # Diminishing returns for mana cost reduction
+                    mana_multiplier *= max(0.5, boost)  # Cap at 50% reduction
+                elif stat in stats:
+                    # Other stats get normal scaling
+                    stats[stat] *= boost
+
+        # Apply final multipliers
+        for stat in stats:
+            if "damage" in stat.lower():
+                stats[stat] *= level_multiplier * damage_multiplier
+            elif "mana" in stat.lower():
+                stats[stat] *= mana_multiplier
+            else:
+                stats[stat] *= level_multiplier
+
+        return stats
 
 
 
@@ -852,8 +878,6 @@ def create_circular_icon(image_path, size):
 
 def skill_tree_menu():
     Back_Button = Button("Back", 10, 10, 100, 40, hover_color)
-    info_width = 400
-    info_height = 300
     tree_center_x = screen_width // 2
     tree_center_y = 200
     node_radius = 30
@@ -861,19 +885,26 @@ def skill_tree_menu():
     last_clicked_skill = None
     last_click_time = 0
     double_click_threshold = 500
-    selected_skill = None
-    hovered_node = None    
-    
+    selected_skill = None 
+    camera_offset = [0, 0]
+    dragging = False
+    drag_start = None
+    start_offset = None
+    any_node_clicked = False
+    zoom_level = 1.0
+    min_zoom = 0.5
+    max_zoom = 2.0
+
     branch_points = {
         "Fireball": {
-            "position": (tree_center_x - node_spacing * 2, tree_center_y),
+            "position": (tree_center_x, tree_center_y),
             "upgrade_positions": {
-                "Fireball Mastery": (tree_center_x - node_spacing * 2, tree_center_y + node_spacing),
-                "Inferno": (tree_center_x - node_spacing * 3, tree_center_y + node_spacing),
-                "Explosion": (tree_center_x - node_spacing, tree_center_y + node_spacing),
-                "True Fire": (tree_center_x - node_spacing * 3, tree_center_y + node_spacing * 2),
-                "Cluster": (tree_center_x - node_spacing, tree_center_y + node_spacing * 2),
-                "Meteor Shower": (tree_center_x - node_spacing * 2, tree_center_y + node_spacing * 3),
+                "Fireball Mastery": (tree_center_x, tree_center_y + node_spacing),
+                "Inferno": (tree_center_x - node_spacing, tree_center_y + node_spacing),
+                "Explosion": (tree_center_x + node_spacing, tree_center_y + node_spacing),
+                "True Fire": (tree_center_x - node_spacing, tree_center_y + node_spacing * 2),
+                "Cluster": (tree_center_x + node_spacing, tree_center_y + node_spacing * 2),
+                "Meteor Shower": (tree_center_x, tree_center_y + node_spacing * 3),
             },
             "icons": {
                 "Fireball Mastery": "⚔️",
@@ -923,7 +954,7 @@ def skill_tree_menu():
     fireball = Skill(
         "Fireball",
         "Launches a ball of fire at enemies",
-        {"damage": 5, "mana_cost": 2},
+        {"damage": 5, "mana_cost": 50},
         icon_path="icons/fireball.png",
         upgrades=[
             SkillUpgrade("Fireball Mastery", 2, 2, 
@@ -951,7 +982,7 @@ def skill_tree_menu():
                 requires="explosion_branch",
                 description="Release a chain of explosions that ripple outward"),
             SkillUpgrade("Meteor Shower", 9, 1200,
-            {"damage": 700, "area": 30, "knockback": 14},
+            {"damage": 7.0, "area": 30, "knockback": 14},
             requires=["True_Fire", "Cluster"],
             description="Call down a Meteor Shower that deals massive damage and knocks back enemies")
         ]
@@ -988,7 +1019,7 @@ def skill_tree_menu():
                 requires="pierce_branch",
                 description="Shard bounces between multiple targets with increasing damage"),
             SkillUpgrade("ice age", 9, 1200,
-                {"damage": 700, "area": 30, "knockback": 1},
+                {"damage": 4532.543, "area": 30, "knockback": 1},
                 requires=["glacial_branch", "chain_branch"],
                 description="Create an ice age that freezes all enemies in the area")
 
@@ -1014,7 +1045,6 @@ def skill_tree_menu():
     
     skill_points = 100000
     selected_skill = None
-    hovered_node = None
     
     while True:
         current_time = pygame.time.get_ticks()
@@ -1024,19 +1054,21 @@ def skill_tree_menu():
         
         points_text = font_medium.render(f"Skill Points: {skill_points}", True, gold)
         screen.blit(points_text, (screen_width // 2 - points_text.get_width() // 2, 10))
-        
+
         mouse_pos = pygame.mouse.get_pos()
-        
+                            
+                            
         if skills:
             for skill in skills:    
                 skill_data = branch_points[skill.name]
-                skill_pos = skill_data["position"]
-                
-                skill_hovered = ((mouse_pos[0] - skill_pos[0])**2 + (mouse_pos[1] - skill_pos[1])**2 <= node_radius**2)
+                skill_pos = ((skill_data["position"][0] * zoom_level) + camera_offset[0], 
+                             (skill_data["position"][1] * zoom_level) + camera_offset[1])
+                                                
+                skill_hovered = ((mouse_pos[0] - skill_pos[0])**2 + (mouse_pos[1] - skill_pos[1])**2 <= (node_radius * zoom_level)**2)
                 node_color = gray if skill_hovered else black
-                pygame.draw.circle(screen, node_color, skill_pos, node_radius+2.5)
+                pygame.draw.circle(screen, node_color, skill_pos, (node_radius * zoom_level) + 2.5)
                 
-                icon_size = node_radius * 2
+                icon_size = (node_radius * 2) * zoom_level
                 if skill.icon_path and os.path.exists(skill.icon_path):
                     circular_icon = create_circular_icon(skill.icon_path, icon_size)
                     icon_rect = circular_icon.get_rect(center=skill_pos)
@@ -1052,27 +1084,31 @@ def skill_tree_menu():
                 
                 if selected_skill and selected_skill.name == skill.name:    
                     core_name = f"{skill.name} Mastery"
-                    core_pos = skill_data["upgrade_positions"][core_name]
-                    start, end = get_edge_points(skill_pos, core_pos, node_radius)
+                    core_pos = ((skill_data["upgrade_positions"][core_name][0] * zoom_level) + camera_offset[0],
+                                (skill_data["upgrade_positions"][core_name][1] * zoom_level) + camera_offset[1])
+
+                    start, end = get_edge_points(skill_pos, core_pos, node_radius, zoom_level)
                     core_unlocked = any(u.name == core_name if isinstance(u, SkillUpgrade) else u["name"] == core_name 
                                     for u in selected_skill.active_upgrades)
                     color = green if core_unlocked else gray
-                    pygame.draw.line(screen, color, start, end, 3)
+                    pygame.draw.line(screen, color, start, end, max(2, int(3 * zoom_level)))
                             
                     for source, targets in skill_data["connections"].items():
                         if source in skill_data["upgrade_positions"]:
-                            source_pos = skill_data["upgrade_positions"][source]
+                            source_pos = ((skill_data["upgrade_positions"][source][0] * zoom_level) + camera_offset[0],
+                                          (skill_data["upgrade_positions"][source][1] * zoom_level) + camera_offset[1])
                             source_unlocked = any(u.name == source if isinstance(u, SkillUpgrade) else u["name"] == source 
                                             for u in selected_skill.active_upgrades)
 
                             
                             for target in targets:
                                 if target in skill_data["upgrade_positions"]:
-                                    target_pos = skill_data["upgrade_positions"][target]
+                                    target_pos = ((skill_data["upgrade_positions"][target][0] * zoom_level) + camera_offset[0],
+                                                  (skill_data["upgrade_positions"][target][1] * zoom_level) + camera_offset[1])
                                     target_unlocked = any(u.name == target if isinstance(u, SkillUpgrade) else u["name"] == target 
                                                         for u in selected_skill.active_upgrades)
                                     
-                                    start, end = get_edge_points(source_pos, target_pos, node_radius)
+                                    start, end = get_edge_points(source_pos, target_pos, node_radius, zoom_level)
                                     if source_unlocked and target_unlocked:
                                         color = green
                                     elif source_unlocked:
@@ -1080,15 +1116,16 @@ def skill_tree_menu():
                                     else:
                                         color = gray
                                         
-                                    pygame.draw.line(screen, color, start, end, 3)
+                                    pygame.draw.line(screen, color, start, end, max(1, int(3 * zoom_level)))
 
                     for upgrade in selected_skill.upgrades:
                         upgrade_name = upgrade.name if isinstance(upgrade, SkillUpgrade) else upgrade["name"]
                         if upgrade_name in skill_data["upgrade_positions"]:
-                            upgrade_pos = skill_data["upgrade_positions"][upgrade_name]
+                            upgrade_pos = ((skill_data["upgrade_positions"][upgrade_name][0] * zoom_level) + camera_offset[0],
+                                           (skill_data["upgrade_positions"][upgrade_name][1] * zoom_level) + camera_offset[1])
                             upgrade_unlocked = upgrade in selected_skill.active_upgrades
                             can_buy = can_purchase_upgrade(selected_skill, upgrade, skill_points)
-                            upgrade_hovered = ((mouse_pos[0] - upgrade_pos[0])**2 + (mouse_pos[1] - upgrade_pos[1])**2 <= node_radius**2)
+                            upgrade_hovered = ((mouse_pos[0] - upgrade_pos[0])**2 + (mouse_pos[1] - upgrade_pos[1])**2 <= (node_radius * zoom_level)**2)
                             
                             if upgrade_unlocked:
                                 node_color = dark_green if upgrade_hovered else green
@@ -1097,19 +1134,17 @@ def skill_tree_menu():
                             else:
                                 node_color = dark_red if upgrade_hovered else red
                             
-                            pygame.draw.circle(screen, node_color, upgrade_pos, node_radius - 5)
+                            pygame.draw.circle(screen, node_color, upgrade_pos, (node_radius * zoom_level) - 5)
                             icon_text = font_small.render(skill_data["icons"][upgrade_name], True, white)
                             icon_pos = (upgrade_pos[0] - icon_text.get_width()//2, 
                                     upgrade_pos[1] - icon_text.get_height()//2)
                             screen.blit(icon_text, icon_pos)
 
                             if upgrade_hovered:
-                                hovered_node = (selected_skill, upgrade)
-                                draw_upgrade_info(upgrade, upgrade_pos, skill_points)
+                                draw_upgrade_info(skill, upgrade, upgrade_pos, skill_points)
 
                     if skill_hovered:
                         draw_skill_info(selected_skill, skill_pos, skill_points)
-                        hovered_node = (selected_skill, None)
                 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -1118,16 +1153,21 @@ def skill_tree_menu():
                     pygame.quit()
                     sys.exit()
                 
-                if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button not in (4,5):
                     if Back_Button.is_clicked(event):
-                        return
+                        screen.fill(black)
+                        screen.blit(background_image, (0, 0))
+                        status_window()
 
                     clicked_skill = None
                     clicked_upgrade = None
+                    any_node_clicked = False
 
                     for skill in skills:
-                        skill_pos = branch_points[skill.name]["position"]
+                        skill_pos = ((branch_points[skill.name]["position"][0] * zoom_level) + camera_offset[0],
+                                     (branch_points[skill.name]["position"][1] * zoom_level) + camera_offset[1])
                         if ((mouse_pos[0] - skill_pos[0])**2 + (mouse_pos[1] - skill_pos[1])**2 <= node_radius**2):
+                            any_node_clicked = True
                             clicked_skill = skill
 
                             if clicked_skill == last_clicked_skill and current_time - last_click_time < double_click_threshold:
@@ -1141,13 +1181,15 @@ def skill_tree_menu():
                                 last_click_time = current_time
                             break
 
-                    if selected_skill:
+                    if selected_skill and not clicked_skill:
                         skill_data = branch_points[selected_skill.name]
                         for upgrade in selected_skill.upgrades:
                             upgrade_name = upgrade.name if isinstance(upgrade, SkillUpgrade) else upgrade["name"]
                             if upgrade_name in skill_data["upgrade_positions"]:
-                                upgrade_pos = skill_data["upgrade_positions"][upgrade_name]
+                                upgrade_pos = ((skill_data["upgrade_positions"][upgrade_name][0] * zoom_level) + camera_offset[0],
+                                               (skill_data["upgrade_positions"][upgrade_name][1] * zoom_level) + camera_offset[1])
                                 if ((mouse_pos[0] - upgrade_pos[0])**2 + (mouse_pos[1] - upgrade_pos[1])**2 <= node_radius**2):
+                                    any_node_clicked = True
                                     clicked_upgrade = upgrade
                                     break
 
@@ -1167,12 +1209,36 @@ def skill_tree_menu():
                                 selected_skill.unlocked_paths.append(clicked_upgrade["unlocks"])
                             skill_points -= clicked_upgrade.cost if isinstance(clicked_upgrade, SkillUpgrade) else clicked_upgrade["cost"]
                             save_skill_progress(selected_skill.name, selected_skill.level, selected_skill.active_upgrades, selected_skill.unlocked_paths)
-                            
-                    elif not any(((mouse_pos[0] - skill_data["position"][0])**2 +
-                                (mouse_pos[1] - skill_data["position"][1])**2 <=
-                                node_radius**2) for skill_data in branch_points.values()):
-                        selected_skill = None
 
+                    if event.button == 1 and not any_node_clicked:
+                        dragging = True
+                        drag_start = pygame.mouse.get_pos()
+                        start_offset = camera_offset.copy()
+
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        dragging = False
+                        
+                elif event.type == pygame.MOUSEMOTION:
+                    if dragging:
+                        current_pos = pygame.mouse.get_pos()
+                        dx = current_pos[0] - drag_start[0]
+                        dy = current_pos[1] - drag_start[1]
+                        camera_offset[0] = start_offset[0] + dx
+                        camera_offset[1] = start_offset[1] + dy
+                        
+                elif event.type == pygame.MOUSEWHEEL:
+                    old_zoom = zoom_level
+                    zoom_change = 0.1 * event.y
+                    zoom_level = max(min_zoom, min(max_zoom, zoom_level + zoom_change))
+                    
+                    # Get mouse position relative to camera
+                    mouse_x = mouse_pos[0] - camera_offset[0]
+                    mouse_y = mouse_pos[1] - camera_offset[1]
+                    
+                    # Adjust camera offset to zoom towards cursor
+                    camera_offset[0] += mouse_x * (1 - zoom_level/old_zoom)
+                    camera_offset[1] += mouse_y * (1 - zoom_level/old_zoom)
 
                 pygame.display.flip()
         else:
@@ -1185,14 +1251,29 @@ def skill_tree_menu():
 
 
 
-def draw_upgrade_info(upgrade, pos, skill_points):
+def draw_upgrade_info(skill, upgrade, pos, skill_points):
     padding = 20
-    min_width = 200
+    min_width = 250
     line_height = 25
     
     upgrade_name = upgrade.name if hasattr(upgrade, 'name') else upgrade.get("name", "Unknown")
     upgrade_cost = upgrade.cost if hasattr(upgrade, 'cost') else upgrade.get("cost", 0)
     description = upgrade.description if hasattr(upgrade, 'description') else upgrade.get("description", "")
+    stat_boosts = upgrade.stat_boost if hasattr(upgrade, 'stat_boost') else upgrade.get("stat_boost", {})
+    
+    current_stats = skill.get_current_stats()
+    
+    stat_lines = []
+    for stat, value in stat_boosts.items():
+        if "percentage" in stat.lower():
+            stat_text = f"{stat}: {value:+.0f}%"
+        elif "damage" in stat.lower():
+            current_damage = current_stats.get(stat, 0)
+            final_damage = current_damage * value
+            stat_text = f"{stat}: {final_damage:.0f}"
+        else:
+            stat_text = f"{stat}: {value}"
+        stat_lines.append(stat_text)
     
     name_width = font_small.size(upgrade_name)[0]
     cost_text = f"Cost: {upgrade_cost} SP"
@@ -1200,7 +1281,7 @@ def draw_upgrade_info(upgrade, pos, skill_points):
     desc_lines = wrap_text(description, font_small, min_width - padding * 2)
     
     info_width = max(min_width, name_width + padding * 2, cost_width + padding * 2)
-    info_height = padding * 2 + line_height * (len(desc_lines) + 2)  # +2 for name and cost lines
+    info_height = padding * 2 + line_height * (len(desc_lines) + len(stat_lines) + 2)
     
     info_x = max(padding, min(pos[0] - info_width//2, screen_width - info_width - padding))
     info_y = max(padding, min(pos[1] - info_height - 40, screen_height - info_height - padding))
@@ -1209,20 +1290,27 @@ def draw_upgrade_info(upgrade, pos, skill_points):
     pygame.draw.rect(info_surface, (40, 40, 40, 240), info_surface.get_rect(), border_radius=10)
     screen.blit(info_surface, (info_x, info_y))
     
+    current_y = info_y + padding
     name_text = font_small.render(upgrade_name, True, gold)
     cost_text = font_small.render(f"Cost: {upgrade_cost}", True, 
                                 green if skill_points >= upgrade_cost else red)
-    
-    current_y = info_y + padding
     screen.blit(name_text, (info_x + padding, current_y))
     current_y += line_height
     screen.blit(cost_text, (info_x + padding, current_y))
     current_y += line_height
     
+    for stat_line in stat_lines:
+        stat_text = font_small.render(stat_line, True, stat_text_color)
+        screen.blit(stat_text, (info_x + padding, current_y))
+        current_y += line_height
+    
+    current_y += line_height // 2
     for line in desc_lines:
         desc_text = font_small.render(line, True, white)
         screen.blit(desc_text, (info_x + padding, current_y))
         current_y += line_height
+
+
 
 def wrap_text(text, font, max_width):
     words = text.split()
