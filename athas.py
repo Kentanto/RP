@@ -10,6 +10,7 @@ import threading
 import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+import shutil
 
 DB_PATH = 'database\\artifacts.db'
 ICO_PATH = 'icons'
@@ -56,7 +57,28 @@ artifact_text_color = (147, 112, 219)
 def initial_startup():
     organize_image_files()
     fade_in()
+    send_launcher_back()
     main_menu()
+
+def send_launcher_back():
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        
+    launcher_path = os.path.join(base_path, "launcher.exe")
+    if os.path.exists(launcher_path):
+        parent_dir = os.path.dirname(base_path)
+        destination = os.path.join(parent_dir, "launcher.exe")
+        try:
+            os.replace(launcher_path, destination)
+        except OSError:
+            try:
+                import shutil
+                shutil.move(launcher_path, destination)
+            except:
+                pass
+
     
 def organize_image_files():
     image_extensions = ('.png', '.jpg', '.jpeg', '.webp', '.ico')
@@ -78,18 +100,7 @@ def organize_image_files():
             destination = os.path.join(icons_path, file)
             if not os.path.exists(destination):
                 os.rename(source, destination)
-    def send_launcher_back():
-        if getattr(sys, 'frozen', False):
-            base_path = os.path.dirname(sys.executable)
-        else:
-            base_path = os.path.dirname(os.path.abspath(__file__))
-            
-        launcher_path = os.path.join(base_path, "launcher.exe")
-        if os.path.exists(launcher_path):
-            parent_dir = os.path.dirname(base_path)
-            destination = os.path.join(parent_dir, "launcher.exe")
-            os.replace(launcher_path, destination)
-        send_launcher_back()
+
 
 
 organize_image_files()

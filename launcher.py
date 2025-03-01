@@ -6,7 +6,7 @@ import subprocess
 GITHUB_REPO = "Kentanto/RP"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 LOCAL_VERSION_FILE = "version.txt"
-DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "Game")
+DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "Athas")
 GAME_FILES_FOLDER = os.path.join(DOWNLOAD_FOLDER, "files")
 CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
 LAUNCHER_DIR = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__)
@@ -93,9 +93,10 @@ def update_game():
     if game_executable:
         print(f"Launching athas system from: {game_executable}")
         subprocess.Popen(GAME_EXE_PATH, cwd=os.path.dirname(GAME_EXE_PATH))
-
     else:
         print(f"Game not found in: {os.path.dirname(GAME_EXE_PATH)}")
+
+
 
     sys.exit()
 
