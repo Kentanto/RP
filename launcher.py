@@ -6,17 +6,18 @@ import subprocess
 GITHUB_REPO = "Kentanto/RP"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 LOCAL_VERSION_FILE = "version.txt"
-DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "Game")
+DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "Athas")
 GAME_FILES_FOLDER = os.path.join(DOWNLOAD_FOLDER, "files")
 CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
 LAUNCHER_DIR = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__)
 GAME_FILES_DIR = os.path.join(LAUNCHER_DIR, "files") if os.path.exists(os.path.join(LAUNCHER_DIR, "version.txt")) else os.path.join(DOWNLOAD_FOLDER, "files")
-GAME_EXE_PATH = os.path.join(GAME_FILES_DIR, "minigame.exe")
+GAME_EXE_PATH = os.path.join(GAME_FILES_DIR, "athas.exe")
 
 
 
 def get_local_version():
     """Get the version from the local version file."""
+    os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
     if os.path.exists(LOCAL_VERSION_FILE):
         with open(LOCAL_VERSION_FILE, "r") as f:
             return f.read().strip()
@@ -39,7 +40,12 @@ def download_file(download_url, save_path):
     response = requests.get(download_url, stream=True)
     response.raise_for_status()
     
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    if save_path.endswith('.mp3'):
+        songs_dir = os.path.join(os.path.dirname(save_path), 'songs')
+        os.makedirs(songs_dir, exist_ok=True)
+        save_path = os.path.join(songs_dir, os.path.basename(save_path))
+    else:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
     with open(save_path, "wb") as file:
         print(f"Downloads will be saved to: {os.path.abspath(save_path)}")
@@ -47,7 +53,7 @@ def download_file(download_url, save_path):
             file.write(chunk)
 
 def find_game_executable():
-    """Search for minigame.exe in the files directory next to updater."""
+    """Search for athas.exe in the files directory next to updater."""
     print(f"Looking for game at: {GAME_EXE_PATH}")
     if os.path.exists(GAME_EXE_PATH):
         return GAME_EXE_PATH
@@ -71,34 +77,65 @@ def update_game():
             print("No assets found in the latest release.")
             return
         
+        os.makedirs(GAME_FILES_DIR, exist_ok=True)
+        
         for asset in assets:
             asset_name = asset["name"]
             download_url = asset["browser_download_url"]
-            
-            if "updater" in asset_name.lower():
-                print("Skipping updater.exe update while running")
-                continue
-                
             save_path = os.path.join(GAME_FILES_DIR, asset_name)
             print(f"Downloading {asset_name}...")
             download_file(download_url, save_path)
-        
-        new_game_path = find_game_executable()
-        if new_game_path:
-            os.replace(os.path.join(DOWNLOAD_FOLDER,"files", "minigame.exe"), new_game_path)
-        
         with open(LOCAL_VERSION_FILE, "w") as f:
             f.write(latest_version)
+        target_version_path = os.path.join(GAME_FILES_DIR, "version.txt")
+        if os.path.exists(LOCAL_VERSION_FILE):
+            os.replace(LOCAL_VERSION_FILE, target_version_path)
+            print(f"Moved version.txt to {target_version_path}")
+
     
     print("Update check complete. Launching game...")
 
     game_executable = find_game_executable()
     if game_executable:
-        print(f"Launching game from: {game_executable}")
+        print(f"Launching athas system from: {game_executable}")
         subprocess.Popen(GAME_EXE_PATH, cwd=os.path.dirname(GAME_EXE_PATH))
-
     else:
         print(f"Game not found in: {os.path.dirname(GAME_EXE_PATH)}")
+
+    def should_delete_self():
+        """Checks if the updater should delete itself based on the presence of files folder and version.txt."""
+        updater_path = sys.argv[0]
+        updater_dir = os.path.dirname(updater_path)
+
+        files_folder = os.path.join(updater_dir, "files")
+        version_txt = os.path.join(updater_dir, "version.txt")
+
+        # Conditions: Only delete if `files` folder is missing AND version.txt is NOT in the same folder
+        if not os.path.exists(files_folder) and os.path.exists(version_txt):
+            return True
+        return False
+
+    def delete_self():
+        """Schedules the updater to delete itself if conditions are met."""
+        if not should_delete_self():
+            print("Conditions not met. Skipping self-deletion.")
+            return
+
+        updater_path = sys.argv[0]
+        delete_script = f'''
+        @echo off
+        timeout /t 3 /nobreak >nul
+        del "{updater_path}" /f /q
+        '''
+        delete_cmd = os.path.join(os.path.dirname(updater_path), "delete_updater.bat")
+
+        with open(delete_cmd, "w") as f:
+            f.write(delete_script)
+
+        subprocess.Popen(["cmd", "/c", delete_cmd], creationflags=subprocess.CREATE_NO_WINDOW)
+        print("Updater scheduled for deletion.")
+
+    delete_self()
 
     sys.exit()
 
