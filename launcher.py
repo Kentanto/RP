@@ -87,7 +87,7 @@ def update_game():
             download_file(download_url, save_path)
         with open(LOCAL_VERSION_FILE, "w") as f:
             f.write(latest_version)
-        target_version_path = os.path.join(GAME_FILES_DIR, "version.txt")
+        target_version_path = os.path.join(LAUNCHER_DIR, "Athas","version.txt")
         if os.path.exists(LOCAL_VERSION_FILE):
             os.replace(LOCAL_VERSION_FILE, target_version_path)
             print(f"Moved version.txt to {target_version_path}")
@@ -102,38 +102,34 @@ def update_game():
     else:
         print(f"Game not found in: {os.path.dirname(GAME_EXE_PATH)}")
 
-    def should_delete_self():
-        """Checks if the updater should delete itself based on the presence of files folder and version.txt."""
-        updater_path = sys.argv[0]
-        updater_dir = os.path.dirname(updater_path)
 
+    def should_delete_self():
+        updater_path = os.path.abspath(sys.argv[0])
+        updater_dir = os.path.dirname(updater_path)
         files_folder = os.path.join(updater_dir, "files")
         version_txt = os.path.join(updater_dir, "version.txt")
 
-        # Conditions: Only delete if `files` folder is missing AND version.txt is NOT in the same folder
-        if not os.path.exists(files_folder) and os.path.exists(version_txt):
+        if not os.path.exists(files_folder) and not os.path.exists(version_txt):
             return True
         return False
 
     def delete_self():
-        """Schedules the updater to delete itself if conditions are met."""
         if not should_delete_self():
-            print("Conditions not met. Skipping self-deletion.")
+            print("Conditions not met. \nSkipping self-deletion.")
             return
 
         updater_path = sys.argv[0]
-        delete_script = f'''
-        @echo off
-        timeout /t 3 /nobreak >nul
-        del "{updater_path}" /f /q
-        '''
+        delete_script = f'''@echo off
+                            timeout /t 3 /nobreak >nul
+                            del "{updater_path}" /f /q
+                            del "%~f0"'''
         delete_cmd = os.path.join(os.path.dirname(updater_path), "delete_updater.bat")
 
         with open(delete_cmd, "w") as f:
             f.write(delete_script)
 
         subprocess.Popen(["cmd", "/c", delete_cmd], creationflags=subprocess.CREATE_NO_WINDOW)
-        print("Updater scheduled for deletion.")
+        print("Conditions met. \nUpdater scheduled for deletion.")
 
     delete_self()
 
