@@ -106,8 +106,12 @@ def update_game():
     def should_delete_self():
         updater_path = os.path.abspath(sys.argv[0])
         updater_dir = os.path.dirname(updater_path)
+        
         files_folder = os.path.join(updater_dir, "files")
         version_txt = os.path.join(updater_dir, "version.txt")
+        
+        print(f"Files folder exists: {os.path.exists(files_folder)}")
+        print(f"Version.txt exists: {os.path.exists(version_txt)}")
 
         if not os.path.exists(files_folder) and not os.path.exists(version_txt):
             return True

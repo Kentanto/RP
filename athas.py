@@ -10,7 +10,6 @@ import threading
 import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
-import shutil
 if getattr(sys, 'frozen', False):
     base_path = os.path.dirname(sys.executable)
 else:
@@ -1405,9 +1404,119 @@ def cleanup():
     pygame.quit()
     sys.exit()
 
+def missions_window():
+    Back_Button = Button("Back", 10, 10, 100, 40, hover_color)
+    scroll_y = 0
+    banner_width = screen_width - 100
+    text_width = int(banner_width * 0.75)
+    padding = 20
+    
+    missions = [
+        {
+            "title": "The Beginning",
+            "description": "Survive the first raid \n Bonus: Kill an enemy",
+            "reward": "100 points", 
+            "time_limit": "24 hours",
+        }
+    ]
 
-minigames = Button("Minigames", screen_width // 2 - 165, screen_height // 2 - 50, 330, 50, hover_color)
-Stats_Menu = Button("Stats", screen_width // 2 - 165, screen_height // 2 + 50, 330, 50, hover_color)
+    while True:
+        events = pygame.event.get()
+        for event in events:
+            if event.type == pygame.QUIT:
+                get_current_points()
+                cleanup()
+                pygame.quit()
+                sys.exit()
+            if Back_Button.is_clicked(event):
+                main_menu()
+                return
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                main_menu()
+                return
+            if event.type == pygame.MOUSEWHEEL:
+                scroll_y += event.y * 20
+                total_height = sum(mission["banner_height"] + padding for mission in missions)
+                min_scroll = -(total_height - screen_height + 150)
+                scroll_y = max(min_scroll, min(0, scroll_y))
+
+        screen.fill(white)
+        screen.blit(background_image, (0, 0))
+        Back_Button.draw(screen)
+
+        y_pos = 100 + scroll_y
+        for mission in missions:
+            paragraphs = mission["description"].split('\n')
+            lines = []
+            
+            for paragraph in paragraphs:
+                words = paragraph.split()
+                current_line = []
+                
+                for word in words:
+                    test_line = ' '.join(current_line + [word])
+                    if font_small.size(test_line)[0] <= text_width:
+                        current_line.append(word)
+                    else:
+                        if current_line:
+                            lines.append(' '.join(current_line))
+                        current_line = [word]
+                
+                if current_line:
+                    lines.append(' '.join(current_line))
+                else:
+                    test_line = ' '.join(current_line + [word])
+                    if font_small.size(test_line)[0] <= text_width:
+                        current_line.append(word)
+                    else:
+                        if current_line:
+                            lines.append(' '.join(current_line))
+                        current_line = [word]
+
+            title_height = 60  # Increased from 40
+            text_height = len(lines) * 25
+            banner_height = title_height + text_height + padding * 2  # Adjusted total height
+            mission["banner_height"] = banner_height
+
+            if -banner_height <= y_pos <= screen_height:
+                banner_rect = pygame.Rect(50, y_pos, banner_width, banner_height)
+                pygame.draw.rect(screen, (40, 40, 40, 230), banner_rect, border_radius=10)
+                
+                # Stats at top right
+                stats_y = y_pos + 15
+                reward_text = font_small.render(f"Reward: {mission['reward']}", True, green)
+                time_text = font_small.render(f"Time: {mission['time_limit']}", True, light_blue)
+                screen.blit(reward_text, (screen_width // 2 -100 , stats_y + 10))
+                screen.blit(time_text, (screen_width // 2 +180, stats_y + 10))
+                try:
+                    progress_text = font_small.render(f"Progress: {mission['progress']}", True, gold)
+                    screen.blit(progress_text, (screen_width // 2 +180, stats_y + banner_height - 40))  
+                except KeyError:
+                    pass
+                    
+                
+                # Title
+                title_text = font_medium.render(mission["title"], True, gold)
+                screen.blit(title_text, (70, y_pos + 20))
+                
+                # Description with more space after title
+                text_y = y_pos + title_height + 10
+                for line in lines:
+                    text = font_small.render(line, True, white)
+                    screen.blit(text, (70, text_y))
+                    text_y += 25
+            
+            y_pos += banner_height + padding
+
+        pygame.display.flip()
+
+
+
+
+
+minigames = Button("Minigames", screen_width // 2 - 165, screen_height // 2 - 100, 330, 50, hover_color)
+Missions_Menu = Button("Missions", screen_width // 2 - 165, screen_height // 2, 330, 50, hover_color) 
+Stats_Menu = Button("Stats", screen_width // 2 - 165, screen_height // 2 + 100, 330, 50, hover_color)
 fadeInComplete = False
 running_threads = []
 def main_menu():
@@ -1417,6 +1526,7 @@ def main_menu():
         screen.fill(black)
         screen.blit(background_image, (0, 0))
         minigames.draw(screen)
+        Missions_Menu.draw(screen)
         Stats_Menu.draw(screen)
         
         for event in pygame.event.get():
@@ -1425,8 +1535,11 @@ def main_menu():
                 cleanup()
             if minigames.is_clicked(event):
                 minigames_menu()
+            if Missions_Menu.is_clicked(event):
+                missions_window()
             if Stats_Menu.is_clicked(event):
                 status_window()
+
         
         pygame.display.flip()
         if not fadeInComplete:
