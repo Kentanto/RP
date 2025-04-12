@@ -155,9 +155,26 @@ def fade_in():
     chosen_song = random_song
     
     if getattr(sys, 'frozen', False):
-        song_path = os.path.join(os.path.dirname(sys.executable), "songs", chosen_song)
+        songs_dir = os.path.join(os.path.dirname(sys.executable), "songs")
+        song_path = os.path.join(songs_dir, chosen_song)
     else:
-        song_path = os.path.join(os.path.dirname(__file__), "songs", chosen_song)
+        song_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "songs", chosen_song)
+    
+    print(f"Loading song: {song_path}")
+    if not os.path.exists(song_path):
+        print(f"Song file not found: {song_path}")
+        if getattr(sys, 'frozen', False):
+            songs_dir = os.path.join(os.path.dirname(sys.executable), "songs")
+        else:
+            songs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "songs")
+        
+        if os.path.exists(songs_dir):
+            print(f"Songs directory exists at: {songs_dir}")
+            print(f"Available songs: {os.listdir(songs_dir)}")
+        else:
+            print(f"Songs directory not found at: {songs_dir}")
+    
+
     
     song_durations = {
         "feelGood.mp3": 53,
@@ -191,9 +208,21 @@ def fade_in():
     last_reported_progress = -1
     start_time = pygame.time.get_ticks()
     
-    pygame.mixer.music.load(song_path)
-    pygame.mixer.music.set_volume(0.1)
-    pygame.mixer.music.play(1)
+    try:
+        pygame.mixer.music.load(song_path)
+        pygame.mixer.music.set_volume(0.1)
+        pygame.mixer.music.play(1)
+    except Exception as e:
+        print(f"Error loading music: {e}")
+        try:
+            alt_song_path = os.path.join(os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) 
+                                        else os.path.dirname(__file__), chosen_song)
+            print(f"Trying alternative path: {alt_song_path}")
+            pygame.mixer.music.load(alt_song_path)
+            pygame.mixer.music.set_volume(0.1)
+            pygame.mixer.music.play(1)
+        except Exception as e2:
+            print(f"Second attempt failed: {e2}")
 
     fade_surface = pygame.Surface((screen_width, screen_height))
     fade_surface.fill(black)
@@ -242,21 +271,28 @@ def fade_in():
         pygame.display.flip()
 
 
-
-
-
-
-
 if getattr(sys, 'frozen', False):
-    base_path = sys._MEIPASS
+    base_path = os.path.dirname(sys.executable)
 else:
-    base_path = os.path.dirname(__file__)
+    base_path = os.path.dirname(os.path.abspath(__file__))
 
-background_image_path = os.path.join("icons\\background_menu.png")
-background_image = pygame.image.load(background_image_path)
-background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
-
-
+background_image_path = os.path.join(base_path, "icons", "background_menu.png")
+try:
+    background_image = pygame.image.load(background_image_path)
+    background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
+except Exception as e:
+    print(f"Error loading background image from {background_image_path}: {e}")
+    try:
+        alt_path = os.path.join(base_path, "background_menu.png")
+        print(f"Trying alternative path: {alt_path}")
+        background_image = pygame.image.load(alt_path)
+        background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
+    except Exception as e2:
+        print(f"Second attempt failed: {e2}")
+        background_image = pygame.Surface((screen_width, screen_height))
+        background_image.fill((20, 20, 40))
+        
+        
 class Button:
     def __init__(self, text, x, y, width, height, hover_color=(255, 255, 255, 128)):
         self.text = text
