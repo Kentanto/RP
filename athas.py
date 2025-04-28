@@ -128,7 +128,7 @@ def fade_in():
     if pygame.mixer.get_init() is None:
         print("no audio sorry")
     else:
-        try:
+            pygame.mixer.init()
             music_playlist = ["feelGood.mp3",
                             "haldis.mp3",
                             "spell.mp3",
@@ -165,8 +165,6 @@ def fade_in():
             pygame.mixer.music.load(song_path)
             pygame.mixer.music.set_volume(0.1)
             pygame.mixer.music.play(1)
-        except:
-            print("Audio system unavailable - running without sound")
 
 
     song_durations = {
@@ -275,21 +273,28 @@ class Button:
             return self.is_hovered(pygame.mouse.get_pos())
         return False
 
-
 def initialize_database():    
     if not os.path.exists(os.path.dirname(DB_PATH)):
         os.makedirs(os.path.dirname(DB_PATH))
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+
+    # DROP old artifacts table if exists
+    c.execute("DROP TABLE IF EXISTS artifacts")
     
     c.execute('''CREATE TABLE IF NOT EXISTS artifacts
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   name TEXT NOT NULL,
-                  main_stat TEXT NOT NULL,
-                  sub_stat1 TEXT NOT NULL,
-                  sub_stat2 TEXT NOT NULL)''')
-    
+                  level INTEGER DEFAULT 0,
+                  exp INTEGER DEFAULT 0,
+                  main_stat_name TEXT NOT NULL,
+                  main_stat_value REAL NOT NULL,
+                  sub_stat1_name TEXT,
+                  sub_stat1_value REAL,
+                  sub_stat2_name TEXT,
+                  sub_stat2_value REAL)''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS stats
                  (id INTEGER PRIMARY KEY, level INTEGER, hp INTEGER, atk INTEGER, def INTEGER, spd INTEGER, mana INTEGER)''')
 
@@ -349,30 +354,83 @@ def get_current_points():
     return current_points
 
 
+def generate_random_artifact():
+    artifact_names = ["Wooden Sword", "Leather Armor", "Iron Shield", "Bronze Helmet", "Cloth Robe"]
+    stats_flat = ["ATK", "DEF", "HP"]
+    stats_percent = ["Crit Rate%", "SPD%", "Crit DMG%", "ATK%", "DEF%", "HP%"]
 
+    name = random.choice(artifact_names)
+    main_stat_name = random.choice(stats_flat + stats_percent)
 
-def add_artifact(name, main_stat, sub_stat1, sub_stat2):
+    # Roll value ranges
+    def roll_stat(stat):
+        if "%" in stat:
+            return round(random.uniform(3.0, 15.0), 1)  # percentage stats
+        else:
+            return random.randint(20, 100)              # flat stats
+
+    main_stat_value = roll_stat(main_stat_name)
+    
+    sub_stats_pool = [s for s in stats_flat + stats_percent if s != main_stat_name]
+    sub_stat1_name = random.choice(sub_stats_pool)
+    sub_stat1_value = roll_stat(sub_stat1_name)
+    sub_stats_pool.remove(sub_stat1_name)
+    sub_stat2_name = random.choice(sub_stats_pool)
+    sub_stat2_value = roll_stat(sub_stat2_name)
+    
+    return name, main_stat_name, main_stat_value, sub_stat1_name, sub_stat1_value, sub_stat2_name, sub_stat2_value
+
+def add_artifact(*artifact):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("INSERT INTO artifacts (name, main_stat, sub_stat1, sub_stat2) VALUES (?, ?, ?, ?)",
-                 (name, main_stat, sub_stat1, sub_stat2))
+        artifact = generate_random_artifact()
+        c.execute('''INSERT INTO artifacts 
+                    (name, main_stat_name, main_stat_value, sub_stat1_name, sub_stat1_value, sub_stat2_name, sub_stat2_value)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)''', artifact)
         conn.commit()
     finally:
         if conn:
             conn.close()
 
-def generate_random_artifact():
-    artifact_names = ["Wooden Sword", "Leather Armor", "Iron Shield", "Bronze Helmet", "Cloth Robe"]
-    stats = ["ATK", "DEF", "HP", "Crit Rate%", "SPD%", "Crit DMG%", "ATK%", "DEF%", "HP%"]
-    
-    name = random.choice(artifact_names)
-    main_stat = random.choice(stats)
-    sub_stat1 = random.choice([s for s in stats if s != main_stat])
-    sub_stat2 = random.choice([s for s in stats if s not in [main_stat, sub_stat1]])
-    
-    return name, main_stat, sub_stat1, sub_stat2
+
+def level_up_artifact(artifact_id, exp_gain):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    c.execute("SELECT level, exp, main_stat_value, sub_stat1_value, sub_stat2_value FROM artifacts WHERE id = ?", (artifact_id,))
+    data = c.fetchone()
+
+    if not data:
+        conn.close()
+        return False
+
+    level, exp, main_stat_value, sub_stat1_value, sub_stat2_value = data
+    exp += exp_gain
+
+    while exp >= 100:  # Example: 100 EXP required per level
+        exp -= 100
+        level += 1
+        main_stat_value = round(main_stat_value * 1.05, 1)  # 5% main stat growth per level
+
+        # Upgrade substats at milestone levels (5, 10, 15, 20)
+        if level in [5, 10, 15, 20]:
+            boost = round(random.uniform(1.0, 3.0), 1)
+            target_substat = random.choice(["sub_stat1_value", "sub_stat2_value"])
+            if target_substat == "sub_stat1_value":
+                sub_stat1_value += boost
+            else:
+                sub_stat2_value += boost
+
+    c.execute('''UPDATE artifacts 
+                 SET level = ?, exp = ?, main_stat_value = ?, sub_stat1_value = ?, sub_stat2_value = ?
+                 WHERE id = ?''',
+              (level, exp, main_stat_value, sub_stat1_value, sub_stat2_value, artifact_id))
+    conn.commit()
+    conn.close()
+    return True
+
 
 def view_artifacts():
     Back_Button = Button("Back", 10, 10, 100, 40, hover_color)
@@ -381,39 +439,46 @@ def view_artifacts():
     items_per_row = 3
     box_width = 220
     box_padding = 20
-    box_height = 100
-    
+    box_height = 140
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT * FROM artifacts")
     artifacts = c.fetchall()
     conn.close()
     
+    artifact_boxes = []
+
     while True:
         screen.fill(white)
         screen.blit(background_image, (0, 0))
-        
+
         start_x = (screen_width - (box_width * items_per_row + box_padding * (items_per_row-1))) // 2
         start_y = 100 + scroll_y
-        
+
+        artifact_boxes.clear()
+
         for i, artifact in enumerate(artifacts):
             row = i // items_per_row
             col = i % items_per_row
             x = start_x + col * (box_width + box_padding)
             y = start_y + row * (box_height + box_padding)
+            box = pygame.Rect(x, y, box_width, box_height)
+            artifact_boxes.append((box, artifact[0]))
             
-            pygame.draw.rect(screen, (50, 50, 50, 128), (x, y, box_width, box_height), border_radius=10)
-            
-            name_text = font_small.render(artifact[1], True, artifact_text_color)
-            stats_text = font_small.render(f"{artifact[2]}", True, artifact_text_color)
-            sub_stats = font_small.render(f"{artifact[3]} | {artifact[4]}", True, artifact_text_color)
-            
+            pygame.draw.rect(screen, (50, 50, 50, 128), box, border_radius=10)
+
+            # Draw Texts
+            name_text = font_small.render(f"{artifact[1]} (Lv.{artifact[2]})", True, artifact_text_color)
+            main_stat_text = font_small.render(f"{artifact[4]}: {artifact[5]}", True, artifact_text_color)
+            sub_stats_text = font_small.render(f"{artifact[6]}: {artifact[7]} | {artifact[8]}: {artifact[9]}", True, artifact_text_color)
+
             screen.blit(name_text, (x + 10, y + 10))
-            screen.blit(stats_text, (x + 10, y + 35))
-            screen.blit(sub_stats, (x + 10, y + 60))
-        
+            screen.blit(main_stat_text, (x + 10, y + 40))
+            screen.blit(sub_stats_text, (x + 10, y + 70))
+
         Back_Button.draw(screen)
-        
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 get_current_points()
@@ -425,12 +490,24 @@ def view_artifacts():
                 max_rows = (len(artifacts) + items_per_row - 1) // items_per_row
                 min_scroll = -((max_rows * (box_height + box_padding)) - screen_height + 150)
                 scroll_y = max(min_scroll, min(0, scroll_y))
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                pos = pygame.mouse.get_pos()
+                for box, artifact_id in artifact_boxes:
+                    if box.collidepoint(pos):
+                        level_up_artifact(artifact_id, 50)
+                        conn = sqlite3.connect(DB_PATH)
+                        c = conn.cursor()
+                        c.execute("SELECT * FROM artifacts")
+                        artifacts = c.fetchall()
+                        conn.close()
+                        break
             if Back_Button.is_clicked(event):
                 screen.fill(white)
                 screen.blit(background_image, (0, 0))
                 status_window()
-        
+
         pygame.display.flip()
+
 
 
 
