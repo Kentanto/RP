@@ -280,8 +280,6 @@ def initialize_database():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    c.execute("DROP TABLE IF EXISTS artifacts")
-    
     c.execute('''CREATE TABLE IF NOT EXISTS artifacts (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  name TEXT NOT NULL,
@@ -300,7 +298,7 @@ def initialize_database():
                  (id INTEGER PRIMARY KEY, level INTEGER, hp INTEGER, atk INTEGER, def INTEGER, spd INTEGER, mana INTEGER)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS points
-                 (id INTEGER PRIMARY KEY, points INTEGER, last_updated INTEGER)''')
+                 (id INTEGER PRIMARY KEY, points INTEGER, last_updated INTEGER, artifact_points INTEGER)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS skills
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -465,45 +463,19 @@ def draw_text(text, font, color, surface, x, y):
     surface.blit(textobj, (x, y))
 
 def get_artifact_points():
-    """Get the current artifact points from the database."""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-
-    try:
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
         c.execute("SELECT artifact_points FROM points")
-        result = c.fetchone()
-        conn.close()
-        
-        if result is None or result[0] is None:
-            update_artifact_points(500)  # Initialize with default value
-            return 500
-            
-        return result[0]
-    except sqlite3.OperationalError:
-        # If column doesn't exist, add it
-        c.execute("ALTER TABLE points ADD COLUMN artifact_points INTEGER DEFAULT 500")
-        conn.commit()
-        conn.close()
-        return 500
-    
+        return c.fetchone()[0]
+#this is where you ended, you are looking and going throught the code manually cuz ai only good for quick answers
 def update_artifact_points(points):
-    """Update the artifact points in the database."""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    try:
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()    
         c.execute("UPDATE points SET artifact_points = ?", (points,))
         conn.commit()
-    except sqlite3.OperationalError:
-        # If column doesn't exist, add it
-        c.execute("ALTER TABLE points ADD COLUMN artifact_points INTEGER DEFAULT 0")
-        c.execute("UPDATE points SET artifact_points = ?", (points,))
-        conn.commit()
-    
-    conn.close()
+        
 
 def spend_artifact_points(amount):
-    """Spend artifact points if available."""
     current = get_artifact_points()
     if current >= amount:
         update_artifact_points(current - amount)
@@ -511,7 +483,6 @@ def spend_artifact_points(amount):
     return False
 
 def add_artifact_points(amount):
-    """Add artifact points to the current total."""
     current = get_artifact_points()
     update_artifact_points(current + amount)
     return current + amount
@@ -864,11 +835,22 @@ def insufficient_points_message():
     pygame.display.flip()
     minigames_menu()
 
+def subtract_points(point_cost):
+    current_points = get_current_points()
+    if current_points >= point_cost:
+        update_points(current_points - point_cost)
+    else:
+        insufficient_points_message()
+        return 0
+
+def add_points(point_reward):
+    current_points = get_current_points()
+    update_points(current_points + point_reward)
+
 def math_activity_menu():
     current_points = get_current_points()
-    point_cost = 20
     
-    Easy_button = Button("Easy (20 points)", screen_width // 2 - 165, screen_height // 2 - 140, 330, 50, hover_color)    
+    Easy_button = Button("Easy", screen_width // 2 - 165, screen_height // 2 - 140, 330, 50, hover_color)    
     Medium_button = Button("Locked-Medium-Locked LV: 8", screen_width // 2 - 165, screen_height // 2 - 70, 330, 50, hover_color)
     Hard_button = Button("Locked-Hard-Locked Lv: 15", screen_width // 2 - 165, screen_height // 2 - 0, 330, 50, hover_color)
     Extreme_button = Button("Locked-Extreme-Locked LV: 25", screen_width // 2 - 165, screen_height // 2 + 70, 330, 50, hover_color)
@@ -879,7 +861,7 @@ def math_activity_menu():
         screen.fill(white)
         screen.blit(background_image, (0, 0))
         
-        points_text = font_medium.render(f"Points: {current_points}/{point_cost}", True, white)
+        points_text = font_medium.render(f"Points: {current_points}/{20}", True, white)
         screen.blit(points_text, (screen_width - 200, 50))
         
         Easy_button.draw(screen)
@@ -897,12 +879,9 @@ def math_activity_menu():
                 
             match event:
                 case _ if Easy_button.is_clicked(event):
-                    if current_points >= point_cost:
-                        current_points -= point_cost
-                        update_points(current_points)
+                    if current_points >= 20:
+                        subtract_points(20)                        
                         math_game_window(1)
-                    else:
-                        insufficient_points_message()
                         
                 case _ if Medium_button.is_clicked(event):
                     pass
@@ -930,6 +909,7 @@ def math_activity_menu():
     return True
 
 def math_game_window(math_difficulty):
+    mathed = math_difficulty
     user_input = ""
     equation = generate_math_equation_easy(math_difficulty)
     leave_button = Button("Leave", 10, 10, 100, 40, hover_color)
@@ -957,7 +937,7 @@ def math_game_window(math_difficulty):
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                get_current_points()
+                add_points(20)
                 cleanup()
                 pygame.quit()
                 sys.exit()
@@ -970,35 +950,28 @@ def math_game_window(math_difficulty):
                             screen.fill(white)
                             screen.blit(background_image, (0, 0))
                             
-                            # Generate artifact and add to database
                             artifact = generate_random_artifact()
                             add_artifact(*artifact)
                             
-                            # Add artifact points as reward
                             artifact_points_reward = 100
                             add_artifact_points(artifact_points_reward)
                             
-                            # Create a reward panel
                             panel_width = 600
                             panel_height = 350
                             panel_x = (screen_width - panel_width) // 2
                             panel_y = 120
                             
-                            # Draw panel background
                             panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
                             pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
                             screen.blit(panel_surface, (panel_x, panel_y))
                             
-                            # Draw success message
                             result_text = "Correct!"
                             result_surface = font_large.render(result_text, True, (0, 255, 0))
                             screen.blit(result_surface, (screen_width // 2 - result_surface.get_width() // 2, panel_y + 30))
                             
-                            # Draw artifact reward
                             name_surface = font_medium.render(f"You received: {artifact[0]}", True, gold)
                             screen.blit(name_surface, (screen_width // 2 - name_surface.get_width() // 2, panel_y + 100))
                             
-                            # Draw artifact stats
                             main_stat_text = font_small.render(f"Main Stat: {artifact[1]} +{artifact[2]}", True, white)
                             screen.blit(main_stat_text, (screen_width // 2 - main_stat_text.get_width() // 2, panel_y + 150))
                             
@@ -1008,17 +981,14 @@ def math_game_window(math_difficulty):
                             sub2_text = font_small.render(f"Sub Stat: {artifact[5]} +{artifact[6]}", True, light_gray)
                             screen.blit(sub2_text, (screen_width // 2 - sub2_text.get_width() // 2, panel_y + 210))
                             
-                            # Draw artifact points reward
                             points_text = font_medium.render(f"+{artifact_points_reward} Artifact Points", True, green)
                             screen.blit(points_text, (screen_width // 2 - points_text.get_width() // 2, panel_y + 250))
                             
-                            # Draw continue hint
                             hint_text = font_small.render("Press any key to continue...", True, white)
                             screen.blit(hint_text, (screen_width // 2 - hint_text.get_width() // 2, panel_y + 300))
                             
                             pygame.display.flip()
                             
-                            # Wait for key press to continue
                             waiting = True
                             while waiting:
                                 for evt in pygame.event.get():
@@ -1030,7 +1000,6 @@ def math_game_window(math_difficulty):
                                     if evt.type == pygame.KEYDOWN or evt.type == pygame.MOUSEBUTTONDOWN:
                                         waiting = False
                         else:
-                            # Create incorrect answer panel
                             panel_width = 600
                             panel_height = 200
                             panel_x = (screen_width - panel_width) // 2
@@ -1039,28 +1008,23 @@ def math_game_window(math_difficulty):
                             screen.fill(white)
                             screen.blit(background_image, (0, 0))
                             
-                            # Draw panel background
                             panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
                             pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
                             screen.blit(panel_surface, (panel_x, panel_y))
                             
-                            # Draw incorrect message
                             result_text = "Incorrect!"
                             result_surface = font_large.render(result_text, True, red)
                             screen.blit(result_surface, (screen_width // 2 - result_surface.get_width() // 2, panel_y + 30))
                             
-                            # Draw correct answer
                             answer_text = f"The correct answer is: {rounded_answer}"
                             answer_surface = font_medium.render(answer_text, True, white)
                             screen.blit(answer_surface, (screen_width // 2 - answer_surface.get_width() // 2, panel_y + 90))
                             
-                            # Draw continue hint
                             hint_text = font_small.render("Press any key to continue...", True, white)
                             screen.blit(hint_text, (screen_width // 2 - hint_text.get_width() // 2, panel_y + 150))
                             
                             pygame.display.flip()
                             
-                            # Wait for key press to continue
                             waiting = True
                             while waiting:
                                 for evt in pygame.event.get():
@@ -1072,11 +1036,11 @@ def math_game_window(math_difficulty):
                                     if evt.type == pygame.KEYDOWN or evt.type == pygame.MOUSEBUTTONDOWN:
                                         waiting = False
 
-                        # Return to math activity menu
                         screen.fill(white)
                         screen.blit(background_image, (0, 0))
                         pygame.display.flip()
-                        math_activity_menu()
+                        subtract_points(20)
+                        math_game_window(mathed)
                                        
                     except ValueError:
                         print("Invalid input. Please enter a numeric value.")
@@ -1090,6 +1054,7 @@ def math_game_window(math_difficulty):
                 screen.fill(white)
                 screen.blit(background_image, (0, 0))
                 pygame.display.flip()
+                add_points(20)
                 math_activity_menu()
 
         pygame.display.flip()
