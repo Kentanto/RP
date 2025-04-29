@@ -280,20 +280,21 @@ def initialize_database():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # DROP old artifacts table if exists
     c.execute("DROP TABLE IF EXISTS artifacts")
     
-    c.execute('''CREATE TABLE IF NOT EXISTS artifacts
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  name TEXT NOT NULL,
-                  level INTEGER DEFAULT 0,
-                  exp INTEGER DEFAULT 0,
-                  main_stat_name TEXT NOT NULL,
-                  main_stat_value REAL NOT NULL,
-                  sub_stat1_name TEXT,
-                  sub_stat1_value REAL,
-                  sub_stat2_name TEXT,
-                  sub_stat2_value REAL)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS artifacts (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 name TEXT NOT NULL,
+                 main_stat TEXT NOT NULL,
+                 main_stat_value REAL NOT NULL,
+                 sub_stat1 TEXT NOT NULL,
+                 sub_stat1_value REAL NOT NULL,
+                 sub_stat2 TEXT NOT NULL,
+                 sub_stat2_value REAL NOT NULL,
+                 level INTEGER DEFAULT 0,
+                 exp INTEGER DEFAULT 0,
+                 max_level INTEGER DEFAULT 20
+                 )''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS stats
                  (id INTEGER PRIMARY KEY, level INTEGER, hp INTEGER, atk INTEGER, def INTEGER, spd INTEGER, mana INTEGER)''')
@@ -356,80 +357,343 @@ def get_current_points():
 
 def generate_random_artifact():
     artifact_names = ["Wooden Sword", "Leather Armor", "Iron Shield", "Bronze Helmet", "Cloth Robe"]
-    stats_flat = ["ATK", "DEF", "HP"]
-    stats_percent = ["Crit Rate%", "SPD%", "Crit DMG%", "ATK%", "DEF%", "HP%"]
-
+    stats = ["ATK", "DEF", "HP", "Crit Rate%", "SPD%", "Crit DMG%", "ATK%", "DEF%", "HP%"]
+    
     name = random.choice(artifact_names)
-    main_stat_name = random.choice(stats_flat + stats_percent)
+    main_stat = random.choice(stats)
+    sub_stat1 = random.choice([s for s in stats if s != main_stat])
+    sub_stat2 = random.choice([s for s in stats if s not in [main_stat, sub_stat1]])
 
-    # Roll value ranges
-    def roll_stat(stat):
-        if "%" in stat:
-            return round(random.uniform(3.0, 15.0), 1)  # percentage stats
-        else:
-            return random.randint(20, 100)              # flat stats
-
-    main_stat_value = roll_stat(main_stat_name)
+    main_stat_value = roll_stat(main_stat)
+    sub_stat1_value = roll_stat(sub_stat1)
+    sub_stat2_value = roll_stat(sub_stat2)
     
-    sub_stats_pool = [s for s in stats_flat + stats_percent if s != main_stat_name]
-    sub_stat1_name = random.choice(sub_stats_pool)
-    sub_stat1_value = roll_stat(sub_stat1_name)
-    sub_stats_pool.remove(sub_stat1_name)
-    sub_stat2_name = random.choice(sub_stats_pool)
-    sub_stat2_value = roll_stat(sub_stat2_name)
-    
-    return name, main_stat_name, main_stat_value, sub_stat1_name, sub_stat1_value, sub_stat2_name, sub_stat2_value
+    return (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)
 
-def add_artifact(*artifact):
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        artifact = generate_random_artifact()
-        c.execute('''INSERT INTO artifacts 
-                    (name, main_stat_name, main_stat_value, sub_stat1_name, sub_stat1_value, sub_stat2_name, sub_stat2_value)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)''', artifact)
-        conn.commit()
-    finally:
-        if conn:
-            conn.close()
+def roll_stat(stat_name):
+    """Roll a value depending on whether stat is % or flat."""
+    if "%" in stat_name:
+        return round(random.uniform(3.0, 7.5), 1)
+    else:
+        return random.randint(30, 100)
 
-
-def level_up_artifact(artifact_id, exp_gain):
+def add_artifact(name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    c.execute('''INSERT INTO artifacts (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)''',
+              (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value))
+    conn.commit()
+    conn.close()
 
-    c.execute("SELECT level, exp, main_stat_value, sub_stat1_value, sub_stat2_value FROM artifacts WHERE id = ?", (artifact_id,))
-    data = c.fetchone()
-
-    if not data:
+def level_up_artifact(artifact_id, feed_exp):
+    """Levels up the artifact by feeding EXP."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT level, exp, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, max_level FROM artifacts WHERE id=?", (artifact_id,))
+    artifact = c.fetchone()
+    
+    if not artifact:
         conn.close()
         return False
-
-    level, exp, main_stat_value, sub_stat1_value, sub_stat2_value = data
-    exp += exp_gain
-
-    while exp >= 100:  # Example: 100 EXP required per level
-        exp -= 100
+        
+    level, exp, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, max_level = artifact
+    
+    # Check if already at max level
+    if level >= max_level:
+        conn.close()
+        return False
+    
+    # Add experience
+    exp += feed_exp
+    exp_required = 100 + (level * 20)
+    levels_gained = 0
+    stats_improved = []
+    
+    # Level up as many times as possible
+    while exp >= exp_required and level < max_level:
+        exp -= exp_required
         level += 1
-        main_stat_value = round(main_stat_value * 1.05, 1)  # 5% main stat growth per level
+        levels_gained += 1
+        exp_required = 100 + (level * 20)
 
-        # Upgrade substats at milestone levels (5, 10, 15, 20)
-        if level in [5, 10, 15, 20]:
-            boost = round(random.uniform(1.0, 3.0), 1)
-            target_substat = random.choice(["sub_stat1_value", "sub_stat2_value"])
-            if target_substat == "sub_stat1_value":
-                sub_stat1_value += boost
+        # Improve main stat
+        old_main_value = main_stat_value
+        if "%" in main_stat:
+            main_stat_value += round(random.uniform(0.3, 0.7), 1)
+        else:
+            main_stat_value += random.randint(5, 10)
+        stats_improved.append(("main", main_stat, old_main_value, main_stat_value))
+
+        # Every 4 levels, improve a sub stat
+        if level % 4 == 0:
+            chosen_sub = random.choice(["sub_stat1", "sub_stat2"])
+            if chosen_sub == "sub_stat1":
+                old_sub_value = sub_stat1_value
+                if "%" in sub_stat1:
+                    sub_stat1_value += round(random.uniform(0.5, 1.2), 1)
+                else:
+                    sub_stat1_value += random.randint(10, 20)
+                stats_improved.append(("sub1", sub_stat1, old_sub_value, sub_stat1_value))
             else:
-                sub_stat2_value += boost
-
-    c.execute('''UPDATE artifacts 
-                 SET level = ?, exp = ?, main_stat_value = ?, sub_stat1_value = ?, sub_stat2_value = ?
-                 WHERE id = ?''',
+                old_sub_value = sub_stat2_value
+                if "%" in sub_stat2:
+                    sub_stat2_value += round(random.uniform(0.5, 1.2), 1)
+                else:
+                    sub_stat2_value += random.randint(10, 20)
+                stats_improved.append(("sub2", sub_stat2, old_sub_value, sub_stat2_value))
+    
+    # Update the artifact in the database
+    c.execute('''UPDATE artifacts
+                 SET level=?, exp=?, main_stat_value=?, sub_stat1_value=?, sub_stat2_value=?
+                 WHERE id=?''',
               (level, exp, main_stat_value, sub_stat1_value, sub_stat2_value, artifact_id))
     conn.commit()
     conn.close()
-    return True
+    
+    # Return information about the upgrade
+    return {
+        "levels_gained": levels_gained,
+        "stats_improved": stats_improved,
+        "new_level": level,
+        "exp": exp,
+        "exp_required": exp_required
+    }
+
+def draw_text(text, font, color, surface, x, y):
+    textobj = font.render(text, True, color)
+    surface.blit(textobj, (x, y))
+
+def get_artifact_points():
+    """Get the current artifact points from the database."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    try:
+        c.execute("SELECT artifact_points FROM points")
+        result = c.fetchone()
+        conn.close()
+        
+        if result is None or result[0] is None:
+            update_artifact_points(500)  # Initialize with default value
+            return 500
+            
+        return result[0]
+    except sqlite3.OperationalError:
+        # If column doesn't exist, add it
+        c.execute("ALTER TABLE points ADD COLUMN artifact_points INTEGER DEFAULT 500")
+        conn.commit()
+        conn.close()
+        return 500
+    
+def update_artifact_points(points):
+    """Update the artifact points in the database."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    try:
+        c.execute("UPDATE points SET artifact_points = ?", (points,))
+        conn.commit()
+    except sqlite3.OperationalError:
+        # If column doesn't exist, add it
+        c.execute("ALTER TABLE points ADD COLUMN artifact_points INTEGER DEFAULT 0")
+        c.execute("UPDATE points SET artifact_points = ?", (points,))
+        conn.commit()
+    
+    conn.close()
+
+def spend_artifact_points(amount):
+    """Spend artifact points if available."""
+    current = get_artifact_points()
+    if current >= amount:
+        update_artifact_points(current - amount)
+        return True
+    return False
+
+def add_artifact_points(amount):
+    """Add artifact points to the current total."""
+    current = get_artifact_points()
+    update_artifact_points(current + amount)
+    return current + amount
+
+
+def open_artifact_detail(artifact_id):
+    running = True
+    back_button = Button("Back", 10, 10, 100, 40, hover_color)
+    feed_button = Button("Feed EXP", 50, 420, 200, 50, (0, 150, 0, 200))
+    
+    # Cost for feeding exp
+    feed_cost = 50
+    feed_exp_amount = 200
+    
+    # Animation variables
+    showing_upgrade = False
+    upgrade_info = None
+    upgrade_start_time = 0
+    upgrade_duration = 2000  # 2 seconds
+    
+    while running:
+        current_time = pygame.time.get_ticks()
+        screen.fill(white)
+        screen.blit(background_image, (0, 0))
+        
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, level, exp, max_level FROM artifacts WHERE id=?", (artifact_id,))
+        artifact = c.fetchone()
+        conn.close()
+
+        if not artifact:
+            return
+
+        name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, level, exp, max_level = artifact
+        
+        # Get current artifact points
+        artifact_points = get_artifact_points()
+
+        # Draw artifact details in a nice panel
+        panel_width = 600
+        panel_height = 400
+        panel_x = (screen_width - panel_width) // 2
+        panel_y = 80
+        
+        # Draw panel background
+        panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+        pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
+        screen.blit(panel_surface, (panel_x, panel_y))
+        
+        # Draw artifact name with fancy styling
+        name_text = font_large.render(f"{name}", True, gold)
+        screen.blit(name_text, (panel_x + (panel_width - name_text.get_width()) // 2, panel_y + 20))
+        
+        # Draw level with progress bar
+        level_text = font_medium.render(f"Level: {level}/{max_level}", True, white)
+        screen.blit(level_text, (panel_x + 30, panel_y + 80))
+        
+        # Draw stats with icons and better formatting
+        stat_y = panel_y + 130
+        stat_spacing = 50
+        
+        # Main stat (larger and highlighted)
+        main_stat_text = font_medium.render(f"Main Stat: {main_stat}", True, gold)
+        main_value_text = font_medium.render(f"+{main_stat_value}", True, gold)
+        screen.blit(main_stat_text, (panel_x + 30, stat_y))
+        screen.blit(main_value_text, (panel_x + panel_width - 150, stat_y))
+        
+        # Sub stats
+        sub1_stat_text = font_small.render(f"Sub Stat: {sub_stat1}", True, white)
+        sub1_value_text = font_small.render(f"+{sub_stat1_value}", True, white)
+        screen.blit(sub1_stat_text, (panel_x + 30, stat_y + stat_spacing))
+        screen.blit(sub1_value_text, (panel_x + panel_width - 150, stat_y + stat_spacing))
+        
+        sub2_stat_text = font_small.render(f"Sub Stat: {sub_stat2}", True, white)
+        sub2_value_text = font_small.render(f"+{sub_stat2_value}", True, white)
+        screen.blit(sub2_stat_text, (panel_x + 30, stat_y + stat_spacing * 2))
+        screen.blit(sub2_value_text, (panel_x + panel_width - 150, stat_y + stat_spacing * 2))
+        
+        # Experience bar
+        exp_required = 100 + (level * 20)
+        exp_ratio = min(exp / exp_required, 1.0)
+        bar_width = 500
+        bar_height = 20
+        bar_x = panel_x + (panel_width - bar_width) // 2
+        bar_y = panel_y + 280
+        
+        # Draw background bar
+        pygame.draw.rect(screen, (80, 80, 80), (bar_x, bar_y, bar_width, bar_height), border_radius=5)
+        # Draw filled portion
+        pygame.draw.rect(screen, (100, 150, 255), (bar_x, bar_y, bar_width * exp_ratio, bar_height), border_radius=5)
+        
+        exp_text = font_small.render(f"EXP: {exp}/{exp_required}", True, white)
+        screen.blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2, bar_y + 25))
+        
+        # Draw artifact points
+        points_text = font_medium.render(f"Artifact Points: {artifact_points}", True, white)
+        screen.blit(points_text, (screen_width - points_text.get_width() - 20, 20))
+        
+        # Draw feed cost
+        feed_cost_text = font_small.render(f"Cost: {feed_cost} points", True, 
+                                          green if artifact_points >= feed_cost else red)
+        screen.blit(feed_cost_text, (feed_button.x + feed_button.width + 10, feed_button.y + 15))
+        
+        # Draw buttons
+        back_button.draw(screen)
+        
+        # Only show feed button if not at max level
+        if level < max_level:
+            feed_button.draw(screen)
+        else:
+            max_level_text = font_medium.render("Maximum Level Reached!", True, gold)
+            screen.blit(max_level_text, (screen_width // 2 - max_level_text.get_width() // 2, feed_button.y + 15))
+        
+        # Show upgrade animation if active
+        if showing_upgrade and upgrade_info:
+            progress = min(1.0, (current_time - upgrade_start_time) / upgrade_duration)
+            
+            if progress < 1.0:
+                # Draw upgrade panel
+                upgrade_panel = pygame.Surface((400, 300), pygame.SRCALPHA)
+                pygame.draw.rect(upgrade_panel, (0, 0, 0, 180), upgrade_panel.get_rect(), border_radius=10)
+                screen.blit(upgrade_panel, (screen_width // 2 - 200, screen_height // 2 - 150))
+                
+                # Draw level up text
+                level_up_text = font_medium.render(f"Level Up! +{upgrade_info['levels_gained']}", True, gold)
+                screen.blit(level_up_text, (screen_width // 2 - level_up_text.get_width() // 2, screen_height // 2 - 120))
+                
+                # Draw stats improvements
+                y_offset = screen_height // 2 - 60
+                for stat_type, stat_name, old_value, new_value in upgrade_info['stats_improved']:
+                    # Calculate interpolated value based on animation progress
+                    current_value = old_value + (new_value - old_value) * progress
+                    
+                    if stat_type == "main":
+                        stat_text = font_small.render(f"Main Stat: {stat_name}", True, gold)
+                    elif stat_type == "sub1":
+                        stat_text = font_small.render(f"Sub Stat: {stat_name}", True, white)
+                    else:
+                        stat_text = font_small.render(f"Sub Stat: {stat_name}", True, white)
+                    
+                    value_text = font_small.render(f"{old_value:.1f} → {current_value:.1f}", True, green)
+                    
+                    screen.blit(stat_text, (screen_width // 2 - 180, y_offset))
+                    screen.blit(value_text, (screen_width // 2 + 50, y_offset))
+                    
+                    y_offset += 40
+            else:
+                showing_upgrade = False
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    mx, my = pygame.mouse.get_pos()
+
+                    if feed_button.is_hovered((mx, my)) and level < max_level:
+                        if spend_artifact_points(feed_cost):
+                            # Level up the artifact and get upgrade info
+                            upgrade_result = level_up_artifact(artifact_id, feed_exp_amount)
+                            
+                            if upgrade_result and upgrade_result["levels_gained"] > 0:
+                                # Start upgrade animation
+                                showing_upgrade = True
+                                upgrade_info = upgrade_result
+                                upgrade_start_time = current_time
+                                
+                                # Play a sound effect
+                                if pygame.mixer.get_init():
+                                    try:
+                                        upgrade_sound = pygame.mixer.Sound(os.path.join(base_path, "sounds", "upgrade.wav"))
+                                        upgrade_sound.play()
+                                    except:
+                                        pass
+
+                    if back_button.is_hovered((mx, my)):
+                        running = False
+
+        pygame.display.update()
 
 
 def view_artifacts():
@@ -448,10 +712,20 @@ def view_artifacts():
     conn.close()
     
     artifact_boxes = []
+    
+    # Get artifact points for display
+    artifact_points = get_artifact_points()
 
     while True:
         screen.fill(white)
         screen.blit(background_image, (0, 0))
+        
+        # Draw title and points
+        title_text = font_large.render("Artifacts", True, gold)
+        screen.blit(title_text, (screen_width // 2 - title_text.get_width() // 2, 30))
+        
+        points_text = font_medium.render(f"Artifact Points: {artifact_points}", True, white)
+        screen.blit(points_text, (screen_width - points_text.get_width() - 20, 20))
 
         start_x = (screen_width - (box_width * items_per_row + box_padding * (items_per_row-1))) // 2
         start_y = 100 + scroll_y
@@ -466,16 +740,26 @@ def view_artifacts():
             box = pygame.Rect(x, y, box_width, box_height)
             artifact_boxes.append((box, artifact[0]))
             
-            pygame.draw.rect(screen, (50, 50, 50, 128), box, border_radius=10)
+            # Draw a nicer box with gradient and border
+            box_surface = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
+            pygame.draw.rect(box_surface, (50, 50, 50, 200), box_surface.get_rect(), border_radius=10)
+            pygame.draw.rect(box_surface, (80, 80, 80, 100), box_surface.get_rect(), width=2, border_radius=10)
+            screen.blit(box_surface, (x, y))
 
-            # Draw Texts
-            name_text = font_small.render(f"{artifact[1]} (Lv.{artifact[2]})", True, artifact_text_color)
-            main_stat_text = font_small.render(f"{artifact[4]}: {artifact[5]}", True, artifact_text_color)
-            sub_stats_text = font_small.render(f"{artifact[6]}: {artifact[7]} | {artifact[8]}: {artifact[9]}", True, artifact_text_color)
+            # Draw Texts with better formatting
+            name_text = font_small.render(f"{artifact[1]}", True, gold)
+            level_text = font_small.render(f"Lv.{artifact[8]}/{artifact[10]}", True, artifact_text_color)
+            main_stat_text = font_small.render(f"{artifact[2]}: +{artifact[3]}", True, white)
+            sub_stats_text = font_small.render(f"{artifact[4]}: +{artifact[5]} | {artifact[6]}: +{artifact[7]}", True, light_gray)
 
             screen.blit(name_text, (x + 10, y + 10))
+            screen.blit(level_text, (x + box_width - level_text.get_width() - 10, y + 10))
             screen.blit(main_stat_text, (x + 10, y + 40))
             screen.blit(sub_stats_text, (x + 10, y + 70))
+            
+            # Add a small "click to view" hint
+            hint_text = font_small.render("Click to view", True, (150, 150, 150))
+            screen.blit(hint_text, (x + (box_width - hint_text.get_width()) // 2, y + box_height - 30))
 
         Back_Button.draw(screen)
 
@@ -494,7 +778,10 @@ def view_artifacts():
                 pos = pygame.mouse.get_pos()
                 for box, artifact_id in artifact_boxes:
                     if box.collidepoint(pos):
-                        level_up_artifact(artifact_id, 50)
+                        open_artifact_detail(artifact_id)
+                        # Refresh artifact points after returning from detail view
+                        artifact_points = get_artifact_points()
+                        # Refresh artifacts list in case they were upgraded
                         conn = sqlite3.connect(DB_PATH)
                         c = conn.cursor()
                         c.execute("SELECT * FROM artifacts")
@@ -683,39 +970,113 @@ def math_game_window(math_difficulty):
                             screen.fill(white)
                             screen.blit(background_image, (0, 0))
                             
+                            # Generate artifact and add to database
                             artifact = generate_random_artifact()
                             add_artifact(*artifact)
                             
+                            # Add artifact points as reward
+                            artifact_points_reward = 100
+                            add_artifact_points(artifact_points_reward)
+                            
+                            # Create a reward panel
+                            panel_width = 600
+                            panel_height = 350
+                            panel_x = (screen_width - panel_width) // 2
+                            panel_y = 120
+                            
+                            # Draw panel background
+                            panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+                            pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
+                            screen.blit(panel_surface, (panel_x, panel_y))
+                            
+                            # Draw success message
                             result_text = "Correct!"
                             result_surface = font_large.render(result_text, True, (0, 255, 0))
-                            screen.blit(result_surface, (screen_width // 2 - result_surface.get_width() // 2, 200))
+                            screen.blit(result_surface, (screen_width // 2 - result_surface.get_width() // 2, panel_y + 30))
                             
-                            name_surface = font_medium.render(f"You received: {artifact[0]}", True, purple)
-                            screen.blit(name_surface, (screen_width // 2 - name_surface.get_width() // 2, 280))
+                            # Draw artifact reward
+                            name_surface = font_medium.render(f"You received: {artifact[0]}", True, gold)
+                            screen.blit(name_surface, (screen_width // 2 - name_surface.get_width() // 2, panel_y + 100))
                             
-                            stats_text = f"Main: {artifact[1]}  |  Sub1: {artifact[2]}  |  Sub2: {artifact[3]}"
-                            stats_surface = font_small.render(stats_text, True, gold)
-                            screen.blit(stats_surface, (screen_width // 2 - stats_surface.get_width() // 2, 330))
+                            # Draw artifact stats
+                            main_stat_text = font_small.render(f"Main Stat: {artifact[1]} +{artifact[2]}", True, white)
+                            screen.blit(main_stat_text, (screen_width // 2 - main_stat_text.get_width() // 2, panel_y + 150))
+                            
+                            sub1_text = font_small.render(f"Sub Stat: {artifact[3]} +{artifact[4]}", True, light_gray)
+                            screen.blit(sub1_text, (screen_width // 2 - sub1_text.get_width() // 2, panel_y + 180))
+                            
+                            sub2_text = font_small.render(f"Sub Stat: {artifact[5]} +{artifact[6]}", True, light_gray)
+                            screen.blit(sub2_text, (screen_width // 2 - sub2_text.get_width() // 2, panel_y + 210))
+                            
+                            # Draw artifact points reward
+                            points_text = font_medium.render(f"+{artifact_points_reward} Artifact Points", True, green)
+                            screen.blit(points_text, (screen_width // 2 - points_text.get_width() // 2, panel_y + 250))
+                            
+                            # Draw continue hint
+                            hint_text = font_small.render("Press any key to continue...", True, white)
+                            screen.blit(hint_text, (screen_width // 2 - hint_text.get_width() // 2, panel_y + 300))
                             
                             pygame.display.flip()
-                            pygame.time.wait(2000) 
+                            
+                            # Wait for key press to continue
+                            waiting = True
+                            while waiting:
+                                for evt in pygame.event.get():
+                                    if evt.type == pygame.QUIT:
+                                        get_current_points()
+                                        cleanup()
+                                        pygame.quit()
+                                        sys.exit()
+                                    if evt.type == pygame.KEYDOWN or evt.type == pygame.MOUSEBUTTONDOWN:
+                                        waiting = False
                         else:
-                            result_text = f"Incorrect. The correct answer is: {rounded_answer}"
-                            result_color = (255, 0, 0)
-
+                            # Create incorrect answer panel
+                            panel_width = 600
+                            panel_height = 200
+                            panel_x = (screen_width - panel_width) // 2
+                            panel_y = 200
+                            
                             screen.fill(white)
                             screen.blit(background_image, (0, 0))
-                            result_surface = font.render(result_text, True, result_color)
-                            screen.blit(result_surface, (screen_width // 2 - result_surface.get_width() // 2, 300))
+                            
+                            # Draw panel background
+                            panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+                            pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
+                            screen.blit(panel_surface, (panel_x, panel_y))
+                            
+                            # Draw incorrect message
+                            result_text = "Incorrect!"
+                            result_surface = font_large.render(result_text, True, red)
+                            screen.blit(result_surface, (screen_width // 2 - result_surface.get_width() // 2, panel_y + 30))
+                            
+                            # Draw correct answer
+                            answer_text = f"The correct answer is: {rounded_answer}"
+                            answer_surface = font_medium.render(answer_text, True, white)
+                            screen.blit(answer_surface, (screen_width // 2 - answer_surface.get_width() // 2, panel_y + 90))
+                            
+                            # Draw continue hint
+                            hint_text = font_small.render("Press any key to continue...", True, white)
+                            screen.blit(hint_text, (screen_width // 2 - hint_text.get_width() // 2, panel_y + 150))
+                            
                             pygame.display.flip()
-                            pygame.time.wait(2000)
+                            
+                            # Wait for key press to continue
+                            waiting = True
+                            while waiting:
+                                for evt in pygame.event.get():
+                                    if evt.type == pygame.QUIT:
+                                        get_current_points()
+                                        cleanup()
+                                        pygame.quit()
+                                        sys.exit()
+                                    if evt.type == pygame.KEYDOWN or evt.type == pygame.MOUSEBUTTONDOWN:
+                                        waiting = False
 
-                        pygame.display.flip()
+                        # Return to math activity menu
                         screen.fill(white)
                         screen.blit(background_image, (0, 0))
                         pygame.display.flip()
                         math_activity_menu()
-                        
                                        
                     except ValueError:
                         print("Invalid input. Please enter a numeric value.")
@@ -793,6 +1154,9 @@ def status_window():
         "mana": 0,
     }
     
+    # Get artifact points
+    artifact_points = get_artifact_points()
+    
     running = True
     while running:
         screen.fill(white)
@@ -806,6 +1170,9 @@ def status_window():
             stat_text = font_medium.render(f"{stat}: {value}", True, stat_text_color)
             screen.blit(stat_text, (screen_width//2 - stat_text.get_width()//2, y_offset))
             y_offset += 60
+        
+        artifact_points_text = font_medium.render(f"Artifact Points: {artifact_points}", True, gold)
+        screen.blit(artifact_points_text, (screen_width//2 - artifact_points_text.get_width()//2, y_offset))
         
         Back_Button.draw(screen)
         Skill_menu.draw(screen)
