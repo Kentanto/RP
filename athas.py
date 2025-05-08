@@ -28,6 +28,10 @@ font_medium = pygame.font.SysFont(None, 40)
 font_small = pygame.font.SysFont(None, 30)
 font = pygame.font.SysFont(None, 55)
 
+ui_hover_sound = None
+ui_click_sound = None
+ui_back_sound = None
+
 
 white = (255, 255, 255)
 black = (0, 0, 0)
@@ -56,7 +60,6 @@ artifact_text_color = (147, 112, 219)
     
 
 def initial_startup():
-    organize_image_files()
     fade_in()
     send_launcher_back()
     main_menu()
@@ -76,10 +79,12 @@ def send_launcher_back():
                 pass
 
     
-def organize_image_files():
+def organize_files():
     image_extensions = ('.png', '.jpg', '.jpeg', '.webp', '.ico')
-    icons_dir = 'icons'
-    icons_path = os.path.join(base_path, icons_dir)
+    sound_extensions = ('.wav', '.mp3', '.ogg', '.flac', '.m4a')
+    icons_path = os.path.join(base_path, "icons")
+    sounds_path = os.path.join(base_path, "sounds")
+
     
     if not os.path.exists(icons_path):
         os.makedirs(icons_path)
@@ -88,12 +93,25 @@ def organize_image_files():
         if file.lower().endswith(image_extensions):
             source = os.path.join(base_path, file)
             destination = os.path.join(icons_path, file)
-            if not os.path.exists(destination):
-                os.rename(source, destination)
+            try:
+                if not os.path.exists(destination):
+                    os.rename(source, destination)
+            except:
+                os.mkdir(icons_path)
+                if not os.path.exists(destination):
+                    os.rename(source, destination)
+        elif file.lower().endswith(sound_extensions):
+            source = os.path.join(base_path, file)
+            destination = os.path.join(sounds_path, file)
+            try:
+                if not os.path.exists(destination):
+                    os.rename(source, destination)
+            except:
+                os.mkdir(sounds_path)
+                if not os.path.exists(destination):
+                    os.rename(source, destination)
 
 
-
-organize_image_files()
 
 def fade_out_music():
     if not pygame.mixer.get_init():
@@ -124,6 +142,31 @@ def fade_in():
     loading_time = 2700
     fade_surface = pygame.Surface((screen_width, screen_height))
     fade_surface.fill(black)
+    song_durations = {
+        "feelGood.mp3": 53,
+        "haldis.mp3": 73,
+        "spell.mp3": 62,
+        "mortals.mp3": 44,
+        "worldBurn.mp3": 59,
+        "shakeDown.mp3": 53,
+        "disconnected.mp3": 47,
+        "noSound.mp3": 73,
+        "mySide.mp3": 50,
+        "bornForThis.mp3": 56,
+        "theEdge.mp3": 50,
+        "invisible.mp3": 85,
+        "myHeart.mp3": 68,
+        "nekozilla.mp3": 47,
+        "linked.mp3": 50,
+        "ark.mp3": 53,
+        "matafaka.mp3": 54,
+        "whereWeStarted.mp3": 62,
+        "fearless.mp3": 62,
+        "brass.mp3": 55,
+        "erika.mp3": 45,
+        "departure.mp3": 47,
+        "watchTheMoon.mp3": 61,
+    }
 
     if pygame.mixer.get_init() is None:
         print("no audio sorry")
@@ -167,31 +210,6 @@ def fade_in():
             pygame.mixer.music.play(1)
 
 
-    song_durations = {
-        "feelGood.mp3": 53,
-        "haldis.mp3": 73,
-        "spell.mp3": 62,
-        "mortals.mp3": 44,
-        "worldBurn.mp3": 59,
-        "shakeDown.mp3": 53,
-        "disconnected.mp3": 47,
-        "noSound.mp3": 73,
-        "mySide.mp3": 50,
-        "bornForThis.mp3": 56,
-        "theEdge.mp3": 50,
-        "invisible.mp3": 85,
-        "myHeart.mp3": 68,
-        "nekozilla.mp3": 47,
-        "linked.mp3": 50,
-        "ark.mp3": 53,
-        "matafaka.mp3": 54,
-        "whereWeStarted.mp3": 62,
-        "fearless.mp3": 62,
-        "brass.mp3": 55,
-        "erika.mp3": 45,
-        "departure.mp3": 47,
-        "watchTheMoon.mp3": 61,
-    }
 
     start_time = pygame.time.get_ticks()
     last_reported_progress = -1
@@ -237,17 +255,26 @@ background_image = pygame.transform.scale(background_image, (screen_width, scree
 
 
 class Button:
-    def __init__(self, text, x, y, width, height, hover_color=(255, 255, 255, 128)):
+    def __init__(self, text, x, y, width, height, hover_color=(255, 255, 255, 128), is_back_button=False):
         self.text = text
         self.x = x
         self.y = y
         self.width = width
         self.height = height
         self.hover_color = hover_color
+        self.was_hovered = False  # Track previous hover state
+        self.is_back_button = is_back_button  # Flag for back/leave buttons
 
     def draw(self, screen):
         mouse_pos = pygame.mouse.get_pos()
         is_hovered = self.is_hovered(mouse_pos)
+        
+        # Play hover sound when first hovering
+        if is_hovered and not self.was_hovered and ui_hover_sound:
+            ui_hover_sound.play()
+        
+        self.was_hovered = is_hovered
+        
         text_surface = font.render(self.text, True, white)
         text_width = text_surface.get_width()
         text_height = text_surface.get_height()
@@ -269,8 +296,14 @@ class Button:
         return self.x <= mouse_pos[0] <= self.x + self.width and self.y <= mouse_pos[1] <= self.y + self.height
 
     def is_clicked(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            return self.is_hovered(pygame.mouse.get_pos())
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.is_hovered(pygame.mouse.get_pos()):
+                # Play appropriate click sound
+                if self.is_back_button and ui_back_sound:
+                    ui_back_sound.play()
+                elif ui_click_sound:
+                    ui_click_sound.play()
+                return True
         return False
 
 def initialize_database():    
@@ -327,30 +360,28 @@ def initialize_database():
 
 
 def get_current_points():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
 
-    c.execute("SELECT points, last_updated FROM points")
-    result = c.fetchone()
-    
-    if result is None:
-        return 600
+        c.execute("SELECT points, last_updated FROM points")
+        result = c.fetchone()
+        
+        if result is None:
+            return 600
 
-    current_points, last_updated = result
-    elapsed_seconds = int(time.time()) - last_updated
-    elapsed_minutes = elapsed_seconds // 60
+        current_points, last_updated = result
+        elapsed_seconds = int(time.time()) - last_updated
+        elapsed_minutes = elapsed_seconds // 60
 
-    if elapsed_minutes > 0:
-        new_points = min(600, current_points + elapsed_minutes)
-        last_updated = int(time.time())
+        if elapsed_minutes > 0:
+            new_points = min(600, current_points + elapsed_minutes)
+            last_updated = int(time.time())
 
-        c.execute("UPDATE points SET points = ?, last_updated = ?", (new_points, last_updated))
-        conn.commit()
-        conn.close()
-        return new_points
-    
-    conn.close()
-    return current_points
+            c.execute("UPDATE points SET points = ?, last_updated = ?", (new_points, last_updated))
+            conn.commit()
+            return new_points
+        
+        return current_points
 
 
 def generate_random_artifact():
@@ -369,90 +400,84 @@ def generate_random_artifact():
     return (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)
 
 def roll_stat(stat_name):
-    """Roll a value depending on whether stat is % or flat."""
     if "%" in stat_name:
         return round(random.uniform(3.0, 7.5), 1)
     else:
         return random.randint(30, 100)
 
 def add_artifact(name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''INSERT INTO artifacts (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)''',
-              (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute('''INSERT INTO artifacts (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value))
+        conn.commit()
 
 def level_up_artifact(artifact_id, feed_exp):
-    """Levels up the artifact by feeding EXP."""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT level, exp, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, max_level FROM artifacts WHERE id=?", (artifact_id,))
-    artifact = c.fetchone()
-    
-    if not artifact:
-        conn.close()
-        return False
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT level, exp, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, max_level FROM artifacts WHERE id=?", (artifact_id,))
+        artifact = c.fetchone()
         
-    level, exp, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, max_level = artifact
-    
-    # Check if already at max level
-    if level >= max_level:
-        conn.close()
-        return False
-    
-    # Add experience
-    exp += feed_exp
-    exp_required = 100 + (level * 20)
-    levels_gained = 0
-    stats_improved = []
-    
-    # Level up as many times as possible
-    while exp >= exp_required and level < max_level:
-        exp -= exp_required
-        level += 1
-        levels_gained += 1
+        if not artifact:
+            return False
+            
+        level, exp, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, max_level = artifact
+        
+        if level >= max_level:
+            return False
+        
+        initial_main_value = main_stat_value
+        initial_sub1_value = sub_stat1_value
+        initial_sub2_value = sub_stat2_value
+        
+        exp += feed_exp
         exp_required = 100 + (level * 20)
+        levels_gained = 0
+        stats_improved = {}
+        
+        while exp >= exp_required and level < max_level:
+            exp -= exp_required
+            level += 1
+            levels_gained += 1
+            exp_required = 100 + (level * 20)
 
-        # Improve main stat
-        old_main_value = main_stat_value
-        if "%" in main_stat:
-            main_stat_value += round(random.uniform(0.3, 0.7), 1)
-        else:
-            main_stat_value += random.randint(5, 10)
-        stats_improved.append(("main", main_stat, old_main_value, main_stat_value))
-
-        # Every 4 levels, improve a sub stat
-        if level % 4 == 0:
-            chosen_sub = random.choice(["sub_stat1", "sub_stat2"])
-            if chosen_sub == "sub_stat1":
-                old_sub_value = sub_stat1_value
-                if "%" in sub_stat1:
-                    sub_stat1_value += round(random.uniform(0.5, 1.2), 1)
-                else:
-                    sub_stat1_value += random.randint(10, 20)
-                stats_improved.append(("sub1", sub_stat1, old_sub_value, sub_stat1_value))
+            if "%" in main_stat:
+                main_stat_value += round(random.uniform(0.4, 0.8), 1)
             else:
-                old_sub_value = sub_stat2_value
-                if "%" in sub_stat2:
-                    sub_stat2_value += round(random.uniform(0.5, 1.2), 1)
+                main_stat_value += random.randint(7, 12)
+
+            if level % 4 == 0:
+                chosen_sub = random.choice(["sub_stat1", "sub_stat2"])
+                if chosen_sub == "sub_stat1":
+                    if "%" in sub_stat1:
+                        sub_stat1_value += round(random.uniform(0.8, 1.5), 1)
+                    else:
+                        sub_stat1_value += random.randint(15, 25)
                 else:
-                    sub_stat2_value += random.randint(10, 20)
-                stats_improved.append(("sub2", sub_stat2, old_sub_value, sub_stat2_value))
+                    if "%" in sub_stat2:
+                        sub_stat2_value += round(random.uniform(0.8, 1.5), 1)
+                    else:
+                        sub_stat2_value += random.randint(15, 25)
+        
+        if main_stat_value > initial_main_value:
+            stats_improved["main"] = ("main", main_stat, initial_main_value, main_stat_value)
+        
+        if sub_stat1_value > initial_sub1_value:
+            stats_improved["sub1"] = ("sub1", sub_stat1, initial_sub1_value, sub_stat1_value)
+            
+        if sub_stat2_value > initial_sub2_value:
+            stats_improved["sub2"] = ("sub2", sub_stat2, initial_sub2_value, sub_stat2_value)
+        
+        c.execute('''UPDATE artifacts
+                    SET level=?, exp=?, main_stat_value=?, sub_stat1_value=?, sub_stat2_value=?
+                    WHERE id=?''',
+                (level, exp, main_stat_value, sub_stat1_value, sub_stat2_value, artifact_id))
+        conn.commit()
     
-    # Update the artifact in the database
-    c.execute('''UPDATE artifacts
-                 SET level=?, exp=?, main_stat_value=?, sub_stat1_value=?, sub_stat2_value=?
-                 WHERE id=?''',
-              (level, exp, main_stat_value, sub_stat1_value, sub_stat2_value, artifact_id))
-    conn.commit()
-    conn.close()
-    
-    # Return information about the upgrade
     return {
         "levels_gained": levels_gained,
-        "stats_improved": stats_improved,
+        "stats_improved": list(stats_improved.values()),
         "new_level": level,
         "exp": exp,
         "exp_required": exp_required
@@ -467,13 +492,12 @@ def get_artifact_points():
         c = conn.cursor()
         c.execute("SELECT artifact_points FROM points")
         return c.fetchone()[0]
-#this is where you ended, you are looking and going throught the code manually cuz ai only good for quick answers
+    
 def update_artifact_points(points):
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()    
         c.execute("UPDATE points SET artifact_points = ?", (points,))
-        conn.commit()
-        
+        conn.commit()        
 
 def spend_artifact_points(amount):
     current = get_artifact_points()
@@ -487,134 +511,131 @@ def add_artifact_points(amount):
     update_artifact_points(current + amount)
     return current + amount
 
-
 def open_artifact_detail(artifact_id):
     running = True
-    back_button = Button("Back", 10, 10, 100, 40, hover_color)
-    feed_button = Button("Feed EXP", 50, 420, 200, 50, (0, 150, 0, 200))
+    back_button = Button("Back", 10, 10, 100, 40, hover_color, is_back_button=True)
     
-    # Cost for feeding exp
-    feed_cost = 50
-    feed_exp_amount = 200
+    min_invest = 50
+    max_invest = 500
+    current_invest = min_invest
+    invest_step = 50
     
-    # Animation variables
+    slider_width = 300
+    slider_height = 20
+    slider_x = screen_width // 2 - slider_width // 2
+    slider_y = screen_height - 150 
+    slider_dragging = False
+    
+    level_button = Button("Level Up", screen_width // 2 - 100, screen_height - 100, 200, 50, (0, 150, 0, 200))
+    
     showing_upgrade = False
     upgrade_info = None
     upgrade_start_time = 0
-    upgrade_duration = 2000  # 2 seconds
+    upgrade_duration = 2000
     
     while running:
         current_time = pygame.time.get_ticks()
         screen.fill(white)
         screen.blit(background_image, (0, 0))
         
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, level, exp, max_level FROM artifacts WHERE id=?", (artifact_id,))
-        artifact = c.fetchone()
-        conn.close()
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute("SELECT name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, level, exp, max_level FROM artifacts WHERE id=?", (artifact_id,))
+            artifact = c.fetchone()
 
         if not artifact:
             return
 
         name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, level, exp, max_level = artifact
         
-        # Get current artifact points
         artifact_points = get_artifact_points()
 
-        # Draw artifact details in a nice panel
-        panel_width = 600
-        panel_height = 400
+        panel_width = int(screen_width * 0.7)
+        panel_height = int(screen_height * 0.6)
         panel_x = (screen_width - panel_width) // 2
-        panel_y = 80
+        panel_y = 50
         
-        # Draw panel background
         panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
         pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
         screen.blit(panel_surface, (panel_x, panel_y))
         
-        # Draw artifact name with fancy styling
         name_text = font_large.render(f"{name}", True, gold)
         screen.blit(name_text, (panel_x + (panel_width - name_text.get_width()) // 2, panel_y + 20))
         
-        # Draw level with progress bar
         level_text = font_medium.render(f"Level: {level}/{max_level}", True, white)
         screen.blit(level_text, (panel_x + 30, panel_y + 80))
         
-        # Draw stats with icons and better formatting
         stat_y = panel_y + 130
-        stat_spacing = 50
-        
-        # Main stat (larger and highlighted)
+        stat_spacing = 50 
+
         main_stat_text = font_medium.render(f"Main Stat: {main_stat}", True, gold)
-        main_value_text = font_medium.render(f"+{main_stat_value}", True, gold)
+        main_value_text = font_medium.render(f"+{main_stat_value:.1f}", True, gold)
         screen.blit(main_stat_text, (panel_x + 30, stat_y))
         screen.blit(main_value_text, (panel_x + panel_width - 150, stat_y))
         
-        # Sub stats
         sub1_stat_text = font_small.render(f"Sub Stat: {sub_stat1}", True, white)
-        sub1_value_text = font_small.render(f"+{sub_stat1_value}", True, white)
+        sub1_value_text = font_small.render(f"+{sub_stat1_value:.1f}", True, white)
         screen.blit(sub1_stat_text, (panel_x + 30, stat_y + stat_spacing))
         screen.blit(sub1_value_text, (panel_x + panel_width - 150, stat_y + stat_spacing))
         
         sub2_stat_text = font_small.render(f"Sub Stat: {sub_stat2}", True, white)
-        sub2_value_text = font_small.render(f"+{sub_stat2_value}", True, white)
+        sub2_value_text = font_small.render(f"+{sub_stat2_value:.1f}", True, white)
         screen.blit(sub2_stat_text, (panel_x + 30, stat_y + stat_spacing * 2))
         screen.blit(sub2_value_text, (panel_x + panel_width - 150, stat_y + stat_spacing * 2))
         
-        # Experience bar
         exp_required = 100 + (level * 20)
         exp_ratio = min(exp / exp_required, 1.0)
-        bar_width = 500
-        bar_height = 20
-        bar_x = panel_x + (panel_width - bar_width) // 2
-        bar_y = panel_y + 280
+        bar_width = panel_width - 60
+        bar_height = 25
+        bar_x = panel_x + 30
+        bar_y = panel_y + panel_height - 80
         
-        # Draw background bar
         pygame.draw.rect(screen, (80, 80, 80), (bar_x, bar_y, bar_width, bar_height), border_radius=5)
-        # Draw filled portion
         pygame.draw.rect(screen, (100, 150, 255), (bar_x, bar_y, bar_width * exp_ratio, bar_height), border_radius=5)
         
         exp_text = font_small.render(f"EXP: {exp}/{exp_required}", True, white)
-        screen.blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2, bar_y + 25))
+        screen.blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2, bar_y + 30))
         
-        # Draw artifact points
         points_text = font_medium.render(f"Artifact Points: {artifact_points}", True, white)
         screen.blit(points_text, (screen_width - points_text.get_width() - 20, 20))
         
-        # Draw feed cost
-        feed_cost_text = font_small.render(f"Cost: {feed_cost} points", True, 
-                                          green if artifact_points >= feed_cost else red)
-        screen.blit(feed_cost_text, (feed_button.x + feed_button.width + 10, feed_button.y + 15))
-        
-        # Draw buttons
-        back_button.draw(screen)
-        
-        # Only show feed button if not at max level
         if level < max_level:
-            feed_button.draw(screen)
+            pygame.draw.rect(screen, (80, 80, 80), (slider_x, slider_y, slider_width, slider_height), border_radius=5)
+            
+            slider_position = slider_x + ((current_invest - min_invest) / (max_invest - min_invest)) * slider_width
+            
+            pygame.draw.circle(screen, (150, 150, 255), (int(slider_position), slider_y + slider_height // 2), 15)
+            
+            invest_text = font_small.render(f"Investment: {current_invest} points", True, white)
+            screen.blit(invest_text, (slider_x + (slider_width - invest_text.get_width()) // 2, slider_y - 30))
+            
+            xp_gain_text = font_small.render(f"XP Gain: {current_invest * 4}", True, white)
+            screen.blit(xp_gain_text, (slider_x + (slider_width - xp_gain_text.get_width()) // 2, slider_y + 30))
+            
+            cost_text = font_small.render(f"Cost: {current_invest} points", True, 
+                                        green if artifact_points >= current_invest else red)
+            screen.blit(cost_text, (level_button.x + level_button.width + 10, level_button.y + 15))
+            
+            level_button.draw(screen)
         else:
             max_level_text = font_medium.render("Maximum Level Reached!", True, gold)
-            screen.blit(max_level_text, (screen_width // 2 - max_level_text.get_width() // 2, feed_button.y + 15))
+            screen.blit(max_level_text, (screen_width // 2 - max_level_text.get_width() // 2, slider_y))
+
+        back_button.draw(screen)
         
-        # Show upgrade animation if active
         if showing_upgrade and upgrade_info:
             progress = min(1.0, (current_time - upgrade_start_time) / upgrade_duration)
             
             if progress < 1.0:
-                # Draw upgrade panel
                 upgrade_panel = pygame.Surface((400, 300), pygame.SRCALPHA)
                 pygame.draw.rect(upgrade_panel, (0, 0, 0, 180), upgrade_panel.get_rect(), border_radius=10)
                 screen.blit(upgrade_panel, (screen_width // 2 - 200, screen_height // 2 - 150))
                 
-                # Draw level up text
                 level_up_text = font_medium.render(f"Level Up! +{upgrade_info['levels_gained']}", True, gold)
                 screen.blit(level_up_text, (screen_width // 2 - level_up_text.get_width() // 2, screen_height // 2 - 120))
                 
-                # Draw stats improvements
                 y_offset = screen_height // 2 - 60
                 for stat_type, stat_name, old_value, new_value in upgrade_info['stats_improved']:
-                    # Calculate interpolated value based on animation progress
                     current_value = old_value + (new_value - old_value) * progress
                     
                     if stat_type == "main":
@@ -642,39 +663,97 @@ def open_artifact_detail(artifact_id):
                 if event.button == 1:
                     mx, my = pygame.mouse.get_pos()
 
-                    if feed_button.is_hovered((mx, my)) and level < max_level:
-                        if spend_artifact_points(feed_cost):
-                            # Level up the artifact and get upgrade info
-                            upgrade_result = level_up_artifact(artifact_id, feed_exp_amount)
+                    if level < max_level and slider_x <= mx <= slider_x + slider_width and slider_y - 10 <= my <= slider_y + slider_height + 10:
+                        slider_dragging = True
+                    
+                    if level_button.is_hovered((mx, my)) and level < max_level:
+                        if spend_artifact_points(current_invest):
+                            xp_gain = current_invest * 4
+                            upgrade_result = level_up_artifact(artifact_id, xp_gain)
                             
-                            if upgrade_result and upgrade_result["levels_gained"] > 0:
-                                # Start upgrade animation
-                                showing_upgrade = True
-                                upgrade_info = upgrade_result
-                                upgrade_start_time = current_time
-                                
-                                # Play a sound effect
-                                if pygame.mixer.get_init():
-                                    try:
-                                        upgrade_sound = pygame.mixer.Sound(os.path.join(base_path, "sounds", "upgrade.wav"))
-                                        upgrade_sound.play()
-                                    except:
-                                        pass
+                            if pygame.mixer.get_init():
+                                try:
+                                    if upgrade_result and upgrade_result["levels_gained"] > 0:
+                                        upgrade_sound = pygame.mixer.Sound(os.path.join(base_path, "sounds", "upgrade_artifact_level_up.wav"))
+                                        showing_upgrade = True
+                                        upgrade_info = upgrade_result
+                                        upgrade_start_time = current_time
+                                    else:
+                                        upgrade_sound = pygame.mixer.Sound(os.path.join(base_path, "sounds", "upgrade_artifact_sound.wav"))
+                                    
+                                    upgrade_sound.play()
+                                except:
+                                    pass
 
                     if back_button.is_hovered((mx, my)):
                         running = False
+            
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:
+                    slider_dragging = False
+            
+            elif event.type == pygame.MOUSEMOTION:
+                if slider_dragging and level < max_level:
+                    mx, my = pygame.mouse.get_pos()
+                    if mx < slider_x:
+                        current_invest = min_invest
+                    elif mx > slider_x + slider_width:
+                        current_invest = max_invest
+                    else:
+                        ratio = (mx - slider_x) / slider_width
+                        current_invest = min_invest + int((max_invest - min_invest) * ratio)
+                        current_invest = int(round(current_invest / invest_step)) * invest_step
+            
+            elif event.type == pygame.KEYDOWN:
+                if level < max_level:
+                    if event.key == pygame.K_LEFT:
+                        current_invest = max(min_invest, current_invest - invest_step)
+                    elif event.key == pygame.K_RIGHT:
+                        current_invest = min(max_invest, current_invest + invest_step)
+                    elif event.key == pygame.K_RETURN:
+                        if spend_artifact_points(current_invest):
+                            xp_gain = current_invest * 4
+                            upgrade_result = level_up_artifact(artifact_id, xp_gain)
+                            
+                            if pygame.mixer.get_init():
+                                try:
+                                    if upgrade_result and upgrade_result["levels_gained"] > 0:
+                                        upgrade_sound = pygame.mixer.Sound(os.path.join(base_path, "sounds", "upgrade_artifact_level_up.wav"))
+                                        showing_upgrade = True
+                                        upgrade_info = upgrade_result
+                                        upgrade_start_time = current_time
+                                    else:
+                                        upgrade_sound = pygame.mixer.Sound(os.path.join(base_path, "sounds", "upgrade_artifact_sound.wav"))
+                                    
+                                    upgrade_sound.play()
+                                except:
+                                    pass
 
-        pygame.display.update()
+            if level < max_level:
+                min_label = font_small.render(f"{min_invest}", True, light_gray)
+                max_label = font_small.render(f"{max_invest}", True, light_gray)
+                screen.blit(min_label, (slider_x - 10, slider_y + 25))
+                screen.blit(max_label, (slider_x + slider_width - 10, slider_y + 25))
+                
+                for i in range(min_invest, max_invest + 1, invest_step * 2):
+                    tick_x = slider_x + ((i - min_invest) / (max_invest - min_invest)) * slider_width
+                    tick_height = 8 if i % 100 == 0 else 5
+                    pygame.draw.line(screen, light_gray, (tick_x, slider_y + slider_height + 2), 
+                                    (tick_x, slider_y + slider_height + 2 + tick_height), 2)
+
+            pygame.display.update()
+
+
 
 
 def view_artifacts():
-    Back_Button = Button("Back", 10, 10, 100, 40, hover_color)
+    Back_Button = Button("Back", 10, 10, 100, 40, hover_color, is_back_button=True)
     scroll_y = 0
     scroll_speed = 20
     items_per_row = 3
     box_width = 220
     box_padding = 20
-    box_height = 140
+    box_height = 160
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -683,15 +762,16 @@ def view_artifacts():
     conn.close()
     
     artifact_boxes = []
+
+    hovered_box_index = -1
+    last_hovered_box_index = -1
     
-    # Get artifact points for display
     artifact_points = get_artifact_points()
 
     while True:
         screen.fill(white)
         screen.blit(background_image, (0, 0))
-        
-        # Draw title and points
+
         title_text = font_large.render("Artifacts", True, gold)
         screen.blit(title_text, (screen_width // 2 - title_text.get_width() // 2, 30))
         
@@ -702,6 +782,10 @@ def view_artifacts():
         start_y = 100 + scroll_y
 
         artifact_boxes.clear()
+        
+        # Get current mouse position for hover detection
+        mouse_pos = pygame.mouse.get_pos()
+        hovered_box_index = -1
 
         for i, artifact in enumerate(artifacts):
             row = i // items_per_row
@@ -711,26 +795,56 @@ def view_artifacts():
             box = pygame.Rect(x, y, box_width, box_height)
             artifact_boxes.append((box, artifact[0]))
             
+            # Check if this box is being hovered
+            is_hovered = box.collidepoint(mouse_pos)
+            if is_hovered:
+                hovered_box_index = i
+            
             # Draw a nicer box with gradient and border
             box_surface = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
-            pygame.draw.rect(box_surface, (50, 50, 50, 200), box_surface.get_rect(), border_radius=10)
-            pygame.draw.rect(box_surface, (80, 80, 80, 100), box_surface.get_rect(), width=2, border_radius=10)
+            
+            # Change background color when hovered
+            if is_hovered:
+                pygame.draw.rect(box_surface, (70, 70, 70, 220), box_surface.get_rect(), border_radius=10)
+                pygame.draw.rect(box_surface, (100, 150, 255, 150), box_surface.get_rect(), width=3, border_radius=10)
+            else:
+                pygame.draw.rect(box_surface, (50, 50, 50, 200), box_surface.get_rect(), border_radius=10)
+                pygame.draw.rect(box_surface, (80, 80, 80, 100), box_surface.get_rect(), width=2, border_radius=10)
+            
             screen.blit(box_surface, (x, y))
 
-            # Draw Texts with better formatting
+            main_stat_value = artifact[3]
+            sub_stat1_value = artifact[5]
+            sub_stat2_value = artifact[7]
+            
+            if isinstance(main_stat_value, float):
+                main_stat_value = f"{main_stat_value:.1f}"
+            if isinstance(sub_stat1_value, float):
+                sub_stat1_value = f"{sub_stat1_value:.1f}"
+            if isinstance(sub_stat2_value, float):
+                sub_stat2_value = f"{sub_stat2_value:.1f}"
+
             name_text = font_small.render(f"{artifact[1]}", True, gold)
             level_text = font_small.render(f"Lv.{artifact[8]}/{artifact[10]}", True, artifact_text_color)
-            main_stat_text = font_small.render(f"{artifact[2]}: +{artifact[3]}", True, white)
-            sub_stats_text = font_small.render(f"{artifact[4]}: +{artifact[5]} | {artifact[6]}: +{artifact[7]}", True, light_gray)
+            main_stat_text = font_small.render(f"{artifact[2]}: +{main_stat_value}", True, white)
+            sub_stat1_text = font_small.render(f"{artifact[4]}: +{sub_stat1_value}", True, light_gray)
+            sub_stat2_text = font_small.render(f"{artifact[6]}: +{sub_stat2_value}", True, light_gray)
 
             screen.blit(name_text, (x + 10, y + 10))
             screen.blit(level_text, (x + box_width - level_text.get_width() - 10, y + 10))
             screen.blit(main_stat_text, (x + 10, y + 40))
-            screen.blit(sub_stats_text, (x + 10, y + 70))
+            screen.blit(sub_stat1_text, (x + 10, y + 70))
+            screen.blit(sub_stat2_text, (x + 10, y + 95)) 
             
             # Add a small "click to view" hint
             hint_text = font_small.render("Click to view", True, (150, 150, 150))
             screen.blit(hint_text, (x + (box_width - hint_text.get_width()) // 2, y + box_height - 30))
+
+        # Play hover sound when first hovering over an artifact box
+        if hovered_box_index != -1 and hovered_box_index != last_hovered_box_index and ui_hover_sound:
+            ui_hover_sound.play()
+        
+        last_hovered_box_index = hovered_box_index
 
         Back_Button.draw(screen)
 
@@ -745,10 +859,14 @@ def view_artifacts():
                 max_rows = (len(artifacts) + items_per_row - 1) // items_per_row
                 min_scroll = -((max_rows * (box_height + box_padding)) - screen_height + 150)
                 scroll_y = max(min_scroll, min(0, scroll_y))
-            if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 pos = pygame.mouse.get_pos()
                 for box, artifact_id in artifact_boxes:
                     if box.collidepoint(pos):
+                        # Play click sound for artifacts
+                        if ui_click_sound:
+                            ui_click_sound.play()
+                        
                         open_artifact_detail(artifact_id)
                         # Refresh artifact points after returning from detail view
                         artifact_points = get_artifact_points()
@@ -765,6 +883,7 @@ def view_artifacts():
                 status_window()
 
         pygame.display.flip()
+
 
 
 
@@ -819,11 +938,10 @@ def round_result(result, precision=0.1):
     return round(result / precision) * precision
 
 def update_points(new_points):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE points SET points = ?, last_updated = ?", (new_points, int(time.time())))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("UPDATE points SET points = ?, last_updated = ?", (new_points, int(time.time())))
+        conn.commit()
 
 def insufficient_points_message():
     message = font_medium.render("Not enough points!", True, red)
@@ -854,7 +972,7 @@ def math_activity_menu():
     Medium_button = Button("Locked-Medium-Locked LV: 8", screen_width // 2 - 165, screen_height // 2 - 70, 330, 50, hover_color)
     Hard_button = Button("Locked-Hard-Locked Lv: 15", screen_width // 2 - 165, screen_height // 2 - 0, 330, 50, hover_color)
     Extreme_button = Button("Locked-Extreme-Locked LV: 25", screen_width // 2 - 165, screen_height // 2 + 70, 330, 50, hover_color)
-    Leave_button = Button("Leave", screen_width // 2 - 165, screen_height // 2 + 140, 330, 50, hover_color)
+    Leave_button = Button("Leave", screen_width // 2 - 165, screen_height // 2 + 140, 330, 50, hover_color, is_back_button=True)
     
     running = True
     while running:
@@ -912,7 +1030,7 @@ def math_game_window(math_difficulty):
     mathed = math_difficulty
     user_input = ""
     equation = generate_math_equation_easy(math_difficulty)
-    leave_button = Button("Leave", 10, 10, 100, 40, hover_color)
+    leave_button = Button("Leave", 10, 10, 100, 40, hover_color, is_back_button=True)
     
     try:
         correct_answer = eval(equation)
@@ -1064,7 +1182,7 @@ def math_game_window(math_difficulty):
 def minigames_menu():
     current_points = get_current_points()
     Math_Button = Button("Math", screen_width // 2 - 165, screen_height // 2 - 140, 330, 50, hover_color)    
-    Back_Button = Button("Back", screen_width // 2 - 165, screen_height // 2 + 70, 330, 50, hover_color)
+    Back_Button = Button("Back", screen_width // 2 - 165, screen_height // 2 + 70, 330, 50, hover_color, is_back_button=True)
     points_text = font_medium.render(f"Points: {current_points}", True, white)
     
     while True:
@@ -1105,7 +1223,7 @@ def minigames_menu():
 
 
 def status_window():
-    Back_Button = Button("Back", 10, 10, 100, 40, hover_color)
+    Back_Button = Button("Back", 10, 10, 100, 40, hover_color, is_back_button=True)
     View_Artifacts = Button("Artifacts", screen_width - 160, 10, 140, 40, hover_color)
     Skill_menu = Button("Skills", screen_width//2 - 70, 10, 140, 40, hover_color)
     
@@ -1119,7 +1237,6 @@ def status_window():
         "mana": 0,
     }
     
-    # Get artifact points
     artifact_points = get_artifact_points()
     
     running = True
@@ -1213,10 +1330,8 @@ class Skill:
     def get_current_stats(self):
         stats = self.base_stats.copy()
         
-        # Base level scaling (more controlled growth)
-        level_multiplier = 1 + (self.level * 0.1)  # 10% increase per level
+        level_multiplier = 1 + (self.level * 0.1)
         
-        # Separate multipliers for different stat types
         damage_multiplier = 1.0
         mana_multiplier = 1.0
         
@@ -1224,16 +1339,12 @@ class Skill:
             stat_boost = upgrade.stat_boost if isinstance(upgrade, SkillUpgrade) else upgrade["stat_boost"]
             for stat, boost in stat_boost.items():
                 if "damage" in stat.lower():
-                    # Additive stacking for damage boosts
                     damage_multiplier += (boost - 1)
                 elif "mana" in stat.lower():
-                    # Diminishing returns for mana cost reduction
-                    mana_multiplier *= max(0.5, boost)  # Cap at 50% reduction
+                    mana_multiplier *= max(0.5, boost)
                 elif stat in stats:
-                    # Other stats get normal scaling
                     stats[stat] *= boost
 
-        # Apply final multipliers
         for stat in stats:
             if "damage" in stat.lower():
                 stats[stat] *= level_multiplier * damage_multiplier
@@ -1248,21 +1359,19 @@ class Skill:
 
 
 def save_skill_progress(skill_name, level, active_upgrades, unlocked_paths):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""UPDATE skills 
-                 SET level = ?, active_upgrades = ?, unlocked_paths = ?
-                 WHERE name = ?""", 
-              (level, str(active_upgrades), str(unlocked_paths), skill_name))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""UPDATE skills 
+                    SET level = ?, active_upgrades = ?, unlocked_paths = ?
+                    WHERE name = ?""", 
+                (level, str(active_upgrades), str(unlocked_paths), skill_name))
+        conn.commit()
 
 def load_skill_progress(skill_name):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT level, active_upgrades, unlocked_paths FROM skills WHERE name = ?", (skill_name,))
-    result = c.fetchone()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT level, active_upgrades, unlocked_paths FROM skills WHERE name = ?", (skill_name,))
+        result = c.fetchone()
     
     if result:
         return {
@@ -1287,7 +1396,7 @@ def create_circular_icon(image_path, size):
 
 
 def skill_tree_menu():
-    Back_Button = Button("Back", 10, 10, 100, 40, hover_color)
+    Back_Button = Button("Back", 10, 10, 100, 40, hover_color, is_back_button=True)
     tree_center_x = screen_width // 2
     tree_center_y = 200
     node_radius = 30
@@ -1439,11 +1548,10 @@ def skill_tree_menu():
     
     
     
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT name, level, active_upgrades, unlocked_paths FROM skills")
-    skill_data = c.fetchall()
-    conn.close()  
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT name, level, active_upgrades, unlocked_paths FROM skills")
+        skill_data = c.fetchall()  
     
     skills = [fireball, ice_shard]
     for skill in skills:
@@ -1642,11 +1750,9 @@ def skill_tree_menu():
                     zoom_change = 0.1 * event.y
                     zoom_level = max(min_zoom, min(max_zoom, zoom_level + zoom_change))
                     
-                    # Get mouse position relative to camera
                     mouse_x = mouse_pos[0] - camera_offset[0]
                     mouse_y = mouse_pos[1] - camera_offset[1]
                     
-                    # Adjust camera offset to zoom towards cursor
                     camera_offset[0] += mouse_x * (1 - zoom_level/old_zoom)
                     camera_offset[1] += mouse_y * (1 - zoom_level/old_zoom)
 
@@ -1814,7 +1920,7 @@ def cleanup():
     sys.exit()
 
 def missions_window():
-    Back_Button = Button("Back", 10, 10, 100, 40, hover_color)
+    Back_Button = Button("Back", 10, 10, 100, 40, hover_color, is_back_button=True)
     scroll_y = 0
     banner_width = screen_width - 100
     text_width = int(banner_width * 0.75)
@@ -1882,16 +1988,15 @@ def missions_window():
                             lines.append(' '.join(current_line))
                         current_line = [word]
 
-            title_height = 60  # Increased from 40
+            title_height = 60
             text_height = len(lines) * 25
-            banner_height = title_height + text_height + padding * 2  # Adjusted total height
+            banner_height = title_height + text_height + padding * 2
             mission["banner_height"] = banner_height
 
             if -banner_height <= y_pos <= screen_height:
                 banner_rect = pygame.Rect(50, y_pos, banner_width, banner_height)
                 pygame.draw.rect(screen, (40, 40, 40, 230), banner_rect, border_radius=10)
                 
-                # Stats at top right
                 stats_y = y_pos + 15
                 reward_text = font_small.render(f"Reward: {mission['reward']}", True, green)
                 time_text = font_small.render(f"Time: {mission['time_limit']}", True, light_blue)
@@ -1904,11 +2009,9 @@ def missions_window():
                     pass
                     
                 
-                # Title
                 title_text = font_medium.render(mission["title"], True, gold)
                 screen.blit(title_text, (70, y_pos + 20))
                 
-                # Description with more space after title
                 text_y = y_pos + title_height + 10
                 for line in lines:
                     text = font_small.render(line, True, white)
@@ -1959,5 +2062,14 @@ def main_menu():
 
 if __name__ == "__main__":
     initialize_database()
+    organize_files()
+    try:
+        if pygame.mixer.get_init():
+            ui_hover_sound = pygame.mixer.Sound(os.path.join(base_path, "sounds", "hover_sound.wav"))
+            ui_hover_sound.set_volume(0.3)
+            ui_click_sound = pygame.mixer.Sound(os.path.join(base_path, "sounds", "click_sound.wav"))
+            ui_back_sound = pygame.mixer.Sound(os.path.join(base_path, "sounds", "back_sound.wav"))
+    except:
+        print("Could not load UI sound effects")
     initial_startup()
 
