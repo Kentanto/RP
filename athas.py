@@ -331,7 +331,7 @@ def initialize_database():
                  (id INTEGER PRIMARY KEY, level INTEGER, hp INTEGER, atk INTEGER, def INTEGER, spd INTEGER, mana INTEGER)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS points
-                 (id INTEGER PRIMARY KEY, points INTEGER, last_updated INTEGER, artifact_points INTEGER)''')
+                 (id INTEGER PRIMARY KEY, points INTEGER, last_updated INTEGER, artifact_points INTEGER DEFAULT 0)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS skills
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,

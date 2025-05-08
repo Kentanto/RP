@@ -3,8 +3,7 @@ import os
 import sys
 import subprocess
 
-GITHUB_REPO = "Kentanto/RP"
-LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+LATEST_RELEASE_URL = f"https://api.github.com/repos/Kentanto/RP/releases/latest"
 LOCAL_VERSION_FILE = "version.txt"
 DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "Athas")
 GAME_FILES_FOLDER = os.path.join(DOWNLOAD_FOLDER, "files")
@@ -88,6 +87,8 @@ def update_game():
         with open(LOCAL_VERSION_FILE, "w") as f:
             f.write(latest_version)
         target_version_path = os.path.join(LAUNCHER_DIR, "Athas","version.txt")
+        if not target_version_path:
+            target_version_path = os.path.join(LAUNCHER_DIR, "version.txt")
         if os.path.exists(LOCAL_VERSION_FILE):
             os.replace(LOCAL_VERSION_FILE, target_version_path)
             print(f"Moved version.txt to {target_version_path}")
