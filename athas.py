@@ -1,5 +1,6 @@
 import os
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+from librarby.helper import *
 import pygame
 import secrets
 import random
@@ -16,6 +17,7 @@ else:
     base_path = os.path.dirname(os.path.abspath(__file__))
 ICO_PATH = 'icons'
 DB_PATH = os.path.join(base_path, 'database', 'artifacts.db')
+
 
 pygame.init()
 pygame.display.set_caption("Athas system")
@@ -340,6 +342,15 @@ def initialize_database():
                   active_upgrades TEXT,
                   unlocked_paths TEXT)''')
     
+    c.execute('''CREATE TABLE IF NOT EXISTS equipped (
+        id INTEGER PRIMARY KEY,
+        artifact_id INTEGER
+    )''')
+    c.execute("SELECT COUNT(*) FROM equipped")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO equipped (artifact_id) VALUES (NULL)")
+    conn.commit()
+    
     c.execute("SELECT COUNT(*) FROM skills")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO skills (name, level, active_upgrades, unlocked_paths) VALUES (?, ?, ?, ?)",
@@ -443,22 +454,22 @@ def level_up_artifact(artifact_id, feed_exp):
             exp_required = 100 + (level * 20)
 
             if "%" in main_stat:
-                main_stat_value += round(random.uniform(0.4, 0.8), 1)
+                main_stat_value += round(random.uniform(1.5, 3), 1)
             else:
-                main_stat_value += random.randint(7, 12)
+                main_stat_value += random.randint(9, 20)
 
             if level % 4 == 0:
                 chosen_sub = random.choice(["sub_stat1", "sub_stat2"])
                 if chosen_sub == "sub_stat1":
                     if "%" in sub_stat1:
-                        sub_stat1_value += round(random.uniform(0.8, 1.5), 1)
+                        sub_stat1_value += round(random.uniform(4, 10), .1)
                     else:
-                        sub_stat1_value += random.randint(15, 25)
+                        sub_stat1_value += random.randint(20, 35)
                 else:
                     if "%" in sub_stat2:
-                        sub_stat2_value += round(random.uniform(0.8, 1.5), 1)
+                        sub_stat2_value += round(random.uniform(4, 10), .1)
                     else:
-                        sub_stat2_value += random.randint(15, 25)
+                        sub_stat2_value += random.randint(20, 35)
         
         if main_stat_value > initial_main_value:
             stats_improved["main"] = ("main", main_stat, initial_main_value, main_stat_value)
@@ -1223,12 +1234,18 @@ def minigames_menu():
 
 
 def status_window():
+    global equipped_artifact_id
+    equipped_artifact_id = get_equipped_artifact()
+
     Back_Button = Button("Back", 10, 10, 100, 40, hover_color, is_back_button=True)
     View_Artifacts = Button("Artifacts", screen_width - 160, 10, 140, 40, hover_color)
     Skill_menu = Button("Skills", screen_width//2 - 70, 10, 140, 40, hover_color)
     
+    # Equip slot area
+    equip_slot_rect = pygame.Rect(screen_width//2 - 100, 500, 200, 60)
+    
     Kenji = "Kenji Mizuki"
-    stats = {
+    base_stats = {
         "Level": 1,
         "CON": 10,
         "ATK": 5,
@@ -1244,18 +1261,45 @@ def status_window():
         screen.fill(white)
         screen.blit(background_image, (0, 0))        
         
-        name_text = font_large.render(Kenji, True, black)
-        screen.blit(name_text, (screen_width//2 - name_text.get_width()//2, 80))
+        # --- Calculate artifact bonus ---
+        artifact_bonus = {"ATK": 0, "DEF": 0, "SPD": 0, "CON": 0, "mana": 0}
+        artifact_name = None
+        if equipped_artifact_id:
+            with sqlite3.connect(DB_PATH) as conn:
+                c = conn.cursor()
+                c.execute("SELECT name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value FROM artifacts WHERE id=?", (equipped_artifact_id,))
+                result = c.fetchone()
+            if result:
+                artifact_name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value = result
+                # Map artifact stats to base stats
+                stat_map = {
+                    "ATK": "ATK", "DEF": "DEF", "SPD": "SPD", "HP": "CON", "mana": "mana",
+                    "ATK%": "ATK", "DEF%": "DEF", "SPD%": "SPD", "HP%": "CON",
+                    "Crit Rate%": "ATK", "Crit DMG%": "ATK"
+                }
+                for stat, value in [(main_stat, main_stat_value), (sub_stat1, sub_stat1_value), (sub_stat2, sub_stat2_value)]:
+                    key = stat_map.get(stat.replace("%", ""), None)
+                    if key and key in artifact_bonus:
+                        artifact_bonus[key] += int(value) if not isinstance(value, float) else int(round(value))
         
-        y_offset = 133
-        for stat, value in stats.items():
-            stat_text = font_medium.render(f"{stat}: {value}", True, stat_text_color)
-            screen.blit(stat_text, (screen_width//2 - stat_text.get_width()//2, y_offset))
-            y_offset += 60
+        # --- Draw stats (base + artifact bonus) ---
+        stat_y = 150
+        for stat, base_value in base_stats.items():
+            total_value = base_value + artifact_bonus.get(stat, 0)
+            stat_text = font_medium.render(f"{stat}: {total_value}", True, stat_text_color)
+            screen.blit(stat_text, (screen_width // 2 - 100, stat_y))
+            stat_y += 40
+
+        # Draw equip slot
+        pygame.draw.rect(screen, light_gray, equip_slot_rect, border_radius=10)
+        equip_text = font_medium.render("Equip Artifact", True, gray)
+        screen.blit(equip_text, (equip_slot_rect.x + 20, equip_slot_rect.y + 10))
         
-        artifact_points_text = font_medium.render(f"Artifact Points: {artifact_points}", True, gold)
-        screen.blit(artifact_points_text, (screen_width//2 - artifact_points_text.get_width()//2, y_offset))
-        
+        # Show equipped artifact name
+        if artifact_name:
+            name_text = font_small.render(f"Equipped: {artifact_name}", True, gold)
+            screen.blit(name_text, (equip_slot_rect.x + 20, equip_slot_rect.y + 40))
+
         Back_Button.draw(screen)
         Skill_menu.draw(screen)
         View_Artifacts.draw(screen)
@@ -1281,9 +1325,52 @@ def status_window():
                 screen.blit(background_image, (0, 0))
                 pygame.display.flip()
                 skill_tree_menu()
+            # Handle equip slot click
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if equip_slot_rect.collidepoint(pygame.mouse.get_pos()):
+                    selected_id = select_artifact_window()
+                    if selected_id:
+                        set_equipped_artifact(selected_id)
+                        equipped_artifact_id = selected_id  # Update for immediate display
         
         pygame.display.flip()
+
+def select_artifact_window():
+    # Simple selection window for artifacts
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id, name FROM artifacts")
+    artifacts = c.fetchall()
+    conn.close()
+    
+    selected_id = None
+    running = True
+    while running:
+        screen.fill(white)
+        screen.blit(background_image, (0, 0))
+        title_text = font_large.render("Select Artifact", True, gold)
+        screen.blit(title_text, (screen_width // 2 - title_text.get_width() // 2, 30))
         
+        for i, (artifact_id, name) in enumerate(artifacts):
+            y = 100 + i * 50
+            box = pygame.Rect(screen_width//2 - 150, y, 300, 40)
+            pygame.draw.rect(screen, light_gray, box, border_radius=8)
+            name_text = font_small.render(name, True, black)
+            screen.blit(name_text, (box.x + 20, box.y + 8))
+            if box.collidepoint(pygame.mouse.get_pos()):
+                pygame.draw.rect(screen, hover_color, box, 3, border_radius=8)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if box.collidepoint(event.pos):
+                        selected_id = artifact_id
+                        running = False
+        pygame.display.flip()
+    return selected_id
+
+
 def get_edge_points(start_pos, end_pos, radius, zoom_level):
     dx = end_pos[0] - start_pos[0]
     dy = end_pos[1] - start_pos[1]
