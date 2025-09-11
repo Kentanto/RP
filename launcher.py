@@ -2,7 +2,6 @@ import requests
 import os
 import sys
 import subprocess
-import hashlib
 import json
 import tkinter as tk
 from tkinter import messagebox
@@ -55,7 +54,6 @@ def find_game_executable():
 def file_matches(asset, local_path):
     if not os.path.exists(local_path):
         return False
-    # Compare file size
     local_size = os.path.getsize(local_path)
     if local_size != asset["size"]:
         return False
@@ -81,7 +79,7 @@ def update_game():
     response = requests.get(LATEST_RELEASE_URL)
     response.raise_for_status()
     assets = response.json().get("assets", [])
-    new_file_versions = local_file_versions.copy()  # Start with existing
+    new_file_versions = local_file_versions.copy()
 
     os.makedirs(GAME_FILES_DIR, exist_ok=True)
 
@@ -91,7 +89,6 @@ def update_game():
         download_url = asset["browser_download_url"]
         save_path = os.path.join(GAME_FILES_DIR, asset_name)
 
-        # Download if missing or outdated
         if (asset_name not in local_file_versions or
             asset_updated > local_file_versions.get(asset_name, "")):
             print(f"Downloading {asset_name}...")
@@ -100,9 +97,7 @@ def update_game():
         else:
             print(f"{asset_name} is up to date, skipping download.")
 
-    # Save updated file versions dict
     save_local_file_versions(new_file_versions)
-
 
     
     print("Update check complete. Launching game...")
@@ -153,14 +148,23 @@ def update_game():
         subprocess.Popen(["cmd", "/c", delete_cmd], creationflags=subprocess.CREATE_NO_WINDOW)
         print("Conditions met. \nUpdater scheduled for deletion.")
 
-    athas_version_path = os.path.join(DOWNLOAD_FOLDER, "version.txt")
-    if os.path.abspath(LOCAL_VERSION_FILE) != os.path.abspath(athas_version_path):
-        try:
-            os.replace(LOCAL_VERSION_FILE, athas_version_path)
-            print(f"Moved version.txt to {athas_version_path}")
-        except Exception as e:
-            print(f"Failed to move version.txt: {e}")
 
+
+
+    def move_version_to_athas_once():
+        """Move version.txt to Athas folder only if it exists in current dir and not in Athas folder."""
+        src = os.path.abspath("version.txt")
+        dst = os.path.join(DOWNLOAD_FOLDER, "version.txt")
+        if os.path.exists(src) and not os.path.exists(dst):
+            os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+            try:
+                os.replace(src, dst)
+                print(f"Moved version.txt to {dst}")
+            except Exception as e:
+                print(f"Failed to move version.txt: {e}")
+
+
+    move_version_to_athas_once()
     delete_self()
 
     sys.exit()
