@@ -62,6 +62,11 @@ artifact_text_color = (147, 112, 219)
     
 
 def initial_startup():
+    global background_image
+    background_image_path = os.path.join(base_path, "icons\\background_menu.png")
+    background_image = pygame.image.load(background_image_path)
+    background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
+    
     fade_in()
     send_launcher_back()
     main_menu()
@@ -86,32 +91,50 @@ def organize_files():
     sound_extensions = ('.wav', '.mp3', '.ogg', '.flac', '.m4a')
     icons_path = os.path.join(base_path, "icons")
     sounds_path = os.path.join(base_path, "sounds")
+    song_path = os.path.join(sounds_path, "songs")
+    librarby_path = os.path.join(base_path, "librarby")
 
-    
-    if not os.path.exists(icons_path):
-        os.makedirs(icons_path)
-        
+    # Ensure all needed directories exist
+    os.makedirs(icons_path, exist_ok=True)
+    os.makedirs(sounds_path, exist_ok=True)
+    os.makedirs(song_path, exist_ok=True)
+    os.makedirs(librarby_path, exist_ok=True)
+
     for file in os.listdir(base_path):
         if file.lower().endswith(image_extensions):
             source = os.path.join(base_path, file)
             destination = os.path.join(icons_path, file)
-            try:
-                if not os.path.exists(destination):
+            if not os.path.exists(destination):
+                try:
                     os.rename(source, destination)
-            except:
-                os.mkdir(icons_path)
-                if not os.path.exists(destination):
-                    os.rename(source, destination)
+                except Exception as e:
+                    print(f"Could not move {file} to icons: {e}")
         elif file.lower().endswith(sound_extensions):
+            if file.lower().endswith("mp3"):
+                source = os.path.join(base_path, file)
+                destination = os.path.join(song_path, file)
+                if not os.path.exists(destination):
+                    try:
+                        os.rename(source, destination)
+                    except Exception as e:
+                        print(f"Could not move {file} to songs: {e}")
+            else:
+                source = os.path.join(base_path, file)
+                destination = os.path.join(sounds_path, file)
+                if not os.path.exists(destination):
+                    try:
+                        os.rename(source, destination)
+                    except Exception as e:
+                        print(f"Could not move {file} to sounds: {e}")
+        elif file == "helper.py":
             source = os.path.join(base_path, file)
-            destination = os.path.join(sounds_path, file)
-            try:
-                if not os.path.exists(destination):
+            destination = os.path.join(librarby_path, file)
+            if not os.path.exists(destination):
+                try:
                     os.rename(source, destination)
-            except:
-                os.mkdir(sounds_path)
-                if not os.path.exists(destination):
-                    os.rename(source, destination)
+                except Exception as e:
+                    print(f"Could not move helper.py: {e}")
+
 
 
 
@@ -203,9 +226,9 @@ def fade_in():
             loading_time = song_durations.get(chosen_song, 12) * 100
             
             if getattr(sys, 'frozen', False):
-                song_path = os.path.join(os.path.dirname(sys.executable), "songs", chosen_song)
+                song_path = os.path.join(os.path.dirname(sys.executable), "sounds", "songs", chosen_song)
             else:
-                song_path = os.path.join(os.path.dirname(__file__), "songs", chosen_song)
+                song_path = os.path.join(os.path.dirname(__file__), "sounds", "songs", chosen_song)
                 
             pygame.mixer.music.load(song_path)
             pygame.mixer.music.set_volume(0.1)
@@ -251,9 +274,6 @@ def fade_in():
 
         pygame.display.flip()
 
-background_image_path = os.path.join(base_path, "icons\\background_menu.png")
-background_image = pygame.image.load(background_image_path)
-background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
 
 
 class Button:
