@@ -343,12 +343,13 @@ def initialize_database():
                   unlocked_paths TEXT)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS equipped (
-        id INTEGER PRIMARY KEY,
+        slot INTEGER PRIMARY KEY,
         artifact_id INTEGER
     )''')
-    c.execute("SELECT COUNT(*) FROM equipped")
-    if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO equipped (artifact_id) VALUES (NULL)")
+    for slot in range(1, 5):
+        c.execute("SELECT COUNT(*) FROM equipped WHERE slot=?", (slot,))
+        if c.fetchone()[0] == 0:
+            c.execute("INSERT INTO equipped (slot, artifact_id) VALUES (?, NULL)", (slot,))
     conn.commit()
     
     c.execute("SELECT COUNT(*) FROM skills")
@@ -370,59 +371,7 @@ def initialize_database():
         conn.close()
 
 
-def get_current_points():
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
 
-        c.execute("SELECT points, last_updated FROM points")
-        result = c.fetchone()
-        
-        if result is None:
-            return 600
-
-        current_points, last_updated = result
-        elapsed_seconds = int(time.time()) - last_updated
-        elapsed_minutes = elapsed_seconds // 60
-
-        if elapsed_minutes > 0:
-            new_points = min(600, current_points + elapsed_minutes)
-            last_updated = int(time.time())
-
-            c.execute("UPDATE points SET points = ?, last_updated = ?", (new_points, last_updated))
-            conn.commit()
-            return new_points
-        
-        return current_points
-
-
-def generate_random_artifact():
-    artifact_names = ["Wooden Sword", "Leather Armor", "Iron Shield", "Bronze Helmet", "Cloth Robe"]
-    stats = ["ATK", "DEF", "HP", "Crit Rate%", "SPD%", "Crit DMG%", "ATK%", "DEF%", "HP%"]
-    
-    name = random.choice(artifact_names)
-    main_stat = random.choice(stats)
-    sub_stat1 = random.choice([s for s in stats if s != main_stat])
-    sub_stat2 = random.choice([s for s in stats if s not in [main_stat, sub_stat1]])
-
-    main_stat_value = roll_stat(main_stat)
-    sub_stat1_value = roll_stat(sub_stat1)
-    sub_stat2_value = roll_stat(sub_stat2)
-    
-    return (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)
-
-def roll_stat(stat_name):
-    if "%" in stat_name:
-        return round(random.uniform(3.0, 7.5), 1)
-    else:
-        return random.randint(30, 100)
-
-def add_artifact(name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value):
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute('''INSERT INTO artifacts (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value))
-        conn.commit()
 
 def level_up_artifact(artifact_id, feed_exp):
     with sqlite3.connect(DB_PATH) as conn:
@@ -494,33 +443,7 @@ def level_up_artifact(artifact_id, feed_exp):
         "exp_required": exp_required
     }
 
-def draw_text(text, font, color, surface, x, y):
-    textobj = font.render(text, True, color)
-    surface.blit(textobj, (x, y))
 
-def get_artifact_points():
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("SELECT artifact_points FROM points")
-        return c.fetchone()[0]
-    
-def update_artifact_points(points):
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()    
-        c.execute("UPDATE points SET artifact_points = ?", (points,))
-        conn.commit()        
-
-def spend_artifact_points(amount):
-    current = get_artifact_points()
-    if current >= amount:
-        update_artifact_points(current - amount)
-        return True
-    return False
-
-def add_artifact_points(amount):
-    current = get_artifact_points()
-    update_artifact_points(current + amount)
-    return current + amount
 
 def open_artifact_detail(artifact_id):
     running = True
@@ -944,16 +867,6 @@ def generate_math_equation_easy(equation_length):
     
     return equation
 
-
-def round_result(result, precision=0.1):
-    return round(result / precision) * precision
-
-def update_points(new_points):
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("UPDATE points SET points = ?, last_updated = ?", (new_points, int(time.time())))
-        conn.commit()
-
 def insufficient_points_message():
     message = font_medium.render("Not enough points!", True, red)
     screen.blit(message, (screen_width//2 - message.get_width()//2, screen_height - 100))
@@ -975,6 +888,7 @@ def subtract_points(point_cost):
 def add_points(point_reward):
     current_points = get_current_points()
     update_points(current_points + point_reward)
+
 
 def math_activity_menu():
     current_points = get_current_points()
@@ -1234,17 +1148,23 @@ def minigames_menu():
 
 
 def status_window():
-    global equipped_artifact_id
-    equipped_artifact_id = get_equipped_artifact()
+    from librarby.helper import get_equipped_artifacts, set_equipped_artifact
+    equipped_artifacts = get_equipped_artifacts()
 
     Back_Button = Button("Back", 10, 10, 100, 40, hover_color, is_back_button=True)
     View_Artifacts = Button("Artifacts", screen_width - 160, 10, 140, 40, hover_color)
     Skill_menu = Button("Skills", screen_width//2 - 70, 10, 140, 40, hover_color)
-    
-    # Equip slot area
-    equip_slot_rect = pygame.Rect(screen_width//2 - 100, 500, 200, 60)
-    
-    Kenji = "Kenji Mizuki"
+    screen.fill(white)
+    screen.blit(background_image, (0, 0))
+    pygame.display.flip()
+
+    # 4 equip slots
+    slot_rects = [
+        pygame.Rect(screen_width//2 - 220 + i*110, 500, 100, 60)
+        for i in range(4)
+    ]
+    slot_labels = ["Slot 1", "Slot 2", "Slot 3", "Slot 4"]
+
     base_stats = {
         "Level": 1,
         "CON": 10,
@@ -1253,57 +1173,57 @@ def status_window():
         "SPD": 5,
         "mana": 0,
     }
-    
-    artifact_points = get_artifact_points()
-    
-    running = True
-    while running:
-        screen.fill(white)
-        screen.blit(background_image, (0, 0))        
-        
-        # --- Calculate artifact bonus ---
-        artifact_bonus = {"ATK": 0, "DEF": 0, "SPD": 0, "CON": 0, "mana": 0}
-        artifact_name = None
-        if equipped_artifact_id:
+
+
+    artifact_bonus = {"ATK": 0, "DEF": 0, "SPD": 0, "CON": 0, "mana": 0}
+    percent_bonus = {"ATK": 0.0, "DEF": 0.0, "SPD": 0.0, "CON": 0.0, "mana": 0.0}
+    equipped_names = [None] * 4
+
+    for idx, artifact_id in equipped_artifacts.items():
+        if artifact_id:
             with sqlite3.connect(DB_PATH) as conn:
                 c = conn.cursor()
-                c.execute("SELECT name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value FROM artifacts WHERE id=?", (equipped_artifact_id,))
+                c.execute("SELECT name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value FROM artifacts WHERE id=?", (artifact_id,))
                 result = c.fetchone()
             if result:
-                artifact_name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value = result
-                # Map artifact stats to base stats
-                stat_map = {
-                    "ATK": "ATK", "DEF": "DEF", "SPD": "SPD", "HP": "CON", "mana": "mana",
-                    "ATK%": "ATK", "DEF%": "DEF", "SPD%": "SPD", "HP%": "CON",
-                    "Crit Rate%": "ATK", "Crit DMG%": "ATK"
-                }
-                for stat, value in [(main_stat, main_stat_value), (sub_stat1, sub_stat1_value), (sub_stat2, sub_stat2_value)]:
-                    key = stat_map.get(stat.replace("%", ""), None)
-                    if key and key in artifact_bonus:
-                        artifact_bonus[key] += int(value) if not isinstance(value, float) else int(round(value))
-        
-        # --- Draw stats (base + artifact bonus) ---
-        stat_y = 150
-        for stat, base_value in base_stats.items():
-            total_value = base_value + artifact_bonus.get(stat, 0)
-            stat_text = font_medium.render(f"{stat}: {total_value}", True, stat_text_color)
-            screen.blit(stat_text, (screen_width // 2 - 100, stat_y))
-            stat_y += 40
+                equipped_names[idx-1] = result[0]
+                for stat, value in [(result[1], result[2]), (result[3], result[4]), (result[5], result[6])]:
+                    stat_key = stat.replace("%", "").replace("HP", "CON")
+                    if "%" in stat:
+                        if stat_key in percent_bonus:
+                            percent_bonus[stat_key] += float(value) / 100.0
+                    else:
+                        if stat_key in artifact_bonus:
+                            artifact_bonus[stat_key] += int(value) if not isinstance(value, float) else int(round(value))
 
-        # Draw equip slot
-        pygame.draw.rect(screen, light_gray, equip_slot_rect, border_radius=10)
-        equip_text = font_medium.render("Equip Artifact", True, gray)
-        screen.blit(equip_text, (equip_slot_rect.x + 20, equip_slot_rect.y + 10))
-        
-        # Show equipped artifact name
-        if artifact_name:
-            name_text = font_small.render(f"Equipped: {artifact_name}", True, gold)
-            screen.blit(name_text, (equip_slot_rect.x + 20, equip_slot_rect.y + 40))
 
-        Back_Button.draw(screen)
-        Skill_menu.draw(screen)
-        View_Artifacts.draw(screen)
-        
+    stat_y = 150
+    for stat, base_value in base_stats.items():
+        total_value = base_value + artifact_bonus.get(stat, 0)
+        total_value = int(total_value * (1 + percent_bonus.get(stat, 0.0)))
+        stat_text = font_medium.render(f"{stat}: {total_value}", True, stat_text_color)
+        screen.blit(stat_text, (screen_width // 2 - 100, stat_y))
+        stat_y += 40
+
+
+    for i, rect in enumerate(slot_rects):
+        pygame.draw.rect(screen, light_gray, rect, border_radius=10)
+        label = font_small.render(slot_labels[i], True, gray)
+        screen.blit(label, (rect.x + 10, rect.y + 5))
+        name = equipped_names[i]
+        if name:
+            name_text = font_small.render(f"{name}", True, gold)
+            screen.blit(name_text, (rect.x + 10, rect.y + 30))
+        else:
+            empty_text = font_small.render("Empty", True, gray)
+            screen.blit(empty_text, (rect.x + 10, rect.y + 30))
+
+    Back_Button.draw(screen)
+    Skill_menu.draw(screen)
+    View_Artifacts.draw(screen)
+
+    running = True
+    while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 get_current_points()
@@ -1327,32 +1247,65 @@ def status_window():
                 skill_tree_menu()
             # Handle equip slot click
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if equip_slot_rect.collidepoint(pygame.mouse.get_pos()):
-                    selected_id = select_artifact_window()
-                    if selected_id:
-                        set_equipped_artifact(selected_id)
-                        equipped_artifact_id = selected_id  # Update for immediate display
-        
+                for i, rect in enumerate(slot_rects):
+                    if rect.collidepoint(pygame.mouse.get_pos()):
+                        selected_id = select_artifact_window(equipped_artifacts[i+1])
+                        # If selected_id is None, unequip
+                        set_equipped_artifact(i+1, selected_id)
+                        equipped_artifacts = get_equipped_artifacts()
+                        break
         pygame.display.flip()
 
-def select_artifact_window():
-    # Simple selection window for artifacts
+def select_artifact_window(current_id=None):
+    screen.fill(white)
+    screen.blit(background_image, (0, 0))
+    title_text = font_large.render("Select Artifact", True, gold)
+    screen.blit(title_text, (screen_width // 2 - title_text.get_width() // 2, 30))
+    Back_Button = Button("Back", 10, 10, 100, 40, hover_color, is_back_button=True)
+    Back_Button.draw(screen) 
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT id, name FROM artifacts")
     artifacts = c.fetchall()
     conn.close()
-    
+   
+
     selected_id = None
     running = True
     while running:
-        screen.fill(white)
-        screen.blit(background_image, (0, 0))
-        title_text = font_large.render("Select Artifact", True, gold)
-        screen.blit(title_text, (screen_width // 2 - title_text.get_width() // 2, 30))
-        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                get_current_points()
+                cleanup()
+                pygame.quit()
+                sys.exit()
+            if Back_Button.is_clicked(event):
+                screen.fill(white)
+                screen.blit(background_image, (0, 0))
+                pygame.display.flip()
+                main_menu()
+
+
+
+        unequip_box = pygame.Rect(screen_width//2 - 150, 100, 300, 40)
+        pygame.draw.rect(screen, light_gray, unequip_box, border_radius=8)
+        unequip_text = font_small.render("Unequip", True, red)
+        screen.blit(unequip_text, (unequip_box.x + 20, unequip_box.y + 8))
+        if unequip_box.collidepoint(pygame.mouse.get_pos()):
+            pygame.draw.rect(screen, hover_color, unequip_box, 3, border_radius=8)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if unequip_box.collidepoint(event.pos):
+                    selected_id = None
+                    running = False
+
+
         for i, (artifact_id, name) in enumerate(artifacts):
-            y = 100 + i * 50
+            y = 150 + i * 50
             box = pygame.Rect(screen_width//2 - 150, y, 300, 40)
             pygame.draw.rect(screen, light_gray, box, border_radius=8)
             name_text = font_small.render(name, True, black)
@@ -1369,21 +1322,6 @@ def select_artifact_window():
                         running = False
         pygame.display.flip()
     return selected_id
-
-
-def get_edge_points(start_pos, end_pos, radius, zoom_level):
-    dx = end_pos[0] - start_pos[0]
-    dy = end_pos[1] - start_pos[1]
-    angle = math.atan2(dy, dx)
-    
-    scaled_radius = (radius * zoom_level)
-    
-    start_x = start_pos[0] + math.cos(angle) * scaled_radius
-    start_y = start_pos[1] + math.sin(angle) * scaled_radius
-    end_x = end_pos[0] - math.cos(angle) * scaled_radius
-    end_y = end_pos[1] - math.sin(angle) * scaled_radius
-    
-    return (start_x, start_y), (end_x, end_y)
 
         
 @dataclass
@@ -1442,44 +1380,6 @@ class Skill:
 
         return stats
 
-
-
-
-def save_skill_progress(skill_name, level, active_upgrades, unlocked_paths):
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("""UPDATE skills 
-                    SET level = ?, active_upgrades = ?, unlocked_paths = ?
-                    WHERE name = ?""", 
-                (level, str(active_upgrades), str(unlocked_paths), skill_name))
-        conn.commit()
-
-def load_skill_progress(skill_name):
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("SELECT level, active_upgrades, unlocked_paths FROM skills WHERE name = ?", (skill_name,))
-        result = c.fetchone()
-    
-    if result:
-        return {
-            "level": result[0],
-            "active_upgrades": eval(result[1]),
-            "unlocked_paths": eval(result[2])
-        }
-    return None
-
-def create_circular_icon(image_path, size):
-    icon = pygame.image.load(image_path)
-    icon = pygame.transform.scale(icon, (size, size))
-    
-    circle_surface = pygame.Surface((size, size), pygame.SRCALPHA)
-    pygame.draw.circle(circle_surface, (255, 255, 255), (size//2, size//2), size//2)
-    
-    masked_icon = pygame.Surface((size, size), pygame.SRCALPHA)
-    masked_icon.blit(icon, (0, 0))
-    masked_icon.blit(circle_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-    
-    return masked_icon
 
 
 def skill_tree_menu():
@@ -1849,8 +1749,6 @@ def skill_tree_menu():
             screen.blit(background_image, (0, 0))
             status_window()
             break
-            
-
 
 
 
@@ -1915,23 +1813,7 @@ def draw_upgrade_info(skill, upgrade, pos, skill_points):
 
 
 
-def wrap_text(text, font, max_width):
-    words = text.split()
-    lines = []
-    current_line = []
-    
-    for word in words:
-        test_line = ' '.join(current_line + [word])
-        if font.size(test_line)[0] <= max_width:
-            current_line.append(word)
-        else:
-            lines.append(' '.join(current_line))
-            current_line = [word]
-    
-    if current_line:
-        lines.append(' '.join(current_line))
-    
-    return lines
+
 
 def draw_skill_info(skill, pos, skill_points):
     padding = 20
@@ -1997,14 +1879,6 @@ def can_purchase_upgrade(skill, upgrade, skill_points):
         upgrade not in skill.active_upgrades
     )
 
-def cleanup():
-    try:
-        pygame.mixer.music.stop()
-        pygame.mixer.quit()
-    except pygame.error:
-        pass
-    pygame.quit()
-    sys.exit()
 
 def missions_window():
     Back_Button = Button("Back", 10, 10, 100, 40, hover_color, is_back_button=True)
