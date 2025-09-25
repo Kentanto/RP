@@ -163,30 +163,90 @@ def get_current_points():
         
         return current_points
 
+def generate_random_artifact_name():
+    import os
+    import random
 
-def generate_random_artifact():
-    artifact_names = ["Wooden Sword", "Leather Armor", "Iron Shield", "Bronze Helmet", "Cloth Robe"]
+    # Load names and adjectives from txt files
+    base_dir = os.path.dirname(__file__)
+    names_path = os.path.join(base_dir, "Artifact_names.txt")
+    adjectives_path = os.path.join(base_dir, "adjectives.txt")
+    items_path = os.path.join(base_dir, "item_types.txt")
+
+    with open(names_path, encoding="utf-8") as f:
+        names = [line.strip() for line in f if line.strip()]
+    with open(adjectives_path, encoding="utf-8") as f:
+        adjectives = [line.strip() for line in f if line.strip()]
+    with open(items_path, encoding="utf-8") as f:
+        item_types = [line.strip() for line in f if line.strip()]
+    fillers = ["of", "the", "from", "with", "for"]
+
+    # Try generating a name that fits the length constraint
+    for _ in range(10):  # Try up to 10 times
+        name = random.choice(names)
+        adj = random.choice(adjectives)
+        item = random.choice(item_types)
+        filler = random.choice(fillers)
+        # Randomly choose a pattern
+        patterns = [
+            f"{name}'s {adj} {item}",
+            f"{adj} {item} of {name}",
+            f"{item} of {adj} {name}",
+            f"{name}'s {item} of {adj}",
+            f"{adj} {item} {filler} {name}"
+        ]
+        result = random.choice(patterns)
+        if len(result) <= 55:
+            return result
+    # Fallback: just return a short pattern
+    return f"{random.choice(names)}'s {random.choice(item_types)}"
+
+# Example usage:
+# artifact_name = generate_random_artifact_name()
+
+
+def generate_artifact_by_level(level):
     stats = ["ATK", "DEF", "HP", "Crit Rate%", "SPD%", "Crit DMG%", "ATK%", "DEF%", "HP%"]
-    
-    name = random.choice(artifact_names)
+    name = generate_random_artifact_name()
     main_stat = random.choice(stats)
-    sub_stat1 = random.choice([s for s in stats if s != main_stat])
-    sub_stat2 = random.choice([s for s in stats if s not in [main_stat, sub_stat1]])
 
-    main_stat_value = roll_stat(main_stat)
-    sub_stat1_value = roll_stat(sub_stat1)
-    sub_stat2_value = roll_stat(sub_stat2)
-    
-    return (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)
-
-def roll_stat(stat_name):
-    if "%" in stat_name:
-        return round(random.uniform(3.0, 7.5), 1)
+    # Level 1: Only main stat, lower roll
+    if level == 1:
+        main_stat_value = roll_stat(main_stat, low=True)
+        return (name, main_stat, main_stat_value, None, None, None, None)
+    # Level 2: Main stat (higher roll), one substat
+    elif 2 <= level <= 7 :
+        main_stat_value = roll_stat(main_stat, low=False)
+        sub_stat1 = random.choice([s for s in stats if s != main_stat])
+        sub_stat1_value = roll_stat(sub_stat1, low=True)
+        return (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, None, None)
+    # Level 3: Full artifact (existing logic)
     else:
-        return random.randint(30, 100)
+        sub_stat1 = random.choice([s for s in stats if s != main_stat])
+        sub_stat2 = random.choice([s for s in stats if s not in [main_stat, sub_stat1]])
+        main_stat_value = roll_stat(main_stat, low=False)
+        sub_stat1_value = roll_stat(sub_stat1, low=False)
+        sub_stat2_value = roll_stat(sub_stat2, low=False)
+        return (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)
+
+def roll_stat(stat_name, low=False):
+    if "%" in stat_name:
+        if low:
+            return round(random.uniform(1.0, 3.5), 1)
+        else:
+            return round(random.uniform(3.0, 7.5), 1)
+    else:
+        if low:
+            return random.randint(10, 40)
+        else:
+            return random.randint(30, 100)
 
 def add_artifact(name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value):
     from athas import DB_PATH
+    sub_stat1 = sub_stat1 if sub_stat1 is not None else None
+    sub_stat1_value = sub_stat1_value if sub_stat1_value is not None else None
+    sub_stat2 = sub_stat2 if sub_stat2 is not None else None
+    sub_stat2_value = sub_stat2_value if sub_stat2_value is not None else None
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('''INSERT INTO artifacts (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)

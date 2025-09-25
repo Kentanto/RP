@@ -1,0 +1,404 @@
+Sword
+Dagger
+Knife
+Shortsword
+Longsword
+Greatsword
+Rapier
+Katana
+Scimitar
+Axe
+Battleaxe
+Handaxe
+Greataxe
+Mace
+Flail
+Morningstar
+Hammer
+Warhammer
+Club
+Quarterstaff
+Spear
+Lance
+Halberd
+Polearm
+Glaive
+Trident
+Bow
+Shortbow
+Longbow
+Crossbow
+Hand Crossbow
+Recurve Bow
+Composite Bow
+Gun
+Pistol
+Rifle
+Musket
+Cannon
+Wand
+Staff
+Rod
+Orb
+Tome
+Grimoire
+Scroll
+Amulet
+Pendant
+Necklace
+Ring
+Bracelet
+Belt
+Charm
+Talisman
+Totem
+Medallion
+Cloak
+Cape
+Mantle
+Robe
+Tunic
+Vest
+Shirt
+Armor
+Plate Armor
+Chainmail
+Scalemail
+Leather Armor
+Breastplate
+Cuirass
+Gauntlets
+Gloves
+Boots
+Greaves
+Bracers
+Helmet
+Crown
+Circlet
+Mask
+Shield
+Buckler
+Tower Shield
+Kite Shield
+Round Shield
+Potion
+Elixir
+Philter
+Draught
+Herb
+Remedy
+Salve
+Ointment
+Poison
+Antidote
+Crystal
+Gemstone
+Jewel
+Stone
+Rune
+Sigil
+Insignia
+Seal
+Key
+Relic
+Artifact
+Idol
+Chalice
+Goblet
+Urn
+Lamp
+Lantern
+Torch
+Candle
+Map
+Compass
+Scrollcase
+Satchel
+Backpack
+Pouch
+Bag
+Quiver
+Arrows
+Bolts
+Bullet
+Shell
+Bomb
+Grenade
+Trap
+Net
+Whip
+Chain
+Spiked Chain
+Pickaxe
+Sickle
+Kusarigama
+Nunchaku
+Shuriken
+Kunai
+Throwing Knife
+Boomerang
+Slingshot
+Sling
+Sword
+Dagger
+Knife
+Shortsword
+Longsword
+Greatsword
+Rapier
+Katana
+Scimitar
+Axe
+Battleaxe
+Handaxe
+Greataxe
+Mace
+Flail
+Morningstar
+Hammer
+Warhammer
+Club
+Quarterstaff
+Spear
+Lance
+Halberd
+Polearm
+Glaive
+Trident
+Partisan
+Voulge
+Bardiche
+Pike
+Naginata
+Yari
+Bo Staff
+Kanabo
+Sai
+Tonfa
+Whip
+Chain
+Spiked Chain
+Hook Sword
+Kusarigama
+Nunchaku
+Shuriken
+Kunai
+Throwing Knife
+Boomerang
+Slingshot
+Sling
+Bolter
+Laser Rifle
+Plasma Rifle
+Railgun
+Gauss Rifle
+Pulse Cannon
+Fusion Cutter
+Energy Sword
+Photon Blade
+Lightwhip
+Vibroblade
+Blaster
+Needler
+Disruptor
+Antimatter Cannon
+Flamethrower
+Cryo Blaster
+Gravity Hammer
+Tesla Staff
+Neural Whip
+Psi Amplifier
+Chrono Gauntlet
+Wormhole Grenade
+Time Dagger
+Reality Shard
+Phase Blade
+Null Rod
+Oblivion Sphere
+Black Hole Bomb
+Warpstone
+Void Crystal
+Astral Shard
+Soul Gem
+Demon Fang
+Dragon Scale
+Phoenix Feather
+Unicorn Horn
+Kraken Tentacle
+Minotaur Axe
+Cyclops Club
+Gorgon Mirror
+Medusa’s Fang
+Cerberus Collar
+Hydra Fang
+Basilisk Eye
+Chimera Hide
+Griffon Claw
+Pegasus Bridle
+Djinn Lamp
+Genie Bottle
+Wish Coin
+Cursed Doll
+Voodoo Mask
+Bone Talisman
+Spirit Drum
+Totem Pole
+Oracle Stone
+Prophecy Scroll
+Runestone
+Blood Rune
+Hex Bag
+Necro Tome
+Grimoire
+Codex
+Tablet
+Sealed Letter
+Ancient Key
+Obsidian Dagger
+Sunblade
+Moonblade
+Starforge Hammer
+Eclipse Scythe
+Chaos Orb
+Order Crystal
+Balance Scale
+Infinity Ring
+Eternity Band
+Crown
+Diadem
+Circlet
+Mask
+Helmet
+Visor
+Goggles
+Monocle
+Cybernetic Eye
+Nanotech Suit
+Exoskeleton
+Mech Armor
+Power Gauntlet
+Nano-Injector
+Jetpack
+Graviton Boots
+Levitation Cloak
+Phase Cloak
+Shadow Cloak
+Invisibility Cape
+Wings
+Mechanical Wings
+Dragon Wings
+Angel Feather
+Demon Horn
+Devil Tail
+Halo
+Aura Stone
+Spirit Lantern
+Ghost Chain
+Phantom Bell
+Spectral Blade
+Wraith Cloak
+Zombie Hand
+Ghoul Fang
+Vampire Fang
+Werewolf Claw
+Witch’s Broom
+Cauldron
+Crystal Ball
+Tarot Deck
+Astrolabe
+Sundial
+Hourglass
+Timepiece
+Chronometer
+Stasis Pod
+Cryo Pod
+Healing Pod
+Medkit
+Stimpack
+Potion
+Elixir
+Philter
+Herb
+Remedy
+Salve
+Ointment
+Poison
+Antidote
+Venom Vial
+Slime Jar
+Dragon’s Blood
+Ether Flask
+Mana Potion
+Stamina Tonic
+Luck Charm
+Fate Coin
+Destiny Dice
+Loaded Die
+Trick Deck
+Jester Mask
+Clown Horn
+Banana Peel
+Rubber Chicken
+Toy Sword
+Foam Hammer
+Bubble Wand
+Candy Cane Sword
+Lollipop Staff
+Marshmallow Shield
+Gummy Bear Totem
+Cookie Cutter Axe
+Pizza Shuriken
+Burger Shield
+Soda Grenade
+Hotdog Spear
+Popcorn Bag Bomb
+Rubber Duck Amulet
+Golden Toilet Seat
+Sacred Plunger
+Holy Mop
+Cursed Sock
+Enchanted Slippers
+Rabbit Foot
+Four-Leaf Clover
+Horseshoe
+Lucky Penny
+Broken Mirror Shard
+Black Cat Idol
+Salt Shaker
+Feather Quill
+Ink Bottle
+Spell Scroll
+Map
+Compass
+Crystal Compass
+Void Compass
+Star Map
+Constellation Globe
+Orbital Cannon
+Satellite Dish
+Data Chip
+AI Core
+Memory Crystal
+Hologram Projector
+Drone
+Battle Drone
+Spider Bot
+Repair Kit
+Welding Torch
+Plasma Cutter
+Power Cell
+Fusion Core
+Dark Matter Cell
+Quantum Battery
+Singularity Drive
+Hyperdrive Engine
+Warp Drive Key
+Dimensional Gate
+Portal Stone
+Teleport Crystal
+Gateway Rune
+Wormhole Key
+Oblivion Key
+Skeleton Key
+Rusty Key
+Master Key
