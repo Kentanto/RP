@@ -5,6 +5,32 @@ import math
 import random
 import time
 
+class Colors:    
+    white = (255, 255, 255)
+    black = (0, 0, 0)
+    blue = (0, 0, 255)
+    purple = (128, 0, 128)
+    gold = (255, 215, 0)
+    red = (255, 0, 0)
+    green = (0, 255, 0)
+    yellow = (255, 255, 0)
+    orange = (255, 165, 0)
+    brown = (139, 69, 19)
+    gray = (128, 128, 128)
+    light_gray = (200, 200, 200)
+    dark_gray = (50, 50, 50)
+    dark_green = (0, 100, 0)
+    light_green = (150, 255, 150)
+    dark_red = (139, 0, 0)
+    light_red = (255, 150, 150)
+    dark_yellow = (128, 128, 0)
+    light_yellow = (255, 255, 150)
+    dark_blue = (0, 0, 125)
+    light_blue = (100, 100, 255)
+    hover_color = (0, 150, 255)
+    stat_text_color = (218, 165, 32)
+    artifact_text_color = (147, 112, 219)
+
 def get_equipped_artifacts():
     from athas import DB_PATH
     with sqlite3.connect(DB_PATH) as conn:
@@ -167,7 +193,6 @@ def generate_random_artifact_name():
     import os
     import random
 
-    # Load names and adjectives from txt files
     base_dir = os.path.dirname(__file__)
     names_path = os.path.join(base_dir, "Artifact_names.txt")
     adjectives_path = os.path.join(base_dir, "adjectives.txt")
@@ -181,13 +206,11 @@ def generate_random_artifact_name():
         item_types = [line.strip() for line in f if line.strip()]
     fillers = ["of", "the", "from", "with", "for"]
 
-    # Try generating a name that fits the length constraint
-    for _ in range(10):  # Try up to 10 times
+    for _ in range(10):
         name = random.choice(names)
         adj = random.choice(adjectives)
         item = random.choice(item_types)
         filler = random.choice(fillers)
-        # Randomly choose a pattern
         patterns = [
             f"{name}'s {adj} {item}",
             f"{adj} {item} of {name}",
@@ -198,12 +221,7 @@ def generate_random_artifact_name():
         result = random.choice(patterns)
         if len(result) <= 55:
             return result
-    # Fallback: just return a short pattern
     return f"{random.choice(names)}'s {random.choice(item_types)}"
-
-# Example usage:
-# artifact_name = generate_random_artifact_name()
-
 
 def generate_artifact_by_level(level):
     stats = ["ATK", "DEF", "HP", "Crit Rate%", "SPD%", "Crit DMG%", "ATK%", "DEF%", "HP%"]
@@ -253,3 +271,111 @@ def add_artifact(name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, s
                     VALUES (?, ?, ?, ?, ?, ?, ?)''',
                 (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value))
         conn.commit()
+
+def truncate_text(text, font, max_width):
+    if font.size(text)[0] <= max_width:
+        return text
+    while font.size(text + "...")[0] > max_width and len(text) > 0:
+        text = text[:-1]
+    return text + "..."
+
+def fit_text_to_box(text, box_width, box_height, font_name="None", max_size=55, min_size=18):
+    for size in range(max_size, min_size - 1, -2):
+        font = pygame.font.SysFont(font_name, size)
+        text_width, text_height = font.size(text)
+        if text_width <= box_width and text_height <= box_height:
+            return font
+    return pygame.font.SysFont(font_name, min_size)
+
+class DropdownMenu:
+    def __init__(self, options, x, y, width, height, font, selected=0):
+        self.options = options
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.font = font
+        self.selected = selected
+        self.open = False
+
+    def draw(self, screen):
+        pygame.draw.rect(screen, Colors.light_gray, (self.x, self.y, self.width, self.height), border_radius=5)
+        text = self.font.render(self.options[self.selected], True, Colors.black)
+        screen.blit(text, (self.x + 10, self.y + 5))
+        if self.open:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            for i, option in enumerate(self.options):
+                option_rect = pygame.Rect(self.x, self.y + self.height + i * self.height, self.width, self.height)
+                is_hovered = option_rect.collidepoint((mouse_x, mouse_y))
+                color = Colors.light_blue if i == self.selected or is_hovered else Colors.white
+                pygame.draw.rect(screen, color, option_rect, border_radius=3)
+                option_text = self.font.render(option, True, Colors.black)
+                screen.blit(option_text, (option_rect.x + 10, option_rect.y + 5))
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mx, my = pygame.mouse.get_pos()
+            main_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+            if main_rect.collidepoint((mx, my)):
+                self.open = not self.open
+                return True
+            elif self.open:
+                for i, option in enumerate(self.options):
+                    option_rect = pygame.Rect(self.x, self.y + self.height + i * self.height, self.width, self.height)
+                    if option_rect.collidepoint((mx, my)):
+                        self.selected = i
+                        self.open = False
+                        return True
+                self.open = False
+        return False
+
+    def get_selected(self):
+        return self.selected
+
+class Checkbox:
+    def __init__(self, x, y, size, checked=False, label="", font=None):
+        self.x = x
+        self.y = y
+        self.size = size
+        self.checked = checked
+        self.label = label
+        self.font = font
+
+    def draw(self, screen):
+        rect = pygame.Rect(self.x, self.y, self.size, self.size)
+        pygame.draw.rect(screen, Colors.light_gray, rect, border_radius=3)
+        if self.checked:
+            pygame.draw.line(screen, Colors.green, (self.x+4, self.y+self.size//2), (self.x+self.size//2, self.y+self.size-4), 3)
+            pygame.draw.line(screen, Colors.green, (self.x+self.size//2, self.y+self.size-4), (self.x+self.size-4, self.y+4), 3)
+        if self.label and self.font:
+            label_text = self.font.render(self.label, True, Colors.black)
+            screen.blit(label_text, (self.x + self.size + 8, self.y + self.size//2 - label_text.get_height()//2))
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mx, my = pygame.mouse.get_pos()
+            rect = pygame.Rect(self.x, self.y, self.size, self.size)
+            if rect.collidepoint((mx, my)):
+                self.checked = not self.checked
+                return True
+        return False
+
+    def is_checked(self):
+        return self.checked
+
+def get_artifact_stat_total(artifact, stat_name):
+    total = 0
+    found = False
+    # main stat
+    if artifact[2] == stat_name and artifact[3] is not None:
+        total += artifact[3]
+        found = True
+    # sub stat 1
+    if artifact[4] == stat_name and artifact[5] is not None:
+        total += artifact[5]
+        found = True
+    # sub stat 2
+    if artifact[6] == stat_name and artifact[7] is not None:
+        total += artifact[7]
+        found = True
+    return total if found else None
