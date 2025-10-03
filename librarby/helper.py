@@ -216,7 +216,7 @@ def generate_random_artifact_name():
             f"{adj} {item} of {name}",
             f"{item} of {adj} {name}",
             f"{name}'s {item} of {adj}",
-            f"{adj} {item} {filler} {name}"
+            f"{adj} {item} {filler} {name}" #change name to use more item names or adjcetives
         ]
         result = random.choice(patterns)
         if len(result) <= 55:
