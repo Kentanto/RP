@@ -5,6 +5,14 @@ import math
 import random
 import time
 
+class WindowState:
+    def __init__(self):
+        self.width, self.height = 800, 600
+    
+    def update(self):
+        surface = pygame.display.get_surface()
+        self.width, self.height = surface.get_width(), surface.get_height()
+
 class Colors:    
     white = (255, 255, 255)
     black = (0, 0, 0)

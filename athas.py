@@ -18,13 +18,38 @@ else:
 ICO_PATH = 'icons'
 DB_PATH = os.path.join(base_path, 'database', 'artifacts.db')
 
-
 pygame.init()
 pygame.display.set_caption("Athas system")
+background_image_path = os.path.join(base_path, "icons\\background_menu.png")
+background_image = pygame.image.load(background_image_path)
+window = WindowState()
+screen = pygame.display.set_mode((window.width, window.height), pygame.RESIZABLE)
 
-screen_width = 800
-screen_height = 600
-screen = pygame.display.set_mode((screen_width, screen_height))
+
+def window_scale():
+    surface = pygame.display.get_surface()
+    old_surface = surface
+    new_surface = pygame.display.get_surface()
+    if old_surface != new_surface:
+        surface = new_surface
+        window.width, window.height = surface.get_width(), surface.get_height()
+        window.update()
+        print(f"{window.width}x{window.height}")
+        return window.width, window.height
+    else:
+        window.width, window.height = old_surface.get_width(), old_surface.get_height()
+        window.update()
+        print(f"{window.width}x{window.height}")
+        return window.width, window.height
+
+
+def replace_background(background_image):
+    background_image = pygame.transform.scale(background_image, window_scale())
+    screen.fill(Colors.white)
+    screen.blit(background_image, (0,0))
+
+    
+background_image = pygame.transform.scale(background_image, window_scale())
 font_large = pygame.font.SysFont(None, 55)
 font_medium = pygame.font.SysFont(None, 40)
 font_small = pygame.font.SysFont(None, 30)
@@ -33,14 +58,9 @@ font = pygame.font.SysFont(None, 55)
 ui_hover_sound = None
 ui_click_sound = None
 ui_back_sound = None
-    
+
 
 def initial_startup():
-    global background_image
-    background_image_path = os.path.join(base_path, "icons\\background_menu.png")
-    background_image = pygame.image.load(background_image_path)
-    background_image = pygame.transform.scale(background_image, (screen_width, screen_height))
-    
     fade_in()
     send_launcher_back()
     main_menu()
@@ -68,7 +88,6 @@ def organize_files():
     song_path = os.path.join(sounds_path, "songs")
     librarby_path = os.path.join(base_path, "librarby")
 
-    # Ensure all needed directories exist
     os.makedirs(icons_path, exist_ok=True)
     os.makedirs(sounds_path, exist_ok=True)
     os.makedirs(song_path, exist_ok=True)
@@ -133,13 +152,13 @@ def fade_out_music():
 
 def fade_in():
     screen.fill(Colors.black)
-    screen.blit(background_image, (0, 0))    
+    replace_background(background_image)
     bar_width = 400
     bar_height = 30
-    bar_x = (screen_width - bar_width) // 2
-    bar_y = screen_height - 100
+    bar_x = (window.width - bar_width) // 2
+    bar_y = window.height - 100
     loading_time = 2700
-    fade_surface = pygame.Surface((screen_width, screen_height))
+    fade_surface = pygame.Surface(window_scale())
     fade_surface.fill(Colors.black)
     song_durations = {
         "feelGood.mp3": 53,
@@ -211,7 +230,7 @@ def fade_in():
 
 
     start_time = pygame.time.get_ticks()
-    last_reported_progress = -1
+    last_reported_progress = -1 
     running = True
     while running:
         if pygame.event.get(pygame.QUIT):
@@ -235,15 +254,15 @@ def fade_in():
             running = False
 
         fade_surface.set_alpha(int(255 * (1 - progress)))
-        screen.blit(background_image, (0, 0))
-        screen.blit(fade_surface, (0, 0))
+        replace_background(background_image)
+        screen.blit(fade_surface, window_scale())
 
         fill_width = int(progress * bar_width)
         pygame.draw.rect(screen, Colors.white, (bar_x, bar_y, bar_width, bar_height), 2)
         pygame.draw.rect(screen, Colors.gold, (bar_x + 2, bar_y + 2, fill_width - 4, bar_height - 4))
 
         loading_text = font_medium.render(f"Loading... {int(progress * 100)}%", True, Colors.white)
-        text_rect = loading_text.get_rect(center=(screen_width // 2, bar_y - 30))
+        text_rect = loading_text.get_rect(center=(window.width // 2, bar_y - 30))
         screen.blit(loading_text, text_rect)
 
         pygame.display.flip()
@@ -251,30 +270,34 @@ def fade_in():
 
 
 class Button:
-    def __init__(self, text, x, y, width, height, hover_color=(255, 255, 255, 128), is_back_button=False):
+    def __init__(self, text, x_ratio, y_ratio, width_ratio, height_ratio, hover_color=(255, 255, 255, 128), is_back_button=False):
         self.text = text
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
+        self.x_ratio = x_ratio
+        self.y_ratio = y_ratio
+        self.width_ratio = width_ratio
+        self.height_ratio = height_ratio
         self.hover_color = hover_color
-        self.was_hovered = False  # Track previous hover state
-        self.is_back_button = is_back_button  # Flag for back/leave buttons
+        self.was_hovered = False
+        self.is_back_button = is_back_button
+        self.update_dimensions()
+
+    def update_dimensions(self):
+        self.width = int(window.width * self.width_ratio)
+        self.height = int(window.height * self.height_ratio)
+        self.x = int(window.width * self.x_ratio - self.width / 2)
+        self.y = int(window.height * self.y_ratio - self.height / 2)
 
     def draw(self, screen):
+        self.update_dimensions()
         mouse_pos = pygame.mouse.get_pos()
         is_hovered = self.is_hovered(mouse_pos)
-        
-        # Play hover sound when first hovering
         if is_hovered and not self.was_hovered and ui_hover_sound:
             ui_hover_sound.play()
-        
         self.was_hovered = is_hovered
         
         text_surface = font.render(self.text, True, Colors.white)
         text_width = text_surface.get_width()
         text_height = text_surface.get_height()
-        
         hover_width = text_width + 20
         hover_x = self.x + (self.width - hover_width) // 2
 
@@ -294,13 +317,13 @@ class Button:
     def is_clicked(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.is_hovered(pygame.mouse.get_pos()):
-                # Play appropriate click sound
                 if self.is_back_button and ui_back_sound:
                     ui_back_sound.play()
                 elif ui_click_sound:
                     ui_click_sound.play()
                 return True
         return False
+
 
 def initialize_database():    
     if not os.path.exists(os.path.dirname(DB_PATH)):
@@ -442,9 +465,9 @@ def level_up_artifact(artifact_id, feed_exp):
 def open_artifact_detail(artifact_id, equip_slot=None):
     running = True
     back_button = Button("Back", 10, 10, 100, 40, Colors.hover_color, is_back_button=True)
-    level_button = Button("Level Up", screen_width // 2 - 100, screen_height - 100, 200, 50, (0, 150, 0, 200))
+    level_button = Button("Level Up", window.width // 2 - 100, window.height - 100, 200, 50, (0, 150, 0, 200))
     if equip_slot != None:
-        equip_button = Button(f"Equip to Slot {equip_slot}", screen_width // 2 - 100, screen_height - 50, 200, 40, Colors.hover_color)
+        equip_button = Button(f"Equip to Slot {equip_slot}", window.width // 2 - 100, window.height - 50, 200, 40, Colors.hover_color)
 
     min_invest = 50
     max_invest = 500
@@ -453,8 +476,8 @@ def open_artifact_detail(artifact_id, equip_slot=None):
     
     slider_width = 300
     slider_height = 20
-    slider_x = screen_width // 2 - slider_width // 2
-    slider_y = screen_height - 150 
+    slider_x = window.width // 2 - slider_width // 2
+    slider_y = window.height - 150 
     slider_dragging = False
     
     showing_upgrade = False
@@ -464,8 +487,7 @@ def open_artifact_detail(artifact_id, equip_slot=None):
     
     while running:
         current_time = pygame.time.get_ticks()
-        screen.fill(Colors.white)
-        screen.blit(background_image, (0, 0))
+        replace_background(background_image)
         
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
@@ -479,9 +501,9 @@ def open_artifact_detail(artifact_id, equip_slot=None):
         
         artifact_points = get_artifact_points()
 
-        panel_width = int(screen_width * 0.7)
-        panel_height = int(screen_height * 0.6)
-        panel_x = (screen_width - panel_width) // 2
+        panel_width = int(window.width * 0.7)
+        panel_height = int(window.height * 0.6)
+        panel_x = (window.width - panel_width) // 2
         panel_y = 50
         
         panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
@@ -529,7 +551,7 @@ def open_artifact_detail(artifact_id, equip_slot=None):
         screen.blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2, bar_y + 30))
         
         points_text = font_medium.render(f"Artifact Points: {artifact_points}", True, Colors.white)
-        screen.blit(points_text, (screen_width - points_text.get_width() - 20, 20))
+        screen.blit(points_text, (window.width - points_text.get_width() - 20, 20))
         
         if level < max_level:
             pygame.draw.rect(screen, (80, 80, 80), (slider_x, slider_y, slider_width, slider_height), border_radius=5)
@@ -551,7 +573,7 @@ def open_artifact_detail(artifact_id, equip_slot=None):
             level_button.draw(screen)
         else:
             max_level_text = font_medium.render("Maximum Level Reached!", True, Colors.gold)
-            screen.blit(max_level_text, (screen_width // 2 - max_level_text.get_width() // 2, slider_y))
+            screen.blit(max_level_text, (window.width // 2 - max_level_text.get_width() // 2, slider_y))
 
         
         if showing_upgrade and upgrade_info:
@@ -560,12 +582,12 @@ def open_artifact_detail(artifact_id, equip_slot=None):
             if progress < 1.0:
                 upgrade_panel = pygame.Surface((400, 300), pygame.SRCALPHA)
                 pygame.draw.rect(upgrade_panel, (0, 0, 0, 180), upgrade_panel.get_rect(), border_radius=10)
-                screen.blit(upgrade_panel, (screen_width // 2 - 200, screen_height // 2 - 150))
+                screen.blit(upgrade_panel, (window.width // 2 - 200, window.height // 2 - 150))
                 
                 level_up_text = font_medium.render(f"Level Up! +{upgrade_info['levels_gained']}", True, Colors.gold)
-                screen.blit(level_up_text, (screen_width // 2 - level_up_text.get_width() // 2, screen_height // 2 - 120))
+                screen.blit(level_up_text, (window.width // 2 - level_up_text.get_width() // 2, window.height // 2 - 120))
                 
-                y_offset = screen_height // 2 - 60
+                y_offset = window.height // 2 - 60
                 for stat_type, stat_name, old_value, new_value in upgrade_info['stats_improved']:
                     current_value = old_value + (new_value - old_value) * progress
                     
@@ -578,8 +600,8 @@ def open_artifact_detail(artifact_id, equip_slot=None):
                     
                     value_text = font_small.render(f"{old_value:.1f} → {current_value:.1f}", True, Colors.green)
                     
-                    screen.blit(stat_text, (screen_width // 2 - 180, y_offset))
-                    screen.blit(value_text, (screen_width // 2 + 50, y_offset))
+                    screen.blit(stat_text, (window.width // 2 - 180, y_offset))
+                    screen.blit(value_text, (window.width // 2 + 50, y_offset))
                     
                     y_offset += 40
             else:
@@ -626,8 +648,7 @@ def open_artifact_detail(artifact_id, equip_slot=None):
 
                     if back_button.is_hovered((mx, my)):
                         running = False
-                        screen.fill(Colors.white)
-                        screen.blit(background_image, (0, 0))
+                        replace_background(background_image)
                         view_artifacts()
             
             elif event.type == pygame.MOUSEBUTTONUP:
@@ -723,17 +744,15 @@ def view_artifacts(equip_slot=None):
 
 
     while True:
-        screen.fill(Colors.white)
-        screen.blit(background_image, (0, 0))
-
+        replace_background(background_image)
 
         title_text = font_large.render("Artifacts", True, Colors.gold)
-        screen.blit(title_text, (screen_width // 2 - title_text.get_width() // 2, 30))
+        screen.blit(title_text, (window.width // 2 - title_text.get_width() // 2, 30))
         
         points_text = font_medium.render(f"Artifact Points: {artifact_points}", True, Colors.white)
-        screen.blit(points_text, (screen_width - points_text.get_width() - 20, 20))
+        screen.blit(points_text, (window.width - points_text.get_width() - 20, 20))
 
-        start_x = (screen_width - (box_width * items_per_row + box_padding * (items_per_row-1))) // 2
+        start_x = (window.width - (box_width * items_per_row + box_padding * (items_per_row-1))) // 2
         start_y = 100 + scroll_y
 
         artifact_boxes.clear()
@@ -759,15 +778,12 @@ def view_artifacts(equip_slot=None):
             box = pygame.Rect(x, y, box_width, box_height)
             artifact_boxes.append((box, artifact[0]))
             
-            # Check if this box is being hovered
             is_hovered = box.collidepoint(mouse_pos)
             if is_hovered:
                 hovered_box_index = i
             
-            # Draw a nicer box with gradient and border
             box_surface = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
             
-            # Change background color when hovered
             if is_hovered:
                 pygame.draw.rect(box_surface, (70, 70, 70, 220), box_surface.get_rect(), border_radius=10)
                 pygame.draw.rect(box_surface, (100, 150, 255, 150), box_surface.get_rect(), width=3, border_radius=10)
@@ -802,7 +818,6 @@ def view_artifacts(equip_slot=None):
             screen.blit(sub_stat1_text, (x + 10, y + 70))
             screen.blit(sub_stat2_text, (x + 10, y + 95)) 
 
-        # Play hover sound when first hovering over an artifact box
         if hovered_box_index != -1 and hovered_box_index != last_hovered_box_index and ui_hover_sound:
             ui_hover_sound.play()
         
@@ -829,21 +844,18 @@ def view_artifacts(equip_slot=None):
             if event.type == pygame.MOUSEWHEEL:
                 scroll_y += event.y * scroll_speed
                 max_rows = (len(artifacts) + items_per_row - 1) // items_per_row
-                min_scroll = -((max_rows * (box_height + box_padding)) - screen_height + 150)
+                min_scroll = -((max_rows * (box_height + box_padding)) - window.height + 150)
                 scroll_y = max(min_scroll, min(0, scroll_y))
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 pos = pygame.mouse.get_pos()
                 for box, artifact_id in artifact_boxes:
                     if box.collidepoint(pos):
-                        # Play click sound for artifacts
                         if ui_click_sound:
                             ui_click_sound.play()
                         
                         open_artifact_detail(artifact_id, equip_slot=equip_slot)
-                        # Refresh artifact points after returning from detail view
                         artifact_points = get_artifact_points()
-                        # Refresh artifacts list in case they were upgraded
                         with sqlite3.connect(DB_PATH) as conn:
                             c = conn.cursor()
                             c.execute("SELECT * FROM artifacts")
@@ -852,8 +864,7 @@ def view_artifacts(equip_slot=None):
                         break
 
             if Back_Button.is_clicked(event):
-                screen.fill(Colors.white)
-                screen.blit(background_image, (0, 0))
+                replace_background(background_image)
                 status_window()
 
 
@@ -908,11 +919,10 @@ def generate_math_equation_easy(equation_length):
 
 def insufficient_points_message():
     message = font_medium.render("Not enough points!", True, Colors.red)
-    screen.blit(message, (screen_width//2 - message.get_width()//2, screen_height - 100))
+    screen.blit(message, (window.width//2 - message.get_width()//2, window.height - 100))
     pygame.display.flip()
     pygame.time.wait(1500)
-    screen.fill(Colors.white)
-    screen.blit(background_image, (0, 0))
+    replace_background(background_image)
     pygame.display.flip()
     minigames_menu()
 
@@ -932,19 +942,18 @@ def add_points(point_reward):
 def math_activity_menu():
     current_points = get_current_points()
     
-    Easy_button = Button("Easy", screen_width // 2 - 165, screen_height // 2 - 140, 330, 50, Colors.hover_color)    
-    Medium_button = Button("Locked-Medium-Locked LV: 8", screen_width // 2 - 165, screen_height // 2 - 70, 330, 50, Colors.hover_color)
-    Hard_button = Button("Locked-Hard-Locked Lv: 15", screen_width // 2 - 165, screen_height // 2 - 0, 330, 50, Colors.hover_color)
-    Extreme_button = Button("Locked-Extreme-Locked LV: 25", screen_width // 2 - 165, screen_height // 2 + 70, 330, 50, Colors.hover_color)
-    Leave_button = Button("Leave", screen_width // 2 - 165, screen_height // 2 + 140, 330, 50, Colors.hover_color, is_back_button=True)
+    Easy_button = Button("Easy", window.width // 2 - 165, window.height // 2 - 140, 330, 50, Colors.hover_color)    
+    Medium_button = Button("Locked-Medium-Locked LV: 8", window.width // 2 - 165, window.height // 2 - 70, 330, 50, Colors.hover_color)
+    Hard_button = Button("Locked-Hard-Locked Lv: 15", window.width // 2 - 165, window.height // 2 - 0, 330, 50, Colors.hover_color)
+    Extreme_button = Button("Locked-Extreme-Locked LV: 25", window.width // 2 - 165, window.height // 2 + 70, 330, 50, Colors.hover_color)
+    Leave_button = Button("Leave", window.width // 2 - 165, window.height // 2 + 140, 330, 50, Colors.hover_color, is_back_button=True)
     
     running = True
     while running:
-        screen.fill(Colors.white)
-        screen.blit(background_image, (0, 0))
+        replace_background(background_image)
         
         points_text = font_medium.render(f"Points: {current_points}/{20}", True, Colors.white)
-        screen.blit(points_text, (screen_width - 200, 50))
+        screen.blit(points_text, (window.width - 200, 50))
         
         Easy_button.draw(screen)
         Medium_button.draw(screen)
@@ -981,14 +990,12 @@ def math_activity_menu():
                     pass
                     
                 case _ if Leave_button.is_clicked(event):
-                    screen.fill(Colors.white)
-                    screen.blit(background_image, (0, 0))
+                    replace_background(background_image)
                     pygame.display.flip()
                     minigames_menu()
                     
                 case _ if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    screen.fill(Colors.white)
-                    screen.blit(background_image, (0, 0))
+                    replace_background(background_image)
                     pygame.display.flip()
                     minigames_menu()
         
@@ -1011,14 +1018,13 @@ def math_game_window(math_difficulty):
 
     running = True
     while running:
-        screen.fill(Colors.white)
-        screen.blit(background_image, (0, 0))
+        replace_background(background_image)
         
         equation_surface = font.render(f"Solve: {equation}", True, Colors.white)
-        screen.blit(equation_surface, (screen_width // 2 - equation_surface.get_width() // 2, 150))
+        screen.blit(equation_surface, (window.width // 2 - equation_surface.get_width() // 2, 150))
 
         user_input_surface = font.render(user_input, True, Colors.white)
-        screen.blit(user_input_surface, (screen_width // 2 - user_input_surface.get_width() // 2, 300))
+        screen.blit(user_input_surface, (window.width // 2 - user_input_surface.get_width() // 2, 300))
 
         leave_button.draw(screen)
 
@@ -1034,8 +1040,7 @@ def math_game_window(math_difficulty):
                     try:
                         user_answer = float(user_input)
                         if round_result(user_answer, precision=0.1) == rounded_answer:
-                            screen.fill(Colors.white)
-                            screen.blit(background_image, (0, 0))
+                            replace_background(background_image)
                             
                             artifact = generate_artifact_by_level(math_difficulty)
                             add_artifact(*artifact)
@@ -1045,7 +1050,7 @@ def math_game_window(math_difficulty):
                             
                             panel_width = 600
                             panel_height = 350
-                            panel_x = (screen_width - panel_width) // 2
+                            panel_x = (window.width - panel_width) // 2
                             panel_y = 120
                             
                             panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
@@ -1054,25 +1059,25 @@ def math_game_window(math_difficulty):
                             
                             result_text = "Correct!"
                             result_surface = font_large.render(result_text, True, (0, 255, 0))
-                            screen.blit(result_surface, (screen_width // 2 - result_surface.get_width() // 2, panel_y + 30))
+                            screen.blit(result_surface, (window.width // 2 - result_surface.get_width() // 2, panel_y + 30))
                             
                             name_surface = font_medium.render(f"You received: {artifact[0]}", True, Colors.gold)
-                            screen.blit(name_surface, (screen_width // 2 - name_surface.get_width() // 2, panel_y + 100))
+                            screen.blit(name_surface, (window.width // 2 - name_surface.get_width() // 2, panel_y + 100))
                             
                             main_stat_text = font_small.render(f"Main Stat: {artifact[1]} +{artifact[2]}", True, Colors.white)
-                            screen.blit(main_stat_text, (screen_width // 2 - main_stat_text.get_width() // 2, panel_y + 150))
+                            screen.blit(main_stat_text, (window.width // 2 - main_stat_text.get_width() // 2, panel_y + 150))
                             
                             sub1_text = font_small.render(f"Sub Stat: {artifact[3]} +{artifact[4]}", True, Colors.light_gray)
-                            screen.blit(sub1_text, (screen_width // 2 - sub1_text.get_width() // 2, panel_y + 180))
+                            screen.blit(sub1_text, (window.width // 2 - sub1_text.get_width() // 2, panel_y + 180))
                             
                             sub2_text = font_small.render(f"Sub Stat: {artifact[5]} +{artifact[6]}", True, Colors.light_gray)
-                            screen.blit(sub2_text, (screen_width // 2 - sub2_text.get_width() // 2, panel_y + 210))
+                            screen.blit(sub2_text, (window.width // 2 - sub2_text.get_width() // 2, panel_y + 210))
                             
                             points_text = font_medium.render(f"+{artifact_points_reward} Artifact Points", True, Colors.green)
-                            screen.blit(points_text, (screen_width // 2 - points_text.get_width() // 2, panel_y + 250))
+                            screen.blit(points_text, (window.width // 2 - points_text.get_width() // 2, panel_y + 250))
                             
                             hint_text = font_small.render("Press any key to continue...", True, Colors.white)
-                            screen.blit(hint_text, (screen_width // 2 - hint_text.get_width() // 2, panel_y + 300))
+                            screen.blit(hint_text, (window.width // 2 - hint_text.get_width() // 2, panel_y + 300))
                             
                             pygame.display.flip()
                             
@@ -1089,11 +1094,9 @@ def math_game_window(math_difficulty):
                         else:
                             panel_width = 600
                             panel_height = 200
-                            panel_x = (screen_width - panel_width) // 2
-                            panel_y = 200
-                            
-                            screen.fill(Colors.white)
-                            screen.blit(background_image, (0, 0))
+                            panel_x = (window.width - panel_width) // 2
+                            panel_y = 200                            
+                            replace_background(background_image)
                             
                             panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
                             pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
@@ -1101,14 +1104,14 @@ def math_game_window(math_difficulty):
                             
                             result_text = "Incorrect!"
                             result_surface = font_large.render(result_text, True, Colors.red)
-                            screen.blit(result_surface, (screen_width // 2 - result_surface.get_width() // 2, panel_y + 30))
+                            screen.blit(result_surface, (window.width // 2 - result_surface.get_width() // 2, panel_y + 30))
                             
                             answer_text = f"The correct answer is: {rounded_answer}"
                             answer_surface = font_medium.render(answer_text, True, Colors.white)
-                            screen.blit(answer_surface, (screen_width // 2 - answer_surface.get_width() // 2, panel_y + 90))
+                            screen.blit(answer_surface, (window.width // 2 - answer_surface.get_width() // 2, panel_y + 90))
                             
                             hint_text = font_small.render("Press any key to continue...", True, Colors.white)
-                            screen.blit(hint_text, (screen_width // 2 - hint_text.get_width() // 2, panel_y + 150))
+                            screen.blit(hint_text, (window.width // 2 - hint_text.get_width() // 2, panel_y + 150))
                             
                             pygame.display.flip()
                             
@@ -1123,8 +1126,7 @@ def math_game_window(math_difficulty):
                                     if evt.type == pygame.KEYDOWN or evt.type == pygame.MOUSEBUTTONDOWN:
                                         waiting = False
 
-                        screen.fill(Colors.white)
-                        screen.blit(background_image, (0, 0))
+                        replace_background(background_image)
                         pygame.display.flip()
                         subtract_points(20)
                         math_game_window(math_difficulty)
@@ -1138,8 +1140,7 @@ def math_game_window(math_difficulty):
                     user_input += event.unicode
             
             if leave_button.is_clicked(event):
-                screen.fill(Colors.white)
-                screen.blit(background_image, (0, 0))
+                replace_background(background_image)
                 pygame.display.flip()
                 add_points(20)
                 math_activity_menu()
@@ -1150,16 +1151,15 @@ def math_game_window(math_difficulty):
 
 def minigames_menu():
     current_points = get_current_points()
-    Math_Button = Button("Math", screen_width // 2 - 165, screen_height // 2 - 140, 330, 50, Colors.hover_color)    
-    Back_Button = Button("Back", screen_width // 2 - 165, screen_height // 2 + 70, 330, 50, Colors.hover_color, is_back_button=True)
+    Math_Button = Button("Math", window.width // 2 - 165, window.height // 2 - 140, 330, 50, Colors.hover_color)    
+    Back_Button = Button("Back", window.width // 2 - 165, window.height // 2 + 70, 330, 50, Colors.hover_color, is_back_button=True)
     points_text = font_medium.render(f"Points: {current_points}", True, Colors.white)
     
     while True:
-        screen.fill(Colors.white)
-        screen.blit(background_image, (0, 0))
+        replace_background(background_image)
         Math_Button.draw(screen)
         Back_Button.draw(screen)
-        screen.blit(points_text, (screen_width - 200, 50))
+        screen.blit(points_text, (window.width - 200, 50))
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -1170,20 +1170,17 @@ def minigames_menu():
             
             if Math_Button.is_clicked(event):
                 if not math_activity_menu():
-                    screen.fill(Colors.white)
-                    screen.blit(background_image, (0, 0))
+                    replace_background(background_image)
                     pygame.display.flip()
                     main_menu()
             
             if Back_Button.is_clicked(event):
-                screen.fill(Colors.white)
-                screen.blit(background_image, (0, 0))
+                replace_background(background_image)
                 pygame.display.flip()
                 main_menu()
             
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                screen.fill(Colors.white)
-                screen.blit(background_image, (0, 0))
+                replace_background(background_image)
                 pygame.display.flip()
                 main_menu()
         
@@ -1195,16 +1192,15 @@ def status_window():
     equipped_artifacts = get_equipped_artifacts()
 
     Back_Button = Button("Back", 10, 10, 100, 40, Colors.hover_color, is_back_button=True)
-    View_Artifacts = Button("Artifacts", screen_width - 160, 10, 140, 40, Colors.hover_color)
-    Skill_menu = Button("Skills", screen_width//2 - 70, 10, 140, 40, Colors.hover_color)
-    screen.fill(Colors.white)
-    screen.blit(background_image, (0, 0))
+    View_Artifacts = Button("Artifacts", window.width - 160, 10, 140, 40, Colors.hover_color)
+    Skill_menu = Button("Skills", window.width//2 - 70, 10, 140, 40, Colors.hover_color)
+    replace_background(background_image)
     pygame.display.flip()
 
     '''draw the slot amount this increases over level count'''
     
     # slot_rects = [
-    #     pygame.Rect(screen_width//2 - 220 + i*110, 500, 100, 60)
+    #     pygame.Rect(window.width//2 - 220 + i*110, 500, 100, 60)
     #     for i in range(4)
     # ]
     # slot_labels = ["Slot 1", "Slot 2", "Slot 3", "Slot 4"]
@@ -1247,7 +1243,7 @@ def status_window():
         total_value = base_value + artifact_bonus.get(stat, 0)
         total_value = int(total_value * (1 + percent_bonus.get(stat, 0.0)))
         stat_text = font_medium.render(f"{stat}: {total_value}", True, Colors.stat_text_color)
-        screen.blit(stat_text, (screen_width // 2 - 100, stat_y))
+        screen.blit(stat_text, (window.width // 2 - 100, stat_y))
         stat_y += 40
 
 
@@ -1269,8 +1265,7 @@ def status_window():
 
     running = True
     while running:
-        screen.fill(Colors.white)
-        screen.blit(background_image, (0, 0))
+        replace_background(background_image)
 
         Back_Button.draw(screen)
         Skill_menu.draw(screen)
@@ -1282,18 +1277,15 @@ def status_window():
                 pygame.quit()
                 sys.exit()
             if Back_Button.is_clicked(event):
-                screen.fill(Colors.white)
-                screen.blit(background_image, (0, 0))
+                replace_background(background_image)
                 pygame.display.flip()
                 main_menu()
             if View_Artifacts.is_clicked(event):
-                screen.fill(Colors.white)
-                screen.blit(background_image, (0, 0))
+                replace_background(background_image)
                 pygame.display.flip()
                 view_artifacts()
             if Skill_menu.is_clicked(event):
-                screen.fill(Colors.white)
-                screen.blit(background_image, (0, 0))
+                replace_background(background_image)
                 pygame.display.flip()
                 skill_tree_menu()
             # if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -1303,8 +1295,7 @@ def status_window():
             #             view_artifacts(equip_slot=slot_index + 1)
             #             # After returning, refresh equipped_artifacts and redraw
             #             equipped_artifacts = get_equipped_artifacts()
-            #             screen.fill(Colors.white)
-            #             screen.blit(background_image, (0, 0))
+            #             replace_background(background_image)
             #             # ...redraw code...
             #             break
         pygame.display.flip()
@@ -1369,7 +1360,7 @@ class Skill:
 
 def skill_tree_menu():
     Back_Button = Button("Back", 10, 10, 100, 40, Colors.hover_color, is_back_button=True)
-    tree_center_x = screen_width // 2
+    tree_center_x = window.width // 2
     tree_center_y = 200
     node_radius = 30
     node_spacing = 120
@@ -1538,12 +1529,11 @@ def skill_tree_menu():
     
     while True:
         current_time = pygame.time.get_ticks()
-        screen.fill(Colors.white)
-        screen.blit(background_image, (0, 0))
+        replace_background(background_image)
         Back_Button.draw(screen)
         
         points_text = font_medium.render(f"Skill Points: {skill_points}", True, Colors.gold)
-        screen.blit(points_text, (screen_width // 2 - points_text.get_width() // 2, 10))
+        screen.blit(points_text, (window.width // 2 - points_text.get_width() // 2, 10))
 
         mouse_pos = pygame.mouse.get_pos()
                             
@@ -1645,8 +1635,7 @@ def skill_tree_menu():
                 
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button not in (4,5):
                     if Back_Button.is_clicked(event):
-                        screen.fill(Colors.black)
-                        screen.blit(background_image, (0, 0))
+                        replace_background(background_image)
                         status_window()
 
                     clicked_skill = None
@@ -1730,8 +1719,7 @@ def skill_tree_menu():
 
                 pygame.display.flip()
         else:
-            screen.fill(Colors.black)
-            screen.blit(background_image, (0, 0))
+            replace_background(background_image)
             status_window()
             break
 
@@ -1769,8 +1757,8 @@ def draw_upgrade_info(skill, upgrade, pos, skill_points):
     info_width = max(min_width, name_width + padding * 2, cost_width + padding * 2)
     info_height = padding * 2 + line_height * (len(desc_lines) + len(stat_lines) + 2)
     
-    info_x = max(padding, min(pos[0] - info_width//2, screen_width - info_width - padding))
-    info_y = max(padding, min(pos[1] - info_height - 40, screen_height - info_height - padding))
+    info_x = max(padding, min(pos[0] - info_width//2, window.width - info_width - padding))
+    info_y = max(padding, min(pos[1] - info_height - 40, window.height - info_height - padding))
     
     info_surface = pygame.Surface((info_width, info_height), pygame.SRCALPHA)
     pygame.draw.rect(info_surface, (40, 40, 40, 240), info_surface.get_rect(), border_radius=10)
@@ -1821,8 +1809,8 @@ def draw_skill_info(skill, pos, skill_points):
     info_width = max(min_width, name_width + level_width + padding * 3, max_stat_width + padding * 2)
     info_height = padding * 2 + line_height * (len(desc_lines) + len(stat_lines) + 1)
     
-    info_x = max(padding, min(pos[0] - info_width//2, screen_width - info_width - padding))
-    info_y = max(padding, min(pos[1] + 60, screen_height - info_height - padding))
+    info_x = max(padding, min(pos[0] - info_width//2, window.width - info_width - padding))
+    info_y = max(padding, min(pos[1] + 60, window.height - info_height - padding))
     
     info_surface = pygame.Surface((info_width, info_height), pygame.SRCALPHA)
     pygame.draw.rect(info_surface, (40, 40, 40, 230), info_surface.get_rect(), border_radius=15)
@@ -1868,7 +1856,7 @@ def can_purchase_upgrade(skill, upgrade, skill_points):
 def missions_window():
     Back_Button = Button("Back", 10, 10, 100, 40, Colors.hover_color, is_back_button=True)
     scroll_y = 0
-    banner_width = screen_width - 100
+    banner_width = window.width - 100
     text_width = int(banner_width * 0.75)
     padding = 20
     
@@ -1898,11 +1886,10 @@ def missions_window():
             if event.type == pygame.MOUSEWHEEL:
                 scroll_y += event.y * 20
                 total_height = sum(mission["banner_height"] + padding for mission in missions)
-                min_scroll = -(total_height - screen_height + 150)
+                min_scroll = -(total_height - window.height + 150)
                 scroll_y = max(min_scroll, min(0, scroll_y))
 
-        screen.fill(Colors.white)
-        screen.blit(background_image, (0, 0))
+        replace_background(background_image)
         Back_Button.draw(screen)
 
         y_pos = 100 + scroll_y
@@ -1939,18 +1926,18 @@ def missions_window():
             banner_height = title_height + text_height + padding * 2
             mission["banner_height"] = banner_height
 
-            if -banner_height <= y_pos <= screen_height:
+            if -banner_height <= y_pos <= window.height:
                 banner_rect = pygame.Rect(50, y_pos, banner_width, banner_height)
                 pygame.draw.rect(screen, (40, 40, 40, 230), banner_rect, border_radius=10)
                 
                 stats_y = y_pos + 15
                 reward_text = font_small.render(f"Reward: {mission['reward']}", True, Colors.green)
                 time_text = font_small.render(f"Time: {mission['time_limit']}", True, Colors.light_blue)
-                screen.blit(reward_text, (screen_width // 2 -100 , stats_y + 10))
-                screen.blit(time_text, (screen_width // 2 +180, stats_y + 10))
+                screen.blit(reward_text, (window.width // 2 -100 , stats_y + 10))
+                screen.blit(time_text, (window.width // 2 +180, stats_y + 10))
                 try:
                     progress_text = font_small.render(f"Progress: {mission['progress']}", True, Colors.gold)
-                    screen.blit(progress_text, (screen_width // 2 +180, stats_y + banner_height - 40))  
+                    screen.blit(progress_text, (window.width // 2 +180, stats_y + banner_height - 40))  
                 except KeyError:
                     pass
                     
@@ -1972,17 +1959,15 @@ def missions_window():
 
 
 
-minigames = Button("Minigames", screen_width // 2 - 165, screen_height // 2 - 100, 330, 50, Colors.hover_color)
-Missions_Menu = Button("Missions", screen_width // 2 - 165, screen_height // 2, 330, 50, Colors.hover_color) 
-Stats_Menu = Button("Stats", screen_width // 2 - 165, screen_height // 2 + 100, 330, 50, Colors.hover_color)
+minigames = Button("Minigames", 0.5, 0.3, 0.6, 0.1, Colors.hover_color)
+Missions_Menu = Button("Missions", 0.5, 0.5, 0.6, 0.1, Colors.hover_color) 
+Stats_Menu = Button("Stats", 0.5, 0.7, 0.6, 0.1, Colors.hover_color)
 fadeInComplete = False
 running_threads = []
 def main_menu():
     global fadeInComplete, running_threads
-    
     while True:
-        screen.fill(Colors.black)
-        screen.blit(background_image, (0, 0))
+        replace_background(background_image)
         minigames.draw(screen)
         Missions_Menu.draw(screen)
         Stats_Menu.draw(screen)
