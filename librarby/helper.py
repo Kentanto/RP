@@ -4,15 +4,17 @@ import sys
 import math
 import random
 import time
-
 class WindowState:
     def __init__(self):
         self.width, self.height = 800, 600
     
     def update(self):
         surface = pygame.display.get_surface()
-        self.width, self.height = surface.get_width(), surface.get_height()
-
+        if surface is None:
+            return
+        new_w, new_h = surface.get_width(), surface.get_height()
+        if (new_w, new_h) != (self.width, self.height):
+            self.width, self.height = new_w, new_h
 class Colors:    
     white = (255, 255, 255)
     black = (0, 0, 0)

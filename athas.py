@@ -23,30 +23,31 @@ pygame.display.set_caption("Athas system")
 background_image_path = os.path.join(base_path, "icons\\background_menu.png")
 background_image = pygame.image.load(background_image_path)
 window = WindowState()
-screen = pygame.display.set_mode((window.width, window.height), pygame.RESIZABLE)
+SCREEN = pygame.display.set_mode((window.width, window.height), pygame.RESIZABLE)
 
+def get_screen():
+    s = pygame.display.get_surface()
+    if s is None:
+        return
+    return s
 
 def window_scale():
-    surface = pygame.display.get_surface()
-    old_surface = surface
-    new_surface = pygame.display.get_surface()
-    if old_surface != new_surface:
-        surface = new_surface
-        window.width, window.height = surface.get_width(), surface.get_height()
+    s = pygame.display.get_surface()
+    if s is None:
+        return (window.width, window.height)
+
+    new_w, new_h = s.get_width(), s.get_height()
+    if (new_w, new_h) != (window.width, window.height):
+        window.width, window.height = new_w, new_h
         window.update()
-        print(f"{window.width}x{window.height}")
-        return window.width, window.height
-    else:
-        window.width, window.height = old_surface.get_width(), old_surface.get_height()
-        window.update()
-        print(f"{window.width}x{window.height}")
-        return window.width, window.height
+        print(f"[window_scale] Updated: {window.width}x{window.height}")
+    return (window.width, window.height)
 
 
 def replace_background(background_image):
     background_image = pygame.transform.scale(background_image, window_scale())
-    screen.fill(Colors.white)
-    screen.blit(background_image, (0,0))
+    get_screen().fill(Colors.white)
+    get_screen().blit(background_image, (0,0))
 
     
 background_image = pygame.transform.scale(background_image, window_scale())
@@ -151,12 +152,9 @@ def fade_out_music():
     threading.Thread(target=fade, daemon=True).start()
 
 def fade_in():
-    screen.fill(Colors.black)
-    replace_background(background_image)
-    bar_width = 400
-    bar_height = 30
-    bar_x = (window.width - bar_width) // 2
-    bar_y = window.height - 100
+    get_screen().fill(Colors.black)
+    window.update()
+    replace_background(background_image)  
     loading_time = 2700
     fade_surface = pygame.Surface(window_scale())
     fade_surface.fill(Colors.black)
@@ -233,6 +231,10 @@ def fade_in():
     last_reported_progress = -1 
     running = True
     while running:
+        bar_width = int(window.width * 0.5)
+        bar_height = int(window.height * 0.05)
+        bar_x = (window.width * 0.5) - bar_width // 2
+        bar_y = int(window.height * 0.6)
         if pygame.event.get(pygame.QUIT):
             running = False
             get_current_points()
@@ -254,16 +256,17 @@ def fade_in():
             running = False
 
         fade_surface.set_alpha(int(255 * (1 - progress)))
+        window.update()
         replace_background(background_image)
-        screen.blit(fade_surface, window_scale())
+        get_screen().blit(fade_surface, window_scale())
 
         fill_width = int(progress * bar_width)
-        pygame.draw.rect(screen, Colors.white, (bar_x, bar_y, bar_width, bar_height), 2)
-        pygame.draw.rect(screen, Colors.gold, (bar_x + 2, bar_y + 2, fill_width - 4, bar_height - 4))
+        pygame.draw.rect(get_screen(), Colors.white, (bar_x, bar_y, bar_width, bar_height))
+        pygame.draw.rect(get_screen(), Colors.gold, (bar_x + 2, bar_y + 2, fill_width - 4, bar_height - 4))
 
         loading_text = font_medium.render(f"Loading... {int(progress * 100)}%", True, Colors.white)
-        text_rect = loading_text.get_rect(center=(window.width // 2, bar_y - 30))
-        screen.blit(loading_text, text_rect)
+        text_rect = loading_text.get_rect(center=(window.width // 2, window.height // 2))
+        get_screen().blit(loading_text, text_rect)
 
         pygame.display.flip()
 
@@ -287,7 +290,7 @@ class Button:
         self.x = int(window.width * self.x_ratio - self.width / 2)
         self.y = int(window.height * self.y_ratio - self.height / 2)
 
-    def draw(self, screen):
+    def draw(self):
         self.update_dimensions()
         mouse_pos = pygame.mouse.get_pos()
         is_hovered = self.is_hovered(mouse_pos)
@@ -304,9 +307,9 @@ class Button:
         if is_hovered:
             hover_surface = pygame.Surface((hover_width, self.height), pygame.SRCALPHA)
             pygame.draw.rect(hover_surface, self.hover_color, hover_surface.get_rect())
-            screen.blit(hover_surface, (hover_x, self.y))
+            get_screen().blit(hover_surface, (hover_x, self.y))
 
-        screen.blit(text_surface, (
+        get_screen().blit(text_surface, (
             self.x + (self.width - text_width) // 2,
             self.y + (self.height - text_height) // 2
         ))
@@ -464,10 +467,10 @@ def level_up_artifact(artifact_id, feed_exp):
 
 def open_artifact_detail(artifact_id, equip_slot=None):
     running = True
-    back_button = Button("Back", 10, 10, 100, 40, Colors.hover_color, is_back_button=True)
-    level_button = Button("Level Up", window.width // 2 - 100, window.height - 100, 200, 50, (0, 150, 0, 200))
+    back_button = Button("Back", 0.1, 0.1, 0.1, 0.1, Colors.hover_color, is_back_button=True)
+    level_button = Button("Level Up", 0.5, 0.8, 0.2, 0.1, (0, 150, 0, 200))
     if equip_slot != None:
-        equip_button = Button(f"Equip to Slot {equip_slot}", window.width // 2 - 100, window.height - 50, 200, 40, Colors.hover_color)
+        equip_button = Button(f"Equip to Slot {equip_slot}", 0.5, 0.9, 0.3, 0.1, Colors.hover_color)
 
     min_invest = 50
     max_invest = 500
@@ -508,34 +511,34 @@ def open_artifact_detail(artifact_id, equip_slot=None):
         
         panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
         pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
-        screen.blit(panel_surface, (panel_x, panel_y))
+        get_screen().blit(panel_surface, (panel_x, panel_y))
         
         name_font = fit_text_to_box(name, panel_width - 40, 60)
         name_text = name_font.render(name, True, Colors.gold)
-        screen.blit(name_text, (panel_x + (panel_width - name_text.get_width()) // 2, panel_y + 20))
+        get_screen().blit(name_text, (panel_x + (panel_width - name_text.get_width()) // 2, panel_y + 20))
         
         level_text = font_medium.render(f"Level: {level}/{max_level}", True, Colors.white)
-        screen.blit(level_text, (panel_x + 30, panel_y + 80))
+        get_screen().blit(level_text, (panel_x + 30, panel_y + 80))
         
         stat_y = panel_y + 130
         stat_spacing = 50 
 
         main_stat_text = font_medium.render(f"Main Stat: {main_stat}", True, Colors.gold)
         main_value_text = font_medium.render(f"+{main_stat_value:.1f}", True, Colors.gold)
-        screen.blit(main_stat_text, (panel_x + 30, stat_y))
-        screen.blit(main_value_text, (panel_x + panel_width - 150, stat_y))
+        get_screen().blit(main_stat_text, (panel_x + 30, stat_y))
+        get_screen().blit(main_value_text, (panel_x + panel_width - 150, stat_y))
         
         if sub_stat1 != None and sub_stat1_value != None:
             sub1_stat_text = font_small.render(f"Sub Stat: {sub_stat1}", True, Colors.white)
             sub1_value_text = font_small.render(f"+{sub_stat1_value:.1f}", True, Colors.white)
-            screen.blit(sub1_stat_text, (panel_x + 30, stat_y + stat_spacing))
-            screen.blit(sub1_value_text, (panel_x + panel_width - 150, stat_y + stat_spacing))
+            get_screen().blit(sub1_stat_text, (panel_x + 30, stat_y + stat_spacing))
+            get_screen().blit(sub1_value_text, (panel_x + panel_width - 150, stat_y + stat_spacing))
 
         if sub_stat2 != None and sub_stat2_value != None:
             sub2_stat_text = font_small.render(f"Sub Stat: {sub_stat2}", True, Colors.white)
             sub2_value_text = font_small.render(f"+{sub_stat2_value:.1f}", True, Colors.white)
-            screen.blit(sub2_stat_text, (panel_x + 30, stat_y + stat_spacing * 2))
-            screen.blit(sub2_value_text, (panel_x + panel_width - 150, stat_y + stat_spacing * 2))
+            get_screen().blit(sub2_stat_text, (panel_x + 30, stat_y + stat_spacing * 2))
+            get_screen().blit(sub2_value_text, (panel_x + panel_width - 150, stat_y + stat_spacing * 2))
         
         exp_required = 100 + (level * 20)
         exp_ratio = min(exp / exp_required, 1.0)
@@ -544,36 +547,36 @@ def open_artifact_detail(artifact_id, equip_slot=None):
         bar_x = panel_x + 30
         bar_y = panel_y + panel_height - 80
         
-        pygame.draw.rect(screen, (80, 80, 80), (bar_x, bar_y, bar_width, bar_height), border_radius=5)
-        pygame.draw.rect(screen, (100, 150, 255), (bar_x, bar_y, bar_width * exp_ratio, bar_height), border_radius=5)
+        pygame.draw.rect(get_screen(), (80, 80, 80), (bar_x, bar_y, bar_width, bar_height), border_radius=5)
+        pygame.draw.rect(get_screen(), (100, 150, 255), (bar_x, bar_y, bar_width * exp_ratio, bar_height), border_radius=5)
         
         exp_text = font_small.render(f"EXP: {exp}/{exp_required}", True, Colors.white)
-        screen.blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2, bar_y + 30))
+        get_screen().blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2, bar_y + 30))
         
         points_text = font_medium.render(f"Artifact Points: {artifact_points}", True, Colors.white)
-        screen.blit(points_text, (window.width - points_text.get_width() - 20, 20))
+        get_screen().blit(points_text, (window.width - points_text.get_width() - 20, 20))
         
         if level < max_level:
-            pygame.draw.rect(screen, (80, 80, 80), (slider_x, slider_y, slider_width, slider_height), border_radius=5)
+            pygame.draw.rect(get_screen(), (80, 80, 80), (slider_x, slider_y, slider_width, slider_height), border_radius=5)
             
             slider_position = slider_x + ((current_invest - min_invest) / (max_invest - min_invest)) * slider_width
             
-            pygame.draw.circle(screen, (150, 150, 255), (int(slider_position), slider_y + slider_height // 2), 15)
+            pygame.draw.circle(get_screen(), (150, 150, 255), (int(slider_position), slider_y + slider_height // 2), 15)
             
             invest_text = font_small.render(f"Investment: {current_invest} points", True, Colors.white)
-            screen.blit(invest_text, (slider_x + (slider_width - invest_text.get_width()) // 2, slider_y - 30))
+            get_screen().blit(invest_text, (slider_x + (slider_width - invest_text.get_width()) // 2, slider_y - 30))
             
             xp_gain_text = font_small.render(f"XP Gain: {current_invest * 4}", True, Colors.white)
-            screen.blit(xp_gain_text, (slider_x + (slider_width - xp_gain_text.get_width()) // 2, slider_y + 30))
+            get_screen().blit(xp_gain_text, (slider_x + (slider_width - xp_gain_text.get_width()) // 2, slider_y + 30))
             
             cost_text = font_small.render(f"Cost: {current_invest} points", True, 
                                         Colors.green if artifact_points >= current_invest else Colors.red)
-            screen.blit(cost_text, (level_button.x + level_button.width + 10, level_button.y + 15))
+            get_screen().blit(cost_text, (level_button.x + level_button.width + 10, level_button.y + 15))
             
-            level_button.draw(screen)
+            level_button.draw()
         else:
             max_level_text = font_medium.render("Maximum Level Reached!", True, Colors.gold)
-            screen.blit(max_level_text, (window.width // 2 - max_level_text.get_width() // 2, slider_y))
+            get_screen().blit(max_level_text, (window.width // 2 - max_level_text.get_width() // 2, slider_y))
 
         
         if showing_upgrade and upgrade_info:
@@ -582,10 +585,10 @@ def open_artifact_detail(artifact_id, equip_slot=None):
             if progress < 1.0:
                 upgrade_panel = pygame.Surface((400, 300), pygame.SRCALPHA)
                 pygame.draw.rect(upgrade_panel, (0, 0, 0, 180), upgrade_panel.get_rect(), border_radius=10)
-                screen.blit(upgrade_panel, (window.width // 2 - 200, window.height // 2 - 150))
+                get_screen().blit(upgrade_panel, (window.width // 2 - 200, window.height // 2 - 150))
                 
                 level_up_text = font_medium.render(f"Level Up! +{upgrade_info['levels_gained']}", True, Colors.gold)
-                screen.blit(level_up_text, (window.width // 2 - level_up_text.get_width() // 2, window.height // 2 - 120))
+                get_screen().blit(level_up_text, (window.width // 2 - level_up_text.get_width() // 2, window.height // 2 - 120))
                 
                 y_offset = window.height // 2 - 60
                 for stat_type, stat_name, old_value, new_value in upgrade_info['stats_improved']:
@@ -600,15 +603,15 @@ def open_artifact_detail(artifact_id, equip_slot=None):
                     
                     value_text = font_small.render(f"{old_value:.1f} → {current_value:.1f}", True, Colors.green)
                     
-                    screen.blit(stat_text, (window.width // 2 - 180, y_offset))
-                    screen.blit(value_text, (window.width // 2 + 50, y_offset))
+                    get_screen().blit(stat_text, (window.width // 2 - 180, y_offset))
+                    get_screen().blit(value_text, (window.width // 2 + 50, y_offset))
                     
                     y_offset += 40
             else:
                 showing_upgrade = False
-        back_button.draw(screen)
+        back_button.draw()
         if equip_slot != None:
-            equip_button.draw(screen)
+            equip_button.draw()
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -695,13 +698,13 @@ def open_artifact_detail(artifact_id, equip_slot=None):
             if level < max_level:
                 min_label = font_small.render(f"{min_invest}", True, Colors.light_gray)
                 max_label = font_small.render(f"{max_invest}", True, Colors.light_gray)
-                screen.blit(min_label, (slider_x - 10, slider_y + 25))
-                screen.blit(max_label, (slider_x + slider_width - 10, slider_y + 25))
+                get_screen().blit(min_label, (slider_x - 10, slider_y + 25))
+                get_screen().blit(max_label, (slider_x + slider_width - 10, slider_y + 25))
                 
                 for i in range(min_invest, max_invest + 1, invest_step * 2):
                     tick_x = slider_x + ((i - min_invest) / (max_invest - min_invest)) * slider_width
                     tick_height = 8 if i % 100 == 0 else 5
-                    pygame.draw.line(screen, Colors.light_gray, (tick_x, slider_y + slider_height + 2), 
+                    pygame.draw.line(get_screen(), Colors.light_gray, (tick_x, slider_y + slider_height + 2), 
                                     (tick_x, slider_y + slider_height + 2 + tick_height), 2)
 
             pygame.display.update()
@@ -710,7 +713,7 @@ def open_artifact_detail(artifact_id, equip_slot=None):
 
 
 def view_artifacts(equip_slot=None):
-    Back_Button = Button("Back", 10, 10, 100, 40, Colors.hover_color, is_back_button=True)
+    Back_Button = Button("Back", 0.1, 0.05, 0.1, 0.1, Colors.hover_color, is_back_button=True)
     scroll_y = 0
     scroll_speed = 20
     items_per_row = 3
@@ -747,10 +750,10 @@ def view_artifacts(equip_slot=None):
         replace_background(background_image)
 
         title_text = font_large.render("Artifacts", True, Colors.gold)
-        screen.blit(title_text, (window.width // 2 - title_text.get_width() // 2, 30))
+        get_screen().blit(title_text, (window.width // 2 - title_text.get_width() // 2, 30))
         
         points_text = font_medium.render(f"Artifact Points: {artifact_points}", True, Colors.white)
-        screen.blit(points_text, (window.width - points_text.get_width() - 20, 20))
+        get_screen().blit(points_text, (window.width - points_text.get_width() - 20, 20))
 
         start_x = (window.width - (box_width * items_per_row + box_padding * (items_per_row-1))) // 2
         start_y = 100 + scroll_y
@@ -783,6 +786,12 @@ def view_artifacts(equip_slot=None):
                 hovered_box_index = i
             
             box_surface = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
+            #
+            #
+            #
+            #
+            #
+            #
             
             if is_hovered:
                 pygame.draw.rect(box_surface, (70, 70, 70, 220), box_surface.get_rect(), border_radius=10)
@@ -791,7 +800,7 @@ def view_artifacts(equip_slot=None):
                 pygame.draw.rect(box_surface, (50, 50, 50, 200), box_surface.get_rect(), border_radius=10)
                 pygame.draw.rect(box_surface, (80, 80, 80, 100), box_surface.get_rect(), width=2, border_radius=10)
             
-            screen.blit(box_surface, (x, y))
+            get_screen().blit(box_surface, (x, y))
 
             main_stat_value = artifact[3]
             sub_stat1_value = artifact[5]
@@ -806,26 +815,26 @@ def view_artifacts(equip_slot=None):
 
             name_display = truncate_text(artifact[1], font_small, box_width - 20)
             name_text = font_small.render(name_display, True, Colors.gold)
-            screen.blit(name_text, (x + 10, y + 10))
+            get_screen().blit(name_text, (x + 10, y + 10))
             level_text = font_small.render(f"Lv.{artifact[8]}/{artifact[10]}", True, Colors.artifact_text_color)
             main_stat_text = font_small.render(f"{artifact[2]}: +{main_stat_value}", True, Colors.white)
             sub_stat1_text = font_small.render(f"{artifact[4]}: +{sub_stat1_value}", True, Colors.light_gray)
             sub_stat2_text = font_small.render(f"{artifact[6]}: +{sub_stat2_value}", True, Colors.light_gray)
 
-            screen.blit(name_text, (x + 10, y + 10))
-            screen.blit(level_text, (x + (box_width/2) - level_text.get_width() // 2, y + box_height - 30))
-            screen.blit(main_stat_text, (x + 10, y + 40))
-            screen.blit(sub_stat1_text, (x + 10, y + 70))
-            screen.blit(sub_stat2_text, (x + 10, y + 95)) 
+            get_screen().blit(name_text, (x + 10, y + 10))
+            get_screen().blit(level_text, (x + (box_width/2) - level_text.get_width() // 2, y + box_height - 30))
+            get_screen().blit(main_stat_text, (x + 10, y + 40))
+            get_screen().blit(sub_stat1_text, (x + 10, y + 70))
+            get_screen().blit(sub_stat2_text, (x + 10, y + 95)) 
 
         if hovered_box_index != -1 and hovered_box_index != last_hovered_box_index and ui_hover_sound:
             ui_hover_sound.play()
         
         last_hovered_box_index = hovered_box_index
 
-        Back_Button.draw(screen)
-        dropdown.draw(screen)
-        checkbox.draw(screen)
+        Back_Button.draw()
+        dropdown.draw(get_screen())
+        checkbox.draw(get_screen())
 
         for event in pygame.event.get():
             dropdown_handled = dropdown.handle_event(event)
@@ -919,7 +928,7 @@ def generate_math_equation_easy(equation_length):
 
 def insufficient_points_message():
     message = font_medium.render("Not enough points!", True, Colors.red)
-    screen.blit(message, (window.width//2 - message.get_width()//2, window.height - 100))
+    get_screen().blit(message, (window.width//2 - message.get_width()//2, window.height - 100))
     pygame.display.flip()
     pygame.time.wait(1500)
     replace_background(background_image)
@@ -942,24 +951,24 @@ def add_points(point_reward):
 def math_activity_menu():
     current_points = get_current_points()
     
-    Easy_button = Button("Easy", window.width // 2 - 165, window.height // 2 - 140, 330, 50, Colors.hover_color)    
-    Medium_button = Button("Locked-Medium-Locked LV: 8", window.width // 2 - 165, window.height // 2 - 70, 330, 50, Colors.hover_color)
-    Hard_button = Button("Locked-Hard-Locked Lv: 15", window.width // 2 - 165, window.height // 2 - 0, 330, 50, Colors.hover_color)
-    Extreme_button = Button("Locked-Extreme-Locked LV: 25", window.width // 2 - 165, window.height // 2 + 70, 330, 50, Colors.hover_color)
-    Leave_button = Button("Leave", window.width // 2 - 165, window.height // 2 + 140, 330, 50, Colors.hover_color, is_back_button=True)
+    Easy_button = Button("Easy", 0.5, 0.2, 0.1, 0.1, Colors.hover_color)    
+    Medium_button = Button("Locked-Medium-Locked LV: 8", 0.5, 0.4, 0.4, 0.1, Colors.hover_color)
+    Hard_button = Button("Locked-Hard-Locked Lv: 15", 0.5, 0.6, 0.4, 0.1, Colors.hover_color)
+    Extreme_button = Button("Locked-Extreme-Locked LV: 25", 0.5, 0.8, 0.4, 0.1, Colors.hover_color)
+    Leave_button = Button("Leave", 0.1, 0.1, 0.1, 0.1, is_back_button=True)
     
     running = True
     while running:
         replace_background(background_image)
         
         points_text = font_medium.render(f"Points: {current_points}/{20}", True, Colors.white)
-        screen.blit(points_text, (window.width - 200, 50))
+        get_screen().blit(points_text, (window.width - 200, 50))
         
-        Easy_button.draw(screen)
-        Medium_button.draw(screen)
-        Hard_button.draw(screen)
-        Extreme_button.draw(screen)
-        Leave_button.draw(screen)
+        Easy_button.draw()
+        Medium_button.draw()
+        Hard_button.draw()
+        Extreme_button.draw()
+        Leave_button.draw()
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -1006,7 +1015,7 @@ def math_activity_menu():
 def math_game_window(math_difficulty):
     user_input = ""
     equation = generate_math_equation_easy(math_difficulty)
-    leave_button = Button("Leave", 10, 10, 100, 40, Colors.hover_color, is_back_button=True)
+    leave_button = Button("Leave", 0.1, 0.1, 0.1, 0.1, Colors.hover_color, is_back_button=True)
     
     try:
         correct_answer = eval(equation)
@@ -1021,12 +1030,12 @@ def math_game_window(math_difficulty):
         replace_background(background_image)
         
         equation_surface = font.render(f"Solve: {equation}", True, Colors.white)
-        screen.blit(equation_surface, (window.width // 2 - equation_surface.get_width() // 2, 150))
+        get_screen().blit(equation_surface, (window.width // 2 - equation_surface.get_width() // 2, 150))
 
         user_input_surface = font.render(user_input, True, Colors.white)
-        screen.blit(user_input_surface, (window.width // 2 - user_input_surface.get_width() // 2, 300))
+        get_screen().blit(user_input_surface, (window.width // 2 - user_input_surface.get_width() // 2, 300))
 
-        leave_button.draw(screen)
+        leave_button.draw()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -1055,29 +1064,29 @@ def math_game_window(math_difficulty):
                             
                             panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
                             pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
-                            screen.blit(panel_surface, (panel_x, panel_y))
+                            get_screen().blit(panel_surface, (panel_x, panel_y))
                             
                             result_text = "Correct!"
                             result_surface = font_large.render(result_text, True, (0, 255, 0))
-                            screen.blit(result_surface, (window.width // 2 - result_surface.get_width() // 2, panel_y + 30))
+                            get_screen().blit(result_surface, (window.width // 2 - result_surface.get_width() // 2, panel_y + 30))
                             
                             name_surface = font_medium.render(f"You received: {artifact[0]}", True, Colors.gold)
-                            screen.blit(name_surface, (window.width // 2 - name_surface.get_width() // 2, panel_y + 100))
+                            get_screen().blit(name_surface, (window.width // 2 - name_surface.get_width() // 2, panel_y + 100))
                             
                             main_stat_text = font_small.render(f"Main Stat: {artifact[1]} +{artifact[2]}", True, Colors.white)
-                            screen.blit(main_stat_text, (window.width // 2 - main_stat_text.get_width() // 2, panel_y + 150))
+                            get_screen().blit(main_stat_text, (window.width // 2 - main_stat_text.get_width() // 2, panel_y + 150))
                             
                             sub1_text = font_small.render(f"Sub Stat: {artifact[3]} +{artifact[4]}", True, Colors.light_gray)
-                            screen.blit(sub1_text, (window.width // 2 - sub1_text.get_width() // 2, panel_y + 180))
+                            get_screen().blit(sub1_text, (window.width // 2 - sub1_text.get_width() // 2, panel_y + 180))
                             
                             sub2_text = font_small.render(f"Sub Stat: {artifact[5]} +{artifact[6]}", True, Colors.light_gray)
-                            screen.blit(sub2_text, (window.width // 2 - sub2_text.get_width() // 2, panel_y + 210))
+                            get_screen().blit(sub2_text, (window.width // 2 - sub2_text.get_width() // 2, panel_y + 210))
                             
                             points_text = font_medium.render(f"+{artifact_points_reward} Artifact Points", True, Colors.green)
-                            screen.blit(points_text, (window.width // 2 - points_text.get_width() // 2, panel_y + 250))
+                            get_screen().blit(points_text, (window.width // 2 - points_text.get_width() // 2, panel_y + 250))
                             
                             hint_text = font_small.render("Press any key to continue...", True, Colors.white)
-                            screen.blit(hint_text, (window.width // 2 - hint_text.get_width() // 2, panel_y + 300))
+                            get_screen().blit(hint_text, (window.width // 2 - hint_text.get_width() // 2, panel_y + 300))
                             
                             pygame.display.flip()
                             
@@ -1100,18 +1109,18 @@ def math_game_window(math_difficulty):
                             
                             panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
                             pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
-                            screen.blit(panel_surface, (panel_x, panel_y))
+                            get_screen().blit(panel_surface, (panel_x, panel_y))
                             
                             result_text = "Incorrect!"
                             result_surface = font_large.render(result_text, True, Colors.red)
-                            screen.blit(result_surface, (window.width // 2 - result_surface.get_width() // 2, panel_y + 30))
+                            get_screen().blit(result_surface, (window.width // 2 - result_surface.get_width() // 2, panel_y + 30))
                             
                             answer_text = f"The correct answer is: {rounded_answer}"
                             answer_surface = font_medium.render(answer_text, True, Colors.white)
-                            screen.blit(answer_surface, (window.width // 2 - answer_surface.get_width() // 2, panel_y + 90))
+                            get_screen().blit(answer_surface, (window.width // 2 - answer_surface.get_width() // 2, panel_y + 90))
                             
                             hint_text = font_small.render("Press any key to continue...", True, Colors.white)
-                            screen.blit(hint_text, (window.width // 2 - hint_text.get_width() // 2, panel_y + 150))
+                            get_screen().blit(hint_text, (window.width // 2 - hint_text.get_width() // 2, panel_y + 150))
                             
                             pygame.display.flip()
                             
@@ -1151,15 +1160,15 @@ def math_game_window(math_difficulty):
 
 def minigames_menu():
     current_points = get_current_points()
-    Math_Button = Button("Math", window.width // 2 - 165, window.height // 2 - 140, 330, 50, Colors.hover_color)    
-    Back_Button = Button("Back", window.width // 2 - 165, window.height // 2 + 70, 330, 50, Colors.hover_color, is_back_button=True)
+    Math_Button = Button("Math", 0.5, 0.5, 0.1, 0.1, Colors.hover_color)    
+    Back_Button = Button("Back", 0.1, 0.1, 0.1, 0.1, Colors.hover_color, is_back_button=True)
     points_text = font_medium.render(f"Points: {current_points}", True, Colors.white)
     
     while True:
         replace_background(background_image)
-        Math_Button.draw(screen)
-        Back_Button.draw(screen)
-        screen.blit(points_text, (window.width - 200, 50))
+        Math_Button.draw()
+        Back_Button.draw()
+        get_screen().blit(points_text, (window.width - 200, 50))
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -1191,13 +1200,13 @@ def minigames_menu():
 def status_window():
     equipped_artifacts = get_equipped_artifacts()
 
-    Back_Button = Button("Back", 10, 10, 100, 40, Colors.hover_color, is_back_button=True)
-    View_Artifacts = Button("Artifacts", window.width - 160, 10, 140, 40, Colors.hover_color)
-    Skill_menu = Button("Skills", window.width//2 - 70, 10, 140, 40, Colors.hover_color)
+    Back_Button = Button("Back", 0.1, 0.1, 0.2, 0.1, Colors.hover_color, is_back_button=True)
+    View_Artifacts = Button("Artifacts", 0.85, 0.1, 0.3, 0.1, Colors.hover_color)
+    Skill_menu = Button("Skills", 0.5, 0.1, 0.2, 0.1, Colors.hover_color)
     replace_background(background_image)
     pygame.display.flip()
 
-    '''draw the slot amount this increases over level count'''
+    '''draw the slot amount this increases level increases'''
     
     # slot_rects = [
     #     pygame.Rect(window.width//2 - 220 + i*110, 500, 100, 60)
@@ -1243,33 +1252,33 @@ def status_window():
         total_value = base_value + artifact_bonus.get(stat, 0)
         total_value = int(total_value * (1 + percent_bonus.get(stat, 0.0)))
         stat_text = font_medium.render(f"{stat}: {total_value}", True, Colors.stat_text_color)
-        screen.blit(stat_text, (window.width // 2 - 100, stat_y))
+        get_screen().blit(stat_text, (window.width // 2 - 100, stat_y))
         stat_y += 40
 
 
     # for i, rect in enumerate(slot_rects):
-    #     pygame.draw.rect(screen, Colors.light_gray, rect, border_radius=10)
+    #     pygame.draw.rect(get_screen(), Colors.light_gray, rect, border_radius=10)
     #     label = font_small.render(slot_labels[i], True, Colors.gray)
-    #     screen.blit(label, (rect.x + 10, rect.y + 5))
+    #     get_screen().blit(label, (rect.x + 10, rect.y + 5))
     #     name = equipped_names[i]
     #     if name:
     #         name_text = font_small.render(f"{name}", True, Colors.gold)
-    #         screen.blit(name_text, (rect.x + 10, rect.y + 30))
+    #         get_screen().blit(name_text, (rect.x + 10, rect.y + 30))
     #     else:
     #         empty_text = font_small.render("Empty", True, Colors.gray)
-    #         screen.blit(empty_text, (rect.x + 10, rect.y + 30))
+    #         get_screen().blit(empty_text, (rect.x + 10, rect.y + 30))
 
-    Back_Button.draw(screen)
-    Skill_menu.draw(screen)
-    View_Artifacts.draw(screen)
+    Back_Button.draw()
+    Skill_menu.draw()
+    View_Artifacts.draw()
 
     running = True
     while running:
         replace_background(background_image)
 
-        Back_Button.draw(screen)
-        Skill_menu.draw(screen)
-        View_Artifacts.draw(screen)
+        Back_Button.draw()
+        Skill_menu.draw()
+        View_Artifacts.draw()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 get_current_points()
@@ -1359,7 +1368,7 @@ class Skill:
 
 
 def skill_tree_menu():
-    Back_Button = Button("Back", 10, 10, 100, 40, Colors.hover_color, is_back_button=True)
+    Back_Button = Button("Back", 0.1, 0.1, 0.1, 0.1, Colors.hover_color, is_back_button=True)
     tree_center_x = window.width // 2
     tree_center_y = 200
     node_radius = 30
@@ -1530,10 +1539,10 @@ def skill_tree_menu():
     while True:
         current_time = pygame.time.get_ticks()
         replace_background(background_image)
-        Back_Button.draw(screen)
+        Back_Button.draw()
         
         points_text = font_medium.render(f"Skill Points: {skill_points}", True, Colors.gold)
-        screen.blit(points_text, (window.width // 2 - points_text.get_width() // 2, 10))
+        get_screen().blit(points_text, (window.width // 2 - points_text.get_width() // 2, 10))
 
         mouse_pos = pygame.mouse.get_pos()
                             
@@ -1546,21 +1555,21 @@ def skill_tree_menu():
                                                 
                 skill_hovered = ((mouse_pos[0] - skill_pos[0])**2 + (mouse_pos[1] - skill_pos[1])**2 <= (node_radius * zoom_level)**2)
                 node_color = Colors.gray if skill_hovered else Colors.black
-                pygame.draw.circle(screen, node_color, skill_pos, (node_radius * zoom_level) + 2.5)
+                pygame.draw.circle(get_screen(), node_color, skill_pos, (node_radius * zoom_level) + 2.5)
                 
                 icon_size = (node_radius * 2) * zoom_level
                 if skill.icon_path and os.path.exists(skill.icon_path):
                     circular_icon = create_circular_icon(skill.icon_path, icon_size)
                     icon_rect = circular_icon.get_rect(center=skill_pos)
-                    screen.blit(circular_icon, icon_rect)
+                    get_screen().blit(circular_icon, icon_rect)
                     
                 name_text = font_small.render(skill.name, True, Colors.white)
                 level_text = font_small.render(f"Lv.{skill.level}", True, Colors.white)
                 name_y = skill_pos[1] - (icon_size//2 + name_text.get_height() + 5)
                 level_y = skill_pos[1] + (icon_size//2 + 5)
                 
-                screen.blit(name_text, (skill_pos[0] - name_text.get_width()//2, name_y))
-                screen.blit(level_text, (skill_pos[0] - level_text.get_width()//2, level_y))
+                get_screen().blit(name_text, (skill_pos[0] - name_text.get_width()//2, name_y))
+                get_screen().blit(level_text, (skill_pos[0] - level_text.get_width()//2, level_y))
                 
                 if selected_skill and selected_skill.name == skill.name:    
                     core_name = f"{skill.name} Mastery"
@@ -1571,7 +1580,7 @@ def skill_tree_menu():
                     core_unlocked = any(u.name == core_name if isinstance(u, SkillUpgrade) else u["name"] == core_name 
                                     for u in selected_skill.active_upgrades)
                     color = Colors.green if core_unlocked else Colors.gray
-                    pygame.draw.line(screen, color, start, end, max(2, int(3 * zoom_level)))
+                    pygame.draw.line(get_screen(), color, start, end, max(2, int(3 * zoom_level)))
                             
                     for source, targets in skill_data["connections"].items():
                         if source in skill_data["upgrade_positions"]:
@@ -1596,7 +1605,7 @@ def skill_tree_menu():
                                     else:
                                         color = Colors.gray
                                         
-                                    pygame.draw.line(screen, color, start, end, max(1, int(3 * zoom_level)))
+                                    pygame.draw.line(get_screen(), color, start, end, max(1, int(3 * zoom_level)))
 
                     for upgrade in selected_skill.upgrades:
                         upgrade_name = upgrade.name if isinstance(upgrade, SkillUpgrade) else upgrade["name"]
@@ -1614,11 +1623,11 @@ def skill_tree_menu():
                             else:
                                 node_color = Colors.dark_red if upgrade_hovered else Colors.red
                             
-                            pygame.draw.circle(screen, node_color, upgrade_pos, (node_radius * zoom_level) - 5)
+                            pygame.draw.circle(get_screen(), node_color, upgrade_pos, (node_radius * zoom_level) - 5)
                             icon_text = font_small.render(skill_data["icons"][upgrade_name], True, Colors.white)
                             icon_pos = (upgrade_pos[0] - icon_text.get_width()//2, 
                                     upgrade_pos[1] - icon_text.get_height()//2)
-                            screen.blit(icon_text, icon_pos)
+                            get_screen().blit(icon_text, icon_pos)
 
                             if upgrade_hovered:
                                 draw_upgrade_info(skill, upgrade, upgrade_pos, skill_points)
@@ -1762,26 +1771,26 @@ def draw_upgrade_info(skill, upgrade, pos, skill_points):
     
     info_surface = pygame.Surface((info_width, info_height), pygame.SRCALPHA)
     pygame.draw.rect(info_surface, (40, 40, 40, 240), info_surface.get_rect(), border_radius=10)
-    screen.blit(info_surface, (info_x, info_y))
+    get_screen().blit(info_surface, (info_x, info_y))
     
     current_y = info_y + padding
     name_text = font_small.render(upgrade_name, True, Colors.gold)
     cost_text = font_small.render(f"Cost: {upgrade_cost}", True, 
                                 Colors.green if skill_points >= upgrade_cost else Colors.red)
-    screen.blit(name_text, (info_x + padding, current_y))
+    get_screen().blit(name_text, (info_x + padding, current_y))
     current_y += line_height
-    screen.blit(cost_text, (info_x + padding, current_y))
+    get_screen().blit(cost_text, (info_x + padding, current_y))
     current_y += line_height
     
     for stat_line in stat_lines:
         stat_text = font_small.render(stat_line, True, Colors.stat_text_color)
-        screen.blit(stat_text, (info_x + padding, current_y))
+        get_screen().blit(stat_text, (info_x + padding, current_y))
         current_y += line_height
     
     current_y += line_height // 2
     for line in desc_lines:
         desc_text = font_small.render(line, True, Colors.white)
-        screen.blit(desc_text, (info_x + padding, current_y))
+        get_screen().blit(desc_text, (info_x + padding, current_y))
         current_y += line_height
 
 
@@ -1814,24 +1823,24 @@ def draw_skill_info(skill, pos, skill_points):
     
     info_surface = pygame.Surface((info_width, info_height), pygame.SRCALPHA)
     pygame.draw.rect(info_surface, (40, 40, 40, 230), info_surface.get_rect(), border_radius=15)
-    screen.blit(info_surface, (info_x, info_y))
+    get_screen().blit(info_surface, (info_x, info_y))
     
     current_y = info_y + padding
     name_text = font_medium.render(skill.name, True, Colors.gold)
     level_info = font_small.render(level_text, True, Colors.white)
-    screen.blit(name_text, (info_x + padding, current_y))
-    screen.blit(level_info, (info_x + info_width - level_width - padding, current_y))
+    get_screen().blit(name_text, (info_x + padding, current_y))
+    get_screen().blit(level_info, (info_x + info_width - level_width - padding, current_y))
     current_y += line_height
     
     for line in desc_lines:
         desc_text = font_small.render(line, True, Colors.white)
-        screen.blit(desc_text, (info_x + padding, current_y))
+        get_screen().blit(desc_text, (info_x + padding, current_y))
         current_y += line_height
     
     current_y += line_height // 2
     for stat_text in stat_lines:
         stat_rendered = font_small.render(stat_text, True, Colors.stat_text_color)
-        screen.blit(stat_rendered, (info_x + padding, current_y))
+        get_screen().blit(stat_rendered, (info_x + padding, current_y))
         current_y += line_height
 
 
@@ -1854,7 +1863,7 @@ def can_purchase_upgrade(skill, upgrade, skill_points):
 
 
 def missions_window():
-    Back_Button = Button("Back", 10, 10, 100, 40, Colors.hover_color, is_back_button=True)
+    Back_Button = Button("Back", 0.1, 0.1, 0.1, 0.1, Colors.hover_color, is_back_button=True)
     scroll_y = 0
     banner_width = window.width - 100
     text_width = int(banner_width * 0.75)
@@ -1890,7 +1899,7 @@ def missions_window():
                 scroll_y = max(min_scroll, min(0, scroll_y))
 
         replace_background(background_image)
-        Back_Button.draw(screen)
+        Back_Button.draw()
 
         y_pos = 100 + scroll_y
         for mission in missions:
@@ -1928,27 +1937,27 @@ def missions_window():
 
             if -banner_height <= y_pos <= window.height:
                 banner_rect = pygame.Rect(50, y_pos, banner_width, banner_height)
-                pygame.draw.rect(screen, (40, 40, 40, 230), banner_rect, border_radius=10)
+                pygame.draw.rect(get_screen(), (40, 40, 40, 230), banner_rect, border_radius=10)
                 
                 stats_y = y_pos + 15
                 reward_text = font_small.render(f"Reward: {mission['reward']}", True, Colors.green)
                 time_text = font_small.render(f"Time: {mission['time_limit']}", True, Colors.light_blue)
-                screen.blit(reward_text, (window.width // 2 -100 , stats_y + 10))
-                screen.blit(time_text, (window.width // 2 +180, stats_y + 10))
+                get_screen().blit(reward_text, (window.width // 2 -100 , stats_y + 10))
+                get_screen().blit(time_text, (window.width // 2 +180, stats_y + 10))
                 try:
                     progress_text = font_small.render(f"Progress: {mission['progress']}", True, Colors.gold)
-                    screen.blit(progress_text, (window.width // 2 +180, stats_y + banner_height - 40))  
+                    get_screen().blit(progress_text, (window.width // 2 +180, stats_y + banner_height - 40))  
                 except KeyError:
                     pass
                     
                 
                 title_text = font_medium.render(mission["title"], True, Colors.gold)
-                screen.blit(title_text, (70, y_pos + 20))
+                get_screen().blit(title_text, (70, y_pos + 20))
                 
                 text_y = y_pos + title_height + 10
                 for line in lines:
                     text = font_small.render(line, True, Colors.white)
-                    screen.blit(text, (70, text_y))
+                    get_screen().blit(text, (70, text_y))
                     text_y += 25
             
             y_pos += banner_height + padding
@@ -1959,18 +1968,18 @@ def missions_window():
 
 
 
-minigames = Button("Minigames", 0.5, 0.3, 0.6, 0.1, Colors.hover_color)
-Missions_Menu = Button("Missions", 0.5, 0.5, 0.6, 0.1, Colors.hover_color) 
-Stats_Menu = Button("Stats", 0.5, 0.7, 0.6, 0.1, Colors.hover_color)
+minigames = Button("Minigames", 0.5, 0.3, 0.1, 0.1, Colors.hover_color)
+Missions_Menu = Button("Missions", 0.5, 0.5, 0.1, 0.1, Colors.hover_color) 
+Stats_Menu = Button("Stats", 0.5, 0.7, 0.1, 0.1, Colors.hover_color)
 fadeInComplete = False
 running_threads = []
 def main_menu():
     global fadeInComplete, running_threads
     while True:
         replace_background(background_image)
-        minigames.draw(screen)
-        Missions_Menu.draw(screen)
-        Stats_Menu.draw(screen)
+        minigames.draw()
+        Missions_Menu.draw()
+        Stats_Menu.draw()
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
