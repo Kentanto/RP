@@ -204,34 +204,27 @@ def generate_random_artifact_name():
     import random
 
     base_dir = os.path.dirname(__file__)
-    names_path = os.path.join(base_dir, "Artifact_names.txt")
     adjectives_path = os.path.join(base_dir, "adjectives.txt")
     items_path = os.path.join(base_dir, "item_types.txt")
 
-    with open(names_path, encoding="utf-8") as f:
-        names = [line.strip() for line in f if line.strip()]
     with open(adjectives_path, encoding="utf-8") as f:
         adjectives = [line.strip() for line in f if line.strip()]
     with open(items_path, encoding="utf-8") as f:
         item_types = [line.strip() for line in f if line.strip()]
-    fillers = ["of", "the", "from", "with", "for"]
 
     for _ in range(10):
-        name = random.choice(names)
         adj = random.choice(adjectives)
+        second_adj = random.choice(adjectives)
         item = random.choice(item_types)
-        filler = random.choice(fillers)
         patterns = [
-            f"{name}'s {adj} {item}",
-            f"{adj} {item} of {name}",
-            f"{item} of {adj} {name}",
-            f"{name}'s {item} of {adj}",
-            f"{adj} {item} {filler} {name}" #change name to use more item names or adjcetives
+            f"{adj} {second_adj} {item}",
+            f"{item} of {adj} {second_adj}",
+            f"{item} with {adj}",
+            f"{item} of {adj}",
+            f"{adj} {item} of {second_adj}"
         ]
         result = random.choice(patterns)
-        if len(result) <= 55:
-            return result
-    return f"{random.choice(names)}'s {random.choice(item_types)}"
+        return result
 
 def generate_artifact_by_level(level):
     stats = ["ATK", "DEF", "HP", "Crit Rate%", "SPD%", "Crit DMG%", "ATK%", "DEF%", "HP%"]

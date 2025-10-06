@@ -1203,16 +1203,6 @@ def status_window():
     Back_Button = Button("Back", 0.1, 0.1, 0.2, 0.1, Colors.hover_color, is_back_button=True)
     View_Artifacts = Button("Artifacts", 0.85, 0.1, 0.3, 0.1, Colors.hover_color)
     Skill_menu = Button("Skills", 0.5, 0.1, 0.2, 0.1, Colors.hover_color)
-    replace_background(background_image)
-    pygame.display.flip()
-
-    '''draw the slot amount this increases level increases'''
-    
-    # slot_rects = [
-    #     pygame.Rect(window.width//2 - 220 + i*110, 500, 100, 60)
-    #     for i in range(4)
-    # ]
-    # slot_labels = ["Slot 1", "Slot 2", "Slot 3", "Slot 4"]
 
     base_stats = {
         "Level": 1,
@@ -1223,91 +1213,159 @@ def status_window():
         "mana": 0,
     }
 
+    def calculate_artifact_bonus(equipped):
+        """Return (artifact_bonus, percent_bonus, equipped_names) robustly for list or dict."""
+        artifact_bonus = {"ATK": 0, "DEF": 0, "SPD": 0, "CON": 0, "mana": 0}
+        percent_bonus = {"ATK": 0.0, "DEF": 0.0, "SPD": 0.0, "CON": 0.0, "mana": 0.0}
+        equipped_names = [None] * 4
 
-    artifact_bonus = {"ATK": 0, "DEF": 0, "SPD": 0, "CON": 0, "mana": 0}
-    percent_bonus = {"ATK": 0.0, "DEF": 0.0, "SPD": 0.0, "CON": 0.0, "mana": 0.0}
-    equipped_names = [None] * 4
+        for slot in range(4):
+            if isinstance(equipped, dict):
+                artifact_id = equipped.get(slot + 1)
+            else:
+                try:
+                    artifact_id = equipped[slot]
+                except Exception:
+                    artifact_id = None
 
-    for idx, artifact_id in equipped_artifacts.items():
-        if artifact_id:
-            with sqlite3.connect(DB_PATH) as conn:
-                c = conn.cursor()
-                c.execute("SELECT name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value FROM artifacts WHERE id=?", (artifact_id,))
-                result = c.fetchone()
-            if result:
-                equipped_names[idx-1] = result[0]
-                for stat, value in [(result[1], result[2]), (result[3], result[4]), (result[5], result[6])]:
-                    if stat is None or value is None:
-                        continue
-                    stat_key = stat.replace("%", "").replace("HP", "CON")
-                    if "%" in stat:
-                        if stat_key in percent_bonus:
-                            percent_bonus[stat_key] += float(value) / 100.0
-                    else:
-                        if stat_key in artifact_bonus:
-                            artifact_bonus[stat_key] += int(value) if not isinstance(value, float) else int(round(value))
+            if not artifact_id:
+                continue
 
-    stat_y = 150
-    for stat, base_value in base_stats.items():
-        total_value = base_value + artifact_bonus.get(stat, 0)
-        total_value = int(total_value * (1 + percent_bonus.get(stat, 0.0)))
-        stat_text = font_medium.render(f"{stat}: {total_value}", True, Colors.stat_text_color)
-        get_screen().blit(stat_text, (window.width // 2 - 100, stat_y))
-        stat_y += 40
+            try:
+                with sqlite3.connect(DB_PATH) as conn:
+                    c = conn.cursor()
+                    c.execute(
+                        "SELECT name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value "
+                        "FROM artifacts WHERE id=?",
+                        (artifact_id,)
+                    )
+                    result = c.fetchone()
+            except Exception as e:
+                print("[status_window] DB read error:", e)
+                result = None
 
+            if not result:
+                continue
 
-    # for i, rect in enumerate(slot_rects):
-    #     pygame.draw.rect(get_screen(), Colors.light_gray, rect, border_radius=10)
-    #     label = font_small.render(slot_labels[i], True, Colors.gray)
-    #     get_screen().blit(label, (rect.x + 10, rect.y + 5))
-    #     name = equipped_names[i]
-    #     if name:
-    #         name_text = font_small.render(f"{name}", True, Colors.gold)
-    #         get_screen().blit(name_text, (rect.x + 10, rect.y + 30))
-    #     else:
-    #         empty_text = font_small.render("Empty", True, Colors.gray)
-    #         get_screen().blit(empty_text, (rect.x + 10, rect.y + 30))
+            name, s_main, v_main, s1, v1, s2, v2 = result
+            equipped_names[slot] = name
+            for stat, value in ((s_main, v_main), (s1, v1), (s2, v2)):
+                if not stat or value is None:
+                    continue
+                stat_key = stat.replace("%", "").replace("HP", "CON")
+                if "%" in stat:
+                    try:
+                        percent_bonus[stat_key] += float(value) / 100.0
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        artifact_bonus[stat_key] += int(round(float(value)))
+                    except Exception:
+                        pass
 
-    Back_Button.draw()
-    Skill_menu.draw()
-    View_Artifacts.draw()
+        return artifact_bonus, percent_bonus, equipped_names
+
+    artifact_bonus, percent_bonus, equipped_names = calculate_artifact_bonus(equipped_artifacts)
+
+    slot_labels = ["Slot 1", "Slot 2", "Slot 3", "Slot 4"]
+
+    # safe font fallbacks
+    fm_medium = globals().get("font_medium") or pygame.font.SysFont(None, 28)
+    fm_small = globals().get("font_small") or pygame.font.SysFont(None, 18)
+
+    def build_stat_surfaces():
+        surfaces = []
+        for stat, base_value in base_stats.items():
+            total_value = base_value + artifact_bonus.get(stat, 0)
+            total_value = int(total_value * (1 + percent_bonus.get(stat, 0.0)))
+            surfaces.append(fm_medium.render(f"{stat}: {total_value}", True, getattr(Colors, "stat_text_color", (255,255,255))))
+        return surfaces
+
+    stat_surfaces = build_stat_surfaces()
+
+    DEBUG = False
 
     running = True
     while running:
+        window_scale()
+
+        screen = get_screen()
+        if screen is None:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    get_current_points(); cleanup(); pygame.quit(); sys.exit()
+            continue
+
         replace_background(background_image)
+
+        slot_rects = [
+            pygame.Rect(window.width // 2 - 220 + i * 110, 500, 100, 60)
+            for i in range(4)
+        ]
+
+        start_y = 150
+        for i, surf in enumerate(stat_surfaces):
+            screen.blit(surf, (window.width // 2 - 100, start_y + i * 40))
+
+        unlocked_slots = min(4, max(1, base_stats.get("Level", 1)))
+        for i, rect in enumerate(slot_rects):
+            pygame.draw.rect(screen, getattr(Colors, "light_gray", (100,100,100)), rect, border_radius=10)
+            label = fm_small.render(slot_labels[i], True, getattr(Colors, "gray", (180,180,180)))
+            screen.blit(label, (rect.x + 8, rect.y + 6))
+
+            if i < unlocked_slots:
+                name = equipped_names[i]
+                if name:
+                    name_text = fm_small.render(str(name), True, getattr(Colors, "gold", (255,200,0)))
+                    screen.blit(name_text, (rect.x + 8, rect.y + 30))
+                else:
+                    empty_text = fm_small.render("Empty", True, getattr(Colors, "gray", (150,150,150)))
+                    screen.blit(empty_text, (rect.x + 8, rect.y + 30))
+            else:
+                locked_text = fm_small.render("Locked", True, (120, 120, 120))
+                screen.blit(locked_text, (rect.x + 8, rect.y + 30))
 
         Back_Button.draw()
         Skill_menu.draw()
         View_Artifacts.draw()
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                get_current_points()
-                cleanup()
-                pygame.quit()
-                sys.exit()
+                get_current_points(); cleanup(); pygame.quit(); sys.exit()
+
             if Back_Button.is_clicked(event):
-                replace_background(background_image)
-                pygame.display.flip()
                 main_menu()
+                return
+
             if View_Artifacts.is_clicked(event):
-                replace_background(background_image)
-                pygame.display.flip()
                 view_artifacts()
+                equipped_artifacts = get_equipped_artifacts()
+                artifact_bonus, percent_bonus, equipped_names = calculate_artifact_bonus(equipped_artifacts)
+                stat_surfaces = build_stat_surfaces()
+
             if Skill_menu.is_clicked(event):
-                replace_background(background_image)
-                pygame.display.flip()
                 skill_tree_menu()
-            # if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            #     for slot_index, rect in enumerate(slot_rects):
-            #         if rect.collidepoint(pygame.mouse.get_pos()):
-            #             # Pass the slot index (box you clicked) to view_artifacts
-            #             view_artifacts(equip_slot=slot_index + 1)
-            #             # After returning, refresh equipped_artifacts and redraw
-            #             equipped_artifacts = get_equipped_artifacts()
-            #             replace_background(background_image)
-            #             # ...redraw code...
-            #             break
+
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                pos = event.pos
+                for slot_index, rect in enumerate(slot_rects):
+                    if rect.collidepoint(pos):
+                        if slot_index >= unlocked_slots:
+                            if DEBUG: print(f"Clicked locked slot {slot_index+1}")
+                            break
+                        if DEBUG: print(f"Clicked slot {slot_index+1} at {pos}")
+                        view_artifacts(equip_slot=slot_index + 1)
+                        equipped_artifacts = get_equipped_artifacts()
+                        artifact_bonus, percent_bonus, equipped_names = calculate_artifact_bonus(equipped_artifacts)
+                        stat_surfaces = build_stat_surfaces()
+                        break
+                    #
+                    #Last problem here, make all slots work properly
+                    #
+
         pygame.display.flip()
+
         
 @dataclass
 class SkillUpgrade:
