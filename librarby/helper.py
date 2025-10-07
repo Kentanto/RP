@@ -252,15 +252,11 @@ def generate_artifact_by_level(level):
 
 def roll_stat(stat_name, low=False):
     if "%" in stat_name:
-        if low:
-            return round(random.uniform(1.0, 3.5), 1)
-        else:
-            return round(random.uniform(3.0, 7.5), 1)
+        # Store directly as a decimal value (e.g., 5.5% → 0.055)
+        value = random.uniform(1.0, 3.5) if low else random.uniform(3.0, 7.5)
+        return round(value / 100.0, 4)  # stored as 0.055 instead of 5.5
     else:
-        if low:
-            return random.randint(10, 40)
-        else:
-            return random.randint(30, 100)
+        return random.randint(10, 40) if low else random.randint(30, 100)
 
 def add_artifact(name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value):
     from athas import DB_PATH

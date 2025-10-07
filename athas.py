@@ -1197,7 +1197,7 @@ def minigames_menu():
 
 
 
-def status_window():
+def status_window(): # capability of removing the artifact from slot.
     equipped_artifacts = get_equipped_artifacts()
 
     Back_Button = Button("Back", 0.1, 0.1, 0.2, 0.1, Colors.hover_color, is_back_button=True)
@@ -1211,11 +1211,12 @@ def status_window():
         "DEF": 10,
         "SPD": 5,
         "mana": 0,
+        "Crit Rate": 0.2,
+        "Crit DMG": 20
     }
 
     def calculate_artifact_bonus(equipped):
-        """Return (artifact_bonus, percent_bonus, equipped_names) robustly for list or dict."""
-        artifact_bonus = {"ATK": 0, "DEF": 0, "SPD": 0, "CON": 0, "mana": 0}
+        artifact_bonus = {"ATK": 0, "DEF": 0, "SPD": 0, "CON": 0, "mana": 0, "Crit Rate": 0, "Crit DMG": 0}
         percent_bonus = {"ATK": 0.0, "DEF": 0.0, "SPD": 0.0, "CON": 0.0, "mana": 0.0}
         equipped_names = [None] * 4
 
@@ -1223,10 +1224,7 @@ def status_window():
             if isinstance(equipped, dict):
                 artifact_id = equipped.get(slot + 1)
             else:
-                try:
-                    artifact_id = equipped[slot]
-                except Exception:
-                    artifact_id = None
+                artifact_id = equipped[slot] if slot < len(equipped) else None
 
             if not artifact_id:
                 continue
@@ -1242,27 +1240,32 @@ def status_window():
                     result = c.fetchone()
             except Exception as e:
                 print("[status_window] DB read error:", e)
-                result = None
+                continue
 
             if not result:
                 continue
 
             name, s_main, v_main, s1, v1, s2, v2 = result
             equipped_names[slot] = name
+
             for stat, value in ((s_main, v_main), (s1, v1), (s2, v2)):
                 if not stat or value is None:
                     continue
                 stat_key = stat.replace("%", "").replace("HP", "CON")
-                if "%" in stat:
-                    try:
-                        percent_bonus[stat_key] += float(value) / 100.0
-                    except Exception:
-                        pass
+
+                try:
+                    value = float(value)
+                except:
+                    continue
+
+
+                if stat_key in ("Crit Rate", "Crit DMG"):
+                    artifact_bonus[stat_key] += value
+                    continue
+                if value < 5.0:
+                    percent_bonus[stat_key] += value
                 else:
-                    try:
-                        artifact_bonus[stat_key] += int(round(float(value)))
-                    except Exception:
-                        pass
+                    artifact_bonus[stat_key] += int(round(value))
 
         return artifact_bonus, percent_bonus, equipped_names
 
@@ -1270,21 +1273,24 @@ def status_window():
 
     slot_labels = ["Slot 1", "Slot 2", "Slot 3", "Slot 4"]
 
-    # safe font fallbacks
-    fm_medium = globals().get("font_medium") or pygame.font.SysFont(None, 28)
-    fm_small = globals().get("font_small") or pygame.font.SysFont(None, 18)
+
 
     def build_stat_surfaces():
         surfaces = []
         for stat, base_value in base_stats.items():
-            total_value = base_value + artifact_bonus.get(stat, 0)
-            total_value = int(total_value * (1 + percent_bonus.get(stat, 0.0)))
-            surfaces.append(fm_medium.render(f"{stat}: {total_value}", True, getattr(Colors, "stat_text_color", (255,255,255))))
+            if stat in ("Crit Rate", "Crit DMG"):
+                total_value = base_value + artifact_bonus.get(stat, 0.0)
+                text = font_medium.render(f"{stat}: {total_value:.1f}%", True, Colors.stat_text_color)
+            else:
+                total_value = base_value + artifact_bonus.get(stat, 0)
+                total_value = int(round(total_value * (1 + percent_bonus.get(stat, 0.0))))
+                text = font_medium.render(f"{stat}: {total_value}", True, Colors.stat_text_color)
+            surfaces.append(text)
         return surfaces
 
     stat_surfaces = build_stat_surfaces()
 
-    DEBUG = False
+    DEBUG = True
 
     running = True
     while running:
@@ -1300,7 +1306,7 @@ def status_window():
         replace_background(background_image)
 
         slot_rects = [
-            pygame.Rect(window.width // 2 - 220 + i * 110, 500, 100, 60)
+            pygame.Rect(window.width // 2 - 230 + i * 120, 480, 110, 70)  # larger, spaced boxes
             for i in range(4)
         ]
 
@@ -1308,23 +1314,25 @@ def status_window():
         for i, surf in enumerate(stat_surfaces):
             screen.blit(surf, (window.width // 2 - 100, start_y + i * 40))
 
-        unlocked_slots = min(4, max(1, base_stats.get("Level", 1)))
+        unlocked_slots = min(4, max(4, base_stats.get("Level", 1)))
         for i, rect in enumerate(slot_rects):
-            pygame.draw.rect(screen, getattr(Colors, "light_gray", (100,100,100)), rect, border_radius=10)
-            label = fm_small.render(slot_labels[i], True, getattr(Colors, "gray", (180,180,180)))
+            pygame.draw.rect(screen, Colors.light_gray, rect, border_radius=10)
+
+            label = font_small.render(slot_labels[i], True, Colors.gray)
             screen.blit(label, (rect.x + 8, rect.y + 6))
 
             if i < unlocked_slots:
                 name = equipped_names[i]
                 if name:
-                    name_text = fm_small.render(str(name), True, getattr(Colors, "gold", (255,200,0)))
-                    screen.blit(name_text, (rect.x + 8, rect.y + 30))
+                    short_name = name.split(" ")[0]  # Only first word of artifact name
+                    name_text = font_small.render(str(short_name), True, Colors.gold)
+                    screen.blit(name_text, (rect.x + 8, rect.y + 35))
                 else:
-                    empty_text = fm_small.render("Empty", True, getattr(Colors, "gray", (150,150,150)))
-                    screen.blit(empty_text, (rect.x + 8, rect.y + 30))
+                    empty_text = font_small.render("Empty", True, Colors.gray)
+                    screen.blit(empty_text, (rect.x + 8, rect.y + 35))
             else:
-                locked_text = fm_small.render("Locked", True, (120, 120, 120))
-                screen.blit(locked_text, (rect.x + 8, rect.y + 30))
+                locked_text = font_small.render("Locked", True, (120, 120, 120))
+                screen.blit(locked_text, (rect.x + 8, rect.y + 35))
 
         Back_Button.draw()
         Skill_menu.draw()
