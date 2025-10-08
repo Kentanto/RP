@@ -4,6 +4,7 @@ import sys
 import math
 import random
 import time
+
 class WindowState:
     def __init__(self):
         self.width, self.height = 800, 600
@@ -43,17 +44,34 @@ class Colors:
 
 def get_equipped_artifacts():
     from athas import DB_PATH
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("SELECT slot, artifact_id FROM equipped ORDER BY slot")
-        return {slot: artifact_id for slot, artifact_id in c.fetchall()}
+    with sqlite3.connect(DB_PATH) as c:
+        cur = c.cursor()
+        cur.execute("SELECT slot, artifact_id FROM equipped ORDER BY slot")
+        return {slot: artifact_id for slot, artifact_id in cur.fetchall()}
 
 def set_equipped_artifact(slot, artifact_id):
     from athas import DB_PATH
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("UPDATE equipped SET artifact_id=? WHERE slot=?", (artifact_id, slot))
-        conn.commit()
+    with sqlite3.connect(DB_PATH) as c:
+        cur = c.cursor()
+        
+        cur.execute("SELECT slot FROM equipped WHERE artifact_id=?", (artifact_id,))
+        duplicate = cur.fetchone()
+        
+        if duplicate and duplicate[0] != slot:
+            print(f"⚠️ Artifact {artifact_id} is already equipped in slot {duplicate[0]}.")
+            return False
+        
+        # ✅ Safe to equip
+        cur.execute("UPDATE equipped SET artifact_id=? WHERE slot=?", (artifact_id, slot))
+        c.commit()
+        return True
+
+def remove_equipped_artifact(slot, artifact_id):
+    from athas import DB_PATH
+    with sqlite3.connect(DB_PATH) as c:
+        cur = c.cursor()
+        cur.execute("DELETE FROM equipped WHERE artifact_id=? AND slot=?", (artifact_id, slot))
+        c.commit()
 
 def cleanup():
     try:
@@ -233,30 +251,41 @@ def generate_artifact_by_level(level):
 
     # Level 1: Only main stat, lower roll
     if level == 1:
-        main_stat_value = roll_stat(main_stat, low=True)
+        main_stat_value = roll_stat(main_stat)
         return (name, main_stat, main_stat_value, None, None, None, None)
     # Level 2: Main stat (higher roll), one substat
     elif 2 <= level <= 7 :
-        main_stat_value = roll_stat(main_stat, low=False)
+        main_stat_value = roll_stat(main_stat)
         sub_stat1 = random.choice([s for s in stats if s != main_stat])
-        sub_stat1_value = roll_stat(sub_stat1, low=True)
+        sub_stat1_value = roll_stat(sub_stat1)
         return (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, None, None)
-    # Level 3: Full artifact (existing logic)
+    # Level 3: Full artifact
     else:
         sub_stat1 = random.choice([s for s in stats if s != main_stat])
         sub_stat2 = random.choice([s for s in stats if s not in [main_stat, sub_stat1]])
-        main_stat_value = roll_stat(main_stat, low=False)
-        sub_stat1_value = roll_stat(sub_stat1, low=False)
-        sub_stat2_value = roll_stat(sub_stat2, low=False)
+        main_stat_value = roll_stat(main_stat)
+        sub_stat1_value = roll_stat(sub_stat1)
+        sub_stat2_value = roll_stat(sub_stat2)
         return (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value)
 
-def roll_stat(stat_name, low=False):
-    if "%" in stat_name:
-        # Store directly as a decimal value (e.g., 5.5% → 0.055)
-        value = random.uniform(1.0, 3.5) if low else random.uniform(3.0, 7.5)
-        return round(value / 100.0, 4)  # stored as 0.055 instead of 5.5
+def roll_stat(stat_name):
+    low = random.choice([True, False])
+    if "Crit Rate%" in stat_name:
+        value = random.uniform(1.0, 2.0) if low else random.uniform(1.8, 3.0)
+        return round(value / 100.0, 4)
+    elif "%" in stat_name:
+        value = random.uniform(1.0, 3.5) if low else random.uniform(3.5, 7.5)
+        return round(value / 100, 4)
     else:
         return random.randint(10, 40) if low else random.randint(30, 100)
+
+def format_stat_value(stat_name, value):
+    if value is None:
+        return "-"
+    if "%" in stat_name:
+        return f"{value * 100:.1f}%"
+    else:
+        return f"{int(value)}" 
 
 def add_artifact(name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value):
     from athas import DB_PATH

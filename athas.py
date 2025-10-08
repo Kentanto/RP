@@ -396,64 +396,67 @@ def initialize_database():
 def level_up_artifact(artifact_id, feed_exp):
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("SELECT level, exp, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, max_level FROM artifacts WHERE id=?", (artifact_id,))
+        c.execute("""
+            SELECT level, exp, main_stat, main_stat_value, 
+                   sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, max_level 
+            FROM artifacts WHERE id=?
+        """, (artifact_id,))
         artifact = c.fetchone()
         
         if not artifact:
             return False
             
-        level, exp, main_stat, main_stat_value, sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, max_level = artifact
+        (level, exp, main_stat, main_stat_value,
+         sub_stat1, sub_stat1_value, sub_stat2, sub_stat2_value, max_level) = artifact
         
         if level >= max_level:
             return False
-        
-        initial_main_value = main_stat_value
-        initial_sub1_value = sub_stat1_value
-        initial_sub2_value = sub_stat2_value
         
         exp += feed_exp
         exp_required = 100 + (level * 20)
         levels_gained = 0
         stats_improved = {}
-        
+
+        initial_main_value = main_stat_value
+        initial_sub1_value = sub_stat1_value
+        initial_sub2_value = sub_stat2_value
+
         while exp >= exp_required and level < max_level:
             exp -= exp_required
             level += 1
             levels_gained += 1
             exp_required = 100 + (level * 20)
 
-            if "%" in main_stat:
-                main_stat_value += round(random.uniform(1.5, 3), 1)
-            else:
-                main_stat_value += random.randint(9, 20)
+            main_stat_value += roll_stat(main_stat)
 
             if level % 4 == 0:
                 chosen_sub = random.choice(["sub_stat1", "sub_stat2"])
-                if chosen_sub == "sub_stat1" and sub_stat1 != None:
-                    if "%" in sub_stat1:
-                        sub_stat1_value += round(random.uniform(4, 10), .1)
-                    else:
-                        sub_stat1_value += random.randint(20, 35)
-                elif chosen_sub == "sub_stat2" and sub_stat2 != None:
-                    if "%" in sub_stat2:
-                        sub_stat2_value += round(random.uniform(4, 10), .1)
-                    else:
-                        sub_stat2_value += random.randint(20, 35)
-        
+                if chosen_sub == "sub_stat1" and sub_stat1:
+                    sub_stat1_value += roll_stat(sub_stat1)
+                elif chosen_sub == "sub_stat2" and sub_stat2:
+                    sub_stat2_value += roll_stat(sub_stat2)
+
         if main_stat_value > initial_main_value:
             stats_improved["main"] = ("main", main_stat, initial_main_value, main_stat_value)
-
-        if sub_stat1_value != None and initial_sub1_value != None and sub_stat1_value > initial_sub1_value:
+        if sub_stat1_value and sub_stat1_value > initial_sub1_value:
             stats_improved["sub1"] = ("sub1", sub_stat1, initial_sub1_value, sub_stat1_value)
-
-        if sub_stat2_value != None and initial_sub2_value != None and sub_stat2_value > initial_sub2_value:
+        if sub_stat2_value and sub_stat2_value > initial_sub2_value:
             stats_improved["sub2"] = ("sub2", sub_stat2, initial_sub2_value, sub_stat2_value)
 
         c.execute('''UPDATE artifacts
-                    SET level=?, exp=?, main_stat_value=?, sub_stat1_value=?, sub_stat2_value=?
-                    WHERE id=?''',
-                (level, exp, main_stat_value, sub_stat1_value, sub_stat2_value, artifact_id))
+                     SET level=?, exp=?, main_stat_value=?, sub_stat1_value=?, sub_stat2_value=?
+                     WHERE id=?''',
+                  (level, exp, main_stat_value, sub_stat1_value, sub_stat2_value, artifact_id))
         conn.commit()
+    
+    return {
+        "levels_gained": levels_gained,
+        "stats_improved": list(stats_improved.values()),
+        "new_level": level,
+        "exp": exp,
+        "exp_required": exp_required
+    }
+
     
     return {
         "levels_gained": levels_gained,
@@ -465,28 +468,25 @@ def level_up_artifact(artifact_id, feed_exp):
 
 
 
-def open_artifact_detail(artifact_id, equip_slot=None):
+def open_artifact_detail(artifact_id, equip_slot=None, remove_slot=None):
     running = True
-    back_button = Button("Back", 0.1, 0.1, 0.1, 0.1, Colors.hover_color, is_back_button=True)
-    level_button = Button("Level Up", 0.5, 0.8, 0.2, 0.1, (0, 150, 0, 200))
+    back_button = Button("Back", 0.08, 0.05, 0.1, 0.1, Colors.hover_color, is_back_button=True)
+    level_button = Button("Level Up", 0.8, 0.78, 0.2, 0.1, (0, 150, 0, 200))
     if equip_slot != None:
-        equip_button = Button(f"Equip to Slot {equip_slot}", 0.5, 0.9, 0.3, 0.1, Colors.hover_color)
+        equip_button = Button(f"Equip to Slot {equip_slot}", 0.25, 0.96, 0.3, 0.1, Colors.hover_color)
+        remove_artifact = Button(f"Remove Artifact {remove_slot}", 0.65, 0.96, 0.5, 0.1, Colors.hover_color )
 
-    min_invest = 50
-    max_invest = 500
-    current_invest = min_invest
-    invest_step = 50
-    
-    slider_width = 300
-    slider_height = 20
-    slider_x = window.width // 2 - slider_width // 2
-    slider_y = window.height - 150 
-    slider_dragging = False
+
     
     showing_upgrade = False
     upgrade_info = None
     upgrade_start_time = 0
     upgrade_duration = 2000
+    min_invest = 50
+    max_invest = 500
+    current_invest = min_invest
+    invest_step = 50
+    slider_dragging = False
     
     while running:
         current_time = pygame.time.get_ticks()
@@ -508,7 +508,8 @@ def open_artifact_detail(artifact_id, equip_slot=None):
         panel_height = int(window.height * 0.6)
         panel_x = (window.width - panel_width) // 2
         panel_y = 50
-        
+
+    
         panel_surface = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
         pygame.draw.rect(panel_surface, (40, 40, 40, 230), panel_surface.get_rect(), border_radius=15)
         get_screen().blit(panel_surface, (panel_x, panel_y))
@@ -524,22 +525,23 @@ def open_artifact_detail(artifact_id, equip_slot=None):
         stat_spacing = 50 
 
         main_stat_text = font_medium.render(f"Main Stat: {main_stat}", True, Colors.gold)
-        main_value_text = font_medium.render(f"+{main_stat_value:.1f}", True, Colors.gold)
+        main_value_text = font_medium.render(f"+{format_stat_value(main_stat, main_stat_value)}", True, Colors.gold)
         get_screen().blit(main_stat_text, (panel_x + 30, stat_y))
         get_screen().blit(main_value_text, (panel_x + panel_width - 150, stat_y))
         
-        if sub_stat1 != None and sub_stat1_value != None:
+        if sub_stat1 and sub_stat1_value is not None:
             sub1_stat_text = font_small.render(f"Sub Stat: {sub_stat1}", True, Colors.white)
-            sub1_value_text = font_small.render(f"+{sub_stat1_value:.1f}", True, Colors.white)
+            sub1_value_text = font_small.render(f"+{format_stat_value(sub_stat1, sub_stat1_value)}", True, Colors.white)
             get_screen().blit(sub1_stat_text, (panel_x + 30, stat_y + stat_spacing))
             get_screen().blit(sub1_value_text, (panel_x + panel_width - 150, stat_y + stat_spacing))
 
-        if sub_stat2 != None and sub_stat2_value != None:
+        if sub_stat2 and sub_stat2_value is not None:
             sub2_stat_text = font_small.render(f"Sub Stat: {sub_stat2}", True, Colors.white)
-            sub2_value_text = font_small.render(f"+{sub_stat2_value:.1f}", True, Colors.white)
+            sub2_value_text = font_small.render(f"+{format_stat_value(sub_stat2, sub_stat2_value)}", True, Colors.white)
             get_screen().blit(sub2_stat_text, (panel_x + 30, stat_y + stat_spacing * 2))
+            
             get_screen().blit(sub2_value_text, (panel_x + panel_width - 150, stat_y + stat_spacing * 2))
-        
+
         exp_required = 100 + (level * 20)
         exp_ratio = min(exp / exp_required, 1.0)
         bar_width = panel_width - 60
@@ -550,30 +552,40 @@ def open_artifact_detail(artifact_id, equip_slot=None):
         pygame.draw.rect(get_screen(), (80, 80, 80), (bar_x, bar_y, bar_width, bar_height), border_radius=5)
         pygame.draw.rect(get_screen(), (100, 150, 255), (bar_x, bar_y, bar_width * exp_ratio, bar_height), border_radius=5)
         
-        exp_text = font_small.render(f"EXP: {exp}/{exp_required}", True, Colors.white)
-        get_screen().blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2, bar_y + 30))
+
         
         points_text = font_medium.render(f"Artifact Points: {artifact_points}", True, Colors.white)
         get_screen().blit(points_text, (window.width - points_text.get_width() - 20, 20))
         
+        slider_width = int(window.width * 0.25)
+        slider_height = int(window.height * 0.015)
+        slider_x = (window.width - slider_width) // 2
+        slider_y = int(window.height * 0.82)
+        handle_radius = int(window.height * 0.02)
+
         if level < max_level:
-            pygame.draw.rect(get_screen(), (80, 80, 80), (slider_x, slider_y, slider_width, slider_height), border_radius=5)
-            
+
+            pygame.draw.rect(get_screen(), (80, 80, 80),
+                            (slider_x, slider_y, slider_width, slider_height), border_radius=5)
+
             slider_position = slider_x + ((current_invest - min_invest) / (max_invest - min_invest)) * slider_width
-            
-            pygame.draw.circle(get_screen(), (150, 150, 255), (int(slider_position), slider_y + slider_height // 2), 15)
-            
+            pygame.draw.circle(get_screen(), (150, 150, 255),
+                            (int(slider_position), slider_y + slider_height // 2), handle_radius)
+
+            exp_text = font_small.render(f"EXP: {exp}/{exp_required}", True, Colors.white)
+            get_screen().blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2,
+                                        bar_y + int(window.height * 0.04)))
+
             invest_text = font_small.render(f"Investment: {current_invest} points", True, Colors.white)
-            get_screen().blit(invest_text, (slider_x + (slider_width - invest_text.get_width()) // 2, slider_y - 30))
-            
+            get_screen().blit(invest_text, (slider_x + (slider_width - invest_text.get_width()) // 2,
+                                            slider_y - int(window.height * 0.04)))
+
             xp_gain_text = font_small.render(f"XP Gain: {current_invest * 4}", True, Colors.white)
-            get_screen().blit(xp_gain_text, (slider_x + (slider_width - xp_gain_text.get_width()) // 2, slider_y + 30))
-            
-            cost_text = font_small.render(f"Cost: {current_invest} points", True, 
-                                        Colors.green if artifact_points >= current_invest else Colors.red)
-            get_screen().blit(cost_text, (level_button.x + level_button.width + 10, level_button.y + 15))
-            
+            get_screen().blit(xp_gain_text, (slider_x + (slider_width - xp_gain_text.get_width()) // 2,
+                                            slider_y + int(window.height * 0.03)))
+
             level_button.draw()
+
         else:
             max_level_text = font_medium.render("Maximum Level Reached!", True, Colors.gold)
             get_screen().blit(max_level_text, (window.width // 2 - max_level_text.get_width() // 2, slider_y))
@@ -600,6 +612,7 @@ def open_artifact_detail(artifact_id, equip_slot=None):
                         stat_text = font_small.render(f"Sub Stat: {stat_name}", True, Colors.white)
                     else:
                         stat_text = font_small.render(f"Sub Stat: {stat_name}", True, Colors.white)
+                        
                     
                     value_text = font_small.render(f"{old_value:.1f} → {current_value:.1f}", True, Colors.green)
                     
@@ -612,16 +625,21 @@ def open_artifact_detail(artifact_id, equip_slot=None):
         back_button.draw()
         if equip_slot != None:
             equip_button.draw()
+            remove_artifact.draw()
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
             if equip_slot != None and equip_button.is_clicked(event):
-                from librarby.helper import set_equipped_artifact
                 set_equipped_artifact(equip_slot, artifact_id)
                 status_window()
                 return
+            elif equip_slot != None and remove_artifact.is_clicked(event):
+                remove_equipped_artifact(equip_slot, artifact_id)
+                status_window()
+                return
+            
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
@@ -652,7 +670,10 @@ def open_artifact_detail(artifact_id, equip_slot=None):
                     if back_button.is_hovered((mx, my)):
                         running = False
                         replace_background(background_image)
-                        view_artifacts()
+                        if equip_slot != None:
+                            status_window()
+                        else:
+                            view_artifacts()
             
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
@@ -712,8 +733,8 @@ def open_artifact_detail(artifact_id, equip_slot=None):
 
 
 
-def view_artifacts(equip_slot=None):
-    Back_Button = Button("Back", 0.1, 0.05, 0.1, 0.1, Colors.hover_color, is_back_button=True)
+def view_artifacts(equip_slot=None, remove_slot=None):
+    Back_Button = Button("Back", 0.08, 0.05, 0.1, 0.1, Colors.hover_color, is_back_button=True)
     scroll_y = 0
     scroll_speed = 20
     items_per_row = 3
@@ -721,11 +742,10 @@ def view_artifacts(equip_slot=None):
     box_padding = 20
     box_height = 160
 
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT * FROM artifacts")
-    artifacts = c.fetchall()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT * FROM artifacts")
+        artifacts = c.fetchall()
     
     artifact_boxes = []
 
@@ -786,12 +806,6 @@ def view_artifacts(equip_slot=None):
                 hovered_box_index = i
             
             box_surface = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
-            #
-            #
-            #
-            #
-            #
-            #
             
             if is_hovered:
                 pygame.draw.rect(box_surface, (70, 70, 70, 220), box_surface.get_rect(), border_radius=10)
@@ -817,9 +831,9 @@ def view_artifacts(equip_slot=None):
             name_text = font_small.render(name_display, True, Colors.gold)
             get_screen().blit(name_text, (x + 10, y + 10))
             level_text = font_small.render(f"Lv.{artifact[8]}/{artifact[10]}", True, Colors.artifact_text_color)
-            main_stat_text = font_small.render(f"{artifact[2]}: +{main_stat_value}", True, Colors.white)
-            sub_stat1_text = font_small.render(f"{artifact[4]}: +{sub_stat1_value}", True, Colors.light_gray)
-            sub_stat2_text = font_small.render(f"{artifact[6]}: +{sub_stat2_value}", True, Colors.light_gray)
+            main_stat_text = font_small.render(f"{artifact[2]}: +{format_stat_value(artifact[2], artifact[3])}",True, Colors.white)
+            sub_stat1_text = font_small.render(f"{artifact[4]}: +{format_stat_value(artifact[4], artifact[5])}",True, Colors.light_gray)
+            sub_stat2_text = font_small.render(f"{artifact[6]}: +{format_stat_value(artifact[6], artifact[7])}",True, Colors.light_gray)
 
             get_screen().blit(name_text, (x + 10, y + 10))
             get_screen().blit(level_text, (x + (box_width/2) - level_text.get_width() // 2, y + box_height - 30))
@@ -863,7 +877,7 @@ def view_artifacts(equip_slot=None):
                         if ui_click_sound:
                             ui_click_sound.play()
                         
-                        open_artifact_detail(artifact_id, equip_slot=equip_slot)
+                        open_artifact_detail(artifact_id, equip_slot=equip_slot, remove_slot=remove_slot)
                         artifact_points = get_artifact_points()
                         with sqlite3.connect(DB_PATH) as conn:
                             c = conn.cursor()
@@ -875,7 +889,6 @@ def view_artifacts(equip_slot=None):
             if Back_Button.is_clicked(event):
                 replace_background(background_image)
                 status_window()
-
 
         pygame.display.flip()
 
@@ -1161,7 +1174,7 @@ def math_game_window(math_difficulty):
 def minigames_menu():
     current_points = get_current_points()
     Math_Button = Button("Math", 0.5, 0.5, 0.1, 0.1, Colors.hover_color)    
-    Back_Button = Button("Back", 0.1, 0.1, 0.1, 0.1, Colors.hover_color, is_back_button=True)
+    Back_Button = Button("Back", 0.08, 0.05, 0.1, 0.1, Colors.hover_color, is_back_button=True)
     points_text = font_medium.render(f"Points: {current_points}", True, Colors.white)
     
     while True:
@@ -1197,12 +1210,13 @@ def minigames_menu():
 
 
 
-def status_window(): # capability of removing the artifact from slot.
+def status_window():
     equipped_artifacts = get_equipped_artifacts()
 
-    Back_Button = Button("Back", 0.1, 0.1, 0.2, 0.1, Colors.hover_color, is_back_button=True)
-    View_Artifacts = Button("Artifacts", 0.85, 0.1, 0.3, 0.1, Colors.hover_color)
-    Skill_menu = Button("Skills", 0.5, 0.1, 0.2, 0.1, Colors.hover_color)
+    Back_Button = Button("Back", 0.08, 0.05, 0.2, 0.1, Colors.hover_color, is_back_button=True)
+    View_Artifacts = Button("Artifacts", 0.85, 0.05, 0.3, 0.1, Colors.hover_color)
+    Skill_menu = Button("Skills", 0.5, 0.05, 0.2, 0.1, Colors.hover_color)
+    
 
     base_stats = {
         "Level": 1,
@@ -1295,6 +1309,13 @@ def status_window(): # capability of removing the artifact from slot.
     running = True
     while running:
         window_scale()
+        slot_width = int(window.width * 0.12)
+        slot_height = int(window.height * 0.11)
+        slot_spacing = int(slot_width * 1.3)
+        base_x = (window.width - (slot_width*2.3 + slot_spacing*2)) // 2
+        base_y = int(window.height * 0.8)
+
+
 
         screen = get_screen()
         if screen is None:
@@ -1306,9 +1327,8 @@ def status_window(): # capability of removing the artifact from slot.
         replace_background(background_image)
 
         slot_rects = [
-            pygame.Rect(window.width // 2 - 230 + i * 120, 480, 110, 70)  # larger, spaced boxes
-            for i in range(4)
-        ]
+            pygame.Rect(base_x + i * slot_spacing, base_y, slot_width, slot_height)
+            for i in range(4)]
 
         start_y = 150
         for i, surf in enumerate(stat_surfaces):
@@ -1324,7 +1344,7 @@ def status_window(): # capability of removing the artifact from slot.
             if i < unlocked_slots:
                 name = equipped_names[i]
                 if name:
-                    short_name = name.split(" ")[0]  # Only first word of artifact name
+                    short_name = name.split(" ")[0]
                     name_text = font_small.render(str(short_name), True, Colors.gold)
                     screen.blit(name_text, (rect.x + 8, rect.y + 35))
                 else:
@@ -1363,15 +1383,15 @@ def status_window(): # capability of removing the artifact from slot.
                             if DEBUG: print(f"Clicked locked slot {slot_index+1}")
                             break
                         if DEBUG: print(f"Clicked slot {slot_index+1} at {pos}")
-                        view_artifacts(equip_slot=slot_index + 1)
                         equipped_artifacts = get_equipped_artifacts()
+                        artifact_id = equipped_artifacts.get(slot_index + 1)
+                        if artifact_id:
+                            open_artifact_detail(artifact_id, equip_slot=slot_index+1, remove_slot=slot_index+1)
+                        else:
+                            view_artifacts(equip_slot=slot_index+1, remove_slot=slot_index+1)
                         artifact_bonus, percent_bonus, equipped_names = calculate_artifact_bonus(equipped_artifacts)
                         stat_surfaces = build_stat_surfaces()
                         break
-                    #
-                    #Last problem here, make all slots work properly
-                    #
-
         pygame.display.flip()
 
         
@@ -1434,7 +1454,7 @@ class Skill:
 
 
 def skill_tree_menu():
-    Back_Button = Button("Back", 0.1, 0.1, 0.1, 0.1, Colors.hover_color, is_back_button=True)
+    Back_Button = Button("Back", 0.08, 0.05, 0.1, 0.1, Colors.hover_color, is_back_button=True)
     tree_center_x = window.width // 2
     tree_center_y = 200
     node_radius = 30
@@ -1929,7 +1949,7 @@ def can_purchase_upgrade(skill, upgrade, skill_points):
 
 
 def missions_window():
-    Back_Button = Button("Back", 0.1, 0.1, 0.1, 0.1, Colors.hover_color, is_back_button=True)
+    Back_Button = Button("Back", 0.08, 0.05, 0.1, 0.1, Colors.hover_color, is_back_button=True)
     scroll_y = 0
     banner_width = window.width - 100
     text_width = int(banner_width * 0.75)
