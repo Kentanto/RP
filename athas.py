@@ -24,6 +24,12 @@ background_image_path = os.path.join(base_path, "icons\\background_menu.png")
 background_image = pygame.image.load(background_image_path)
 window = WindowState()
 SCREEN = pygame.display.set_mode((window.width, window.height), pygame.RESIZABLE)
+# Force sync initial window state
+window.update(force=True)
+# Force initial window scale sync
+current_w, current_h = SCREEN.get_size()
+window.width, window.height = current_w, current_h
+window.update()
 
 def get_screen():
     s = pygame.display.get_surface()
@@ -44,13 +50,23 @@ def window_scale():
     return (window.width, window.height)
 
 
+def handle_window_events(event):
+    global window, background_image
+    if event.type == pygame.VIDEORESIZE:
+        window.update(force=True)  # Force update window state
+        pygame.display.set_mode((window.width, window.height), pygame.RESIZABLE)
+        # Update background image to match new dimensions
+        background_image = pygame.transform.scale(background_image, (window.width, window.height))
+        print(f"[Window Resized] {window.width}x{window.height}")
+        return True
+    return False
+
 def replace_background(background_image):
-    background_image = pygame.transform.scale(background_image, window_scale())
+    background_image = pygame.transform.scale(background_image, (window.width, window.height))
     get_screen().fill(Colors.white)
     get_screen().blit(background_image, (0,0))
 
-    
-background_image = pygame.transform.scale(background_image, window_scale())
+background_image = pygame.transform.scale(background_image, (window.width, window.height))
 font_large = pygame.font.SysFont(None, 55)
 font_medium = pygame.font.SysFont(None, 40)
 font_small = pygame.font.SysFont(None, 30)
@@ -156,7 +172,7 @@ def fade_in():
     window.update()
     replace_background(background_image)  
     loading_time = 2700
-    fade_surface = pygame.Surface(window_scale())
+    fade_surface = pygame.Surface((window.width, window.height))
     fade_surface.fill(Colors.black)
     song_durations = {
         "feelGood.mp3": 53,
@@ -258,7 +274,7 @@ def fade_in():
         fade_surface.set_alpha(int(255 * (1 - progress)))
         window.update()
         replace_background(background_image)
-        get_screen().blit(fade_surface, window_scale())
+        get_screen().blit(fade_surface, (0, 0))
 
         fill_width = int(progress * bar_width)
         pygame.draw.rect(get_screen(), Colors.white, (bar_x, bar_y, bar_width, bar_height))
@@ -370,6 +386,39 @@ def initialize_database():
         c.execute("SELECT COUNT(*) FROM equipped WHERE slot=?", (slot,))
         if c.fetchone()[0] == 0:
             c.execute("INSERT INTO equipped (slot, artifact_id) VALUES (?, NULL)", (slot,))
+
+    # Create inventory table
+    c.execute('''CREATE TABLE IF NOT EXISTS inventory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        acquired_date INTEGER DEFAULT (strftime('%s', 'now'))
+    )''')
+
+    # Create items table
+    c.execute('''CREATE TABLE IF NOT EXISTS items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        type TEXT NOT NULL,
+        rarity TEXT NOT NULL,
+        buy_price INTEGER,
+        sell_price INTEGER,
+        stackable BOOLEAN DEFAULT 0,
+        max_stack INTEGER DEFAULT 1,
+        effects TEXT
+    )''')
+
+    # Create shop table
+    c.execute('''CREATE TABLE IF NOT EXISTS shop_inventory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL,
+        quantity INTEGER DEFAULT -1,
+        price INTEGER NOT NULL,
+        restock_time INTEGER,
+        FOREIGN KEY (item_id) REFERENCES items (id)
+    )''')
+    
     conn.commit()
     
     c.execute("SELECT COUNT(*) FROM skills")
@@ -997,18 +1046,21 @@ def math_activity_menu():
                         math_game_window(1)
                         
                 case _ if Medium_button.is_clicked(event):
-                    # subtract_points(20)
-                    # math_game_window(7)
+                    if current_points >= 50:
+                        subtract_points(50)
+                        math_game_window(7)
                     pass
                     
                 case _ if Hard_button.is_clicked(event):
-                    # subtract_points(20)
-                    # math_game_window(14)
+                    if current_points >= 200:
+                        subtract_points(200)
+                        math_game_window(14)
                     pass
                     
                 case _ if Extreme_button.is_clicked(event):
-                    # subtract_points(20)
-                    # math_game_window(20)
+                    if current_points >= 600:
+                        subtract_points(600)
+                        math_game_window(20)
                     pass
                     
                 case _ if Leave_button.is_clicked(event):
@@ -1181,6 +1233,7 @@ def minigames_menu():
         replace_background(background_image)
         Math_Button.draw()
         Back_Button.draw()
+        points_text = font_medium.render(f"Points: {current_points}", True, Colors.white)
         get_screen().blit(points_text, (window.width - 200, 50))
         
         for event in pygame.event.get():
@@ -1948,6 +2001,307 @@ def can_purchase_upgrade(skill, upgrade, skill_points):
     )
 
 
+def inventory_window():
+    Back_Button = Button("Back", 0.08, 0.05, 0.1, 0.1, Colors.hover_color, is_back_button=True)
+    Shop_Button = Button("Shop", 0.92, 0.05, 0.1, 0.1, Colors.hover_color)
+    
+    # dynamic layout variables will be recalculated each frame so the UI scales
+    scroll_y = 0
+    selected_item = None
+    item_info_surface = None
+    item_info = None
+
+    def get_rarity_color(rarity):
+        rarity_colors = {
+            "common": Colors.white,
+            "uncommon": Colors.green,
+            "rare": Colors.purple,
+            "epic": Colors.orange,
+            "legendary": Colors.gold
+        }
+        return rarity_colors.get(rarity, Colors.white)
+
+    while True:
+        # update window size/scale if needed
+        window_scale()
+        replace_background(background_image)
+
+        # recompute layout based on current window size
+        padding = max(6, int(window.width * 0.006))
+        cell_size = max(48, int(window.width * 0.06))
+        grid_start_x = int(window.width * 0.08)
+        grid_start_y = int(window.height * 0.15)
+        # compute columns that fit comfortably
+        grid_cols = max(4, min(12, (window.width - grid_start_x * 2) // (cell_size + padding)))
+        grid_rows = 6
+
+        # Get inventory items from DB
+        inventory_items = get_inventory_items()
+
+        # Draw inventory grid and collect global rects
+        cell_rects = []
+        for row in range(grid_rows):
+            for col in range(grid_cols):
+                item_index = row * grid_cols + col
+                x = grid_start_x + col * (cell_size + padding)
+                y = grid_start_y + row * (cell_size + padding) + scroll_y
+                cell_rect = pygame.Rect(x, y, cell_size, cell_size)
+                pygame.draw.rect(get_screen(), Colors.dark_gray, cell_rect, border_radius=5)
+                pygame.draw.rect(get_screen(), Colors.light_gray, cell_rect, 2, border_radius=5)
+
+                if item_index < len(inventory_items):
+                    item = inventory_items[item_index]
+                    # Draw item name (centered)
+                    truncated_name = truncate_text(item[1], font_small, cell_size - 10)
+                    name_text = font_small.render(truncated_name, True, get_rarity_color(item[4]))
+                    text_x = x + (cell_size - name_text.get_width()) // 2
+                    text_y = y + 6
+                    get_screen().blit(name_text, (text_x, text_y))
+
+                    # Draw quantity if greater than 1
+                    if item[5] and item[5] > 1:
+                        quantity_text = font_small.render(str(item[5]), True, Colors.white)
+                        quantity_x = x + cell_size - quantity_text.get_width() - 5
+                        quantity_y = y + cell_size - quantity_text.get_height() - 5
+                        get_screen().blit(quantity_text, (quantity_x, quantity_y))
+
+                    cell_rects.append((cell_rect, item))
+
+        Back_Button.draw()
+        Shop_Button.draw()
+
+        # Draw inventory title
+        title_text = font_large.render("Inventory", True, Colors.gold)
+        get_screen().blit(title_text, (window.width // 2 - title_text.get_width() // 2, 20))
+
+        # Draw selected item info tooltip (follows mouse)
+        if item_info_surface is not None and item_info is not None:
+            mouse_pos = pygame.mouse.get_pos()
+            info_x = min(mouse_pos[0] + 10, window.width - item_info_surface.get_width() - 10)
+            info_y = min(mouse_pos[1] + 10, window.height - item_info_surface.get_height() - 10)
+            get_screen().blit(item_info_surface, (info_x, info_y))
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                get_current_points()
+                cleanup()
+                pygame.quit()
+                sys.exit()
+
+            if event.type == pygame.MOUSEMOTION:
+                mouse_pos = event.pos
+                item_info_surface = None
+                item_info = None
+
+                for rect, item in cell_rects:
+                    if rect.collidepoint(mouse_pos):
+                        # Create item info panel
+                        info_width = min(300, int(window.width * 0.3))
+                        info_height = 120
+                        item_info_surface = pygame.Surface((info_width, info_height), pygame.SRCALPHA)
+                        pygame.draw.rect(item_info_surface, (40, 40, 40, 230), (0, 0, info_width, info_height), border_radius=10)
+
+                        # Item name
+                        name_text = font_small.render(item[1], True, get_rarity_color(item[4]))
+                        item_info_surface.blit(name_text, (10, 10))
+
+                        # Type and rarity
+                        rarity_text = font_small.render(f"{item[4].capitalize()} {item[3]}", True, Colors.white)
+                        item_info_surface.blit(rarity_text, (10, 35))
+
+                        # Description wrapped to fit panel width
+                        desc_lines = wrap_text(item[2] or "", font_small, info_width - 20)
+                        for i, line in enumerate(desc_lines[:3]):
+                            desc_text = font_small.render(line, True, Colors.light_gray)
+                            item_info_surface.blit(desc_text, (10, 60 + i * 18))
+
+                        item_info = item
+                        break
+
+            if event.type == pygame.MOUSEWHEEL:
+                scroll_y += event.y * max(20, int(window.height * 0.03))
+                content_height = grid_rows * (cell_size + padding)
+                max_scroll = 0
+                min_scroll = min(0, -(content_height - (window.height - grid_start_y - 80)))
+                scroll_y = max(min_scroll, min(max_scroll, scroll_y))
+
+            if Back_Button.is_clicked(event):
+                return main_menu()
+
+            if Shop_Button.is_clicked(event):
+                shop_window()
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                return main_menu()
+
+        pygame.display.flip()
+
+def shop_window():
+    Back_Button = Button("Back", 0.08, 0.05, 0.1, 0.1, Colors.hover_color, is_back_button=True)
+    scroll_y = 0
+    item_height = 100
+    padding = 20
+    item_info_surface = None
+    item_info = None
+
+    def get_rarity_color(rarity):
+        rarity_colors = {
+            "common": Colors.white,
+            "uncommon": Colors.green,
+            "rare": Colors.purple,
+            "epic": Colors.orange,
+            "legendary": Colors.gold
+        }
+        return rarity_colors.get(rarity, Colors.white)
+    
+    while True:
+        window_scale()
+        replace_background(background_image)
+        
+        # Draw shop title
+        title_text = font_large.render("Shop", True, Colors.gold)
+        get_screen().blit(title_text, (window.width // 2 - title_text.get_width() // 2, 20))
+        
+        # Draw current points
+        points = get_current_points()
+        points_text = font_medium.render(f"Points: {points}", True, Colors.white)
+        get_screen().blit(points_text, (window.width - points_text.get_width() - 20, 20))
+
+        Back_Button.draw()
+
+        # Get shop items
+        shop_items = get_shop_items()
+        
+        # Create item cards
+        item_cards = []
+        y_pos = 100 + scroll_y
+        card_width = window.width - 100
+        
+        for item in shop_items:
+            item_id, name, desc, type_, rarity, price, quantity = item
+            
+            if quantity == 0:  # Skip if out of stock
+                continue
+            
+            card_surface = pygame.Surface((card_width, item_height), pygame.SRCALPHA)
+            card_rect = pygame.Rect(50, y_pos, card_width, item_height)
+            
+            # Draw card background
+            pygame.draw.rect(card_surface, (40, 40, 40, 230), (0, 0, card_width, item_height), border_radius=10)
+            
+            # Draw item name
+            name_text = font_medium.render(name, True, get_rarity_color(rarity))
+            card_surface.blit(name_text, (padding, 10))
+            
+            # Draw price
+            price_text = font_medium.render(f"Price: {price} points", True, Colors.gold if points >= price else Colors.red)
+            card_surface.blit(price_text, (card_width - price_text.get_width() - padding, 10))
+            
+            # Draw description
+            desc_text = font_small.render(desc, True, Colors.light_gray)
+            card_surface.blit(desc_text, (padding, 45))
+            
+            # Draw type and rarity
+            info_text = font_small.render(f"Type: {type_} | Rarity: {rarity.capitalize()}", True, Colors.white)
+            card_surface.blit(info_text, (padding, 70))
+            
+            # Create buy button
+            can_buy = points >= price and quantity > 0
+            button_color = Colors.green if can_buy else Colors.red
+            button_rect = pygame.Rect(card_width - 120, item_height - 35, 100, 25)
+            pygame.draw.rect(card_surface, button_color, button_rect, border_radius=5)
+            button_text = font_small.render("Buy", True, Colors.white)
+            card_surface.blit(button_text, (card_width - 85, item_height - 32))
+            
+            get_screen().blit(card_surface, (50, y_pos))
+            item_cards.append((card_rect, button_rect.move(card_width - 120, y_pos), item))
+            y_pos += item_height + padding
+
+        # Draw item info tooltip
+        if item_info_surface is not None and item_info is not None:
+            mouse_pos = pygame.mouse.get_pos()
+            info_x = min(mouse_pos[0] + 10, window.width - item_info_surface.get_width() - 10)
+            info_y = min(mouse_pos[1] + 10, window.height - item_info_surface.get_height() - 10)
+            get_screen().blit(item_info_surface, (info_x, info_y))
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                get_current_points()
+                cleanup()
+                pygame.quit()
+                sys.exit()
+            
+            if event.type == pygame.MOUSEMOTION:
+                mouse_pos = pygame.mouse.get_pos()
+                item_info_surface = None
+                item_info = None
+                
+                for card_rect, _, item in item_cards:
+                    if card_rect.collidepoint(mouse_pos):
+                        item_id, name, desc, type_, rarity, price, quantity = item
+                        
+                        # Create item info panel
+                        info_width = 200
+                        info_height = 120
+                        item_info_surface = pygame.Surface((info_width, info_height), pygame.SRCALPHA)
+                        pygame.draw.rect(item_info_surface, (40, 40, 40, 230), (0, 0, info_width, info_height), border_radius=10)
+                        
+                        # Item name
+                        name_text = font_small.render(name, True, get_rarity_color(rarity))
+                        item_info_surface.blit(name_text, (10, 10))
+                        
+                        # Price and quantity
+                        price_text = font_small.render(f"Price: {price} points", True, Colors.gold)
+                        item_info_surface.blit(price_text, (10, 35))
+                        
+                        quantity_text = font_small.render(f"Stock: {quantity if quantity > 0 else 'Unlimited'}", True, Colors.white)
+                        item_info_surface.blit(quantity_text, (10, 60))
+                        
+                        # Type and rarity
+                        info_text = font_small.render(f"{rarity.capitalize()} {type_}", True, Colors.white)
+                        item_info_surface.blit(info_text, (10, 85))
+                        
+                        item_info = item
+                        break
+            
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                print("Mouse click detected")
+                mouse_pos = pygame.mouse.get_pos()
+                for _, button_rect, item in item_cards:
+                    if button_rect.collidepoint(mouse_pos):
+                        print("Buy button clicked")
+                        item_id, name, desc, type_, rarity, price, quantity = item
+                        if points >= price and (quantity > 0 or quantity == -1):
+                            success, message = purchase_item(item_id, price)
+                            if success:
+                                # Show success message
+                                message_surface = font_medium.render("Item purchased!", True, Colors.green)
+                                get_screen().blit(message_surface, 
+                                                (window.width//2 - message_surface.get_width()//2, window.height//2))
+                                pygame.display.flip()
+                                pygame.time.wait(1000)
+                            else:
+                                # Show error message
+                                message_surface = font_medium.render(message, True, Colors.red)
+                                get_screen().blit(message_surface, 
+                                                (window.width//2 - message_surface.get_width()//2, window.height//2))
+                                pygame.display.flip()
+                                pygame.time.wait(1000)
+            
+            if event.type == pygame.MOUSEWHEEL:
+                scroll_y += event.y * 30
+                total_height = (len(shop_items) * (item_height + padding)) - padding
+                min_scroll = min(0, -(total_height - window.height + 150))
+                scroll_y = max(min_scroll, min(0, scroll_y))
+                
+            if Back_Button.is_clicked(event):
+                return inventory_window()
+                
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                return inventory_window()
+
+        pygame.display.flip()
+
 def missions_window():
     Back_Button = Button("Back", 0.08, 0.05, 0.1, 0.1, Colors.hover_color, is_back_button=True)
     scroll_y = 0
@@ -2054,16 +2408,18 @@ def missions_window():
 
 
 
-minigames = Button("Minigames", 0.5, 0.3, 0.1, 0.1, Colors.hover_color)
+minigames = Button("Minigames", 0.5, 0.2, 0.1, 0.1, Colors.hover_color)
+Inventory_Menu = Button("Inventory", 0.5, 0.35, 0.1, 0.1, Colors.hover_color)
 Missions_Menu = Button("Missions", 0.5, 0.5, 0.1, 0.1, Colors.hover_color) 
-Stats_Menu = Button("Stats", 0.5, 0.7, 0.1, 0.1, Colors.hover_color)
+Stats_Menu = Button("Stats", 0.5, 0.65, 0.1, 0.1, Colors.hover_color)
 fadeInComplete = False
 running_threads = []
 def main_menu():
     global fadeInComplete, running_threads
     while True:
-        replace_background(background_image)
+        replace_background(background_image)   
         minigames.draw()
+        Inventory_Menu.draw()
         Missions_Menu.draw()
         Stats_Menu.draw()
         
@@ -2071,8 +2427,12 @@ def main_menu():
             if event.type == pygame.QUIT:
                 get_current_points()
                 cleanup()
+            elif event.type == pygame.VIDEORESIZE:
+                handle_window_events(event)
             if minigames.is_clicked(event):
                 minigames_menu()
+            if Inventory_Menu.is_clicked(event):
+                inventory_window()
             if Missions_Menu.is_clicked(event):
                 missions_window()
             if Stats_Menu.is_clicked(event):

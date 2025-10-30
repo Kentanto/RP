@@ -8,14 +8,23 @@ import time
 class WindowState:
     def __init__(self):
         self.width, self.height = 800, 600
+        self._last_update = 0
     
-    def update(self):
+    def update(self, force=False):
         surface = pygame.display.get_surface()
         if surface is None:
-            return
+            return False
+            
+        current_time = pygame.time.get_ticks()
+        if not force and current_time - self._last_update < 16:  # ~60fps
+            return False
+            
         new_w, new_h = surface.get_width(), surface.get_height()
-        if (new_w, new_h) != (self.width, self.height):
+        if force or (new_w, new_h) != (self.width, self.height):
             self.width, self.height = new_w, new_h
+            self._last_update = current_time
+            return True
+        return False
 class Colors:    
     white = (255, 255, 255)
     black = (0, 0, 0)
@@ -61,7 +70,6 @@ def set_equipped_artifact(slot, artifact_id):
             print(f"⚠️ Artifact {artifact_id} is already equipped in slot {duplicate[0]}.")
             return False
         
-        # ✅ Safe to equip
         cur.execute("UPDATE equipped SET artifact_id=? WHERE slot=?", (artifact_id, slot))
         c.commit()
         return True
@@ -216,6 +224,57 @@ def get_current_points():
             return new_points
         
         return current_points
+
+def get_inventory_items():
+    from athas import DB_PATH
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT items.id, items.name, items.description, items.type, items.rarity, inventory.quantity
+            FROM inventory
+            JOIN items ON inventory.item_id = items.id
+            WHERE inventory.quantity > 0
+        """)
+        return c.fetchall()
+
+def get_shop_items():
+    from athas import DB_PATH
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT items.id, items.name, items.description, items.type, items.rarity, 
+                   shop_inventory.price, shop_inventory.quantity
+            FROM shop_inventory
+            JOIN items ON shop_inventory.item_id = items.id
+            WHERE shop_inventory.quantity > 0
+        """)
+        return c.fetchall()
+
+def purchase_item(item_id, price):
+    print("Attempting to purchase item:", item_id, "for price:", price)
+    from athas import DB_PATH
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        try:
+            current_points = get_current_points()
+            if current_points < price:
+                return False, "Not enough points"
+
+            c.execute("UPDATE points SET points = points - ?", (price,))
+            c.execute("UPDATE shop_inventory SET quantity = quantity - 1 WHERE item_id = ?", (item_id,))
+            
+            c.execute("""
+                INSERT INTO inventory (item_id, quantity) 
+                VALUES (?, 1)
+                ON CONFLICT(item_id) DO UPDATE SET quantity = quantity + 1
+            """, (item_id,))
+
+            conn.commit()
+            return True, "Purchase successful"
+        except Exception as e:
+            conn.rollback()
+            print("Purchase failed:", e)
+            return False, str(e)
 
 def generate_random_artifact_name():
     import os
