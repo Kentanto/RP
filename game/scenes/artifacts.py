@@ -3,9 +3,11 @@ import pygame
 
 from .. import audio, db
 from ..core import Scene
+from ..icons import get_icon
 from ..settings import Colors, get_font
 from ..ui import (Button, Checkbox, DropdownMenu, draw_panel,
-                  fit_text_to_box, truncate_text)
+                  fit_text_to_box, truncate_text, wrap_text)
+from .inventory import RARITY_COLORS, _parse_color
 
 SORT_OPTIONS = [
     "Recent", "Level", "ATK", "ATK%", "DEF", "DEF%", "HP", "HP%",
@@ -36,6 +38,7 @@ class ArtifactsScene(Scene):
 
     def on_enter(self, app):
         self.artifacts = db.get_all_artifacts()
+        self.artifact_defs = {d["key"]: d for d in db.get_artifact_defs()}
         self.artifact_points = db.get_artifact_points()
         if self.dropdown is None:
             small = get_font(30)
@@ -122,8 +125,16 @@ class ArtifactsScene(Scene):
                                  width=2, border_radius=10)
             screen.blit(box_surface, box.topleft)
 
-            name_display = truncate_text(artifact[1], small, box.width - 20)
-            name_text = small.render(name_display, True, Colors.gold)
+            archetype = self.artifact_defs.get(artifact[11])
+            icon_key = archetype["icon"] if archetype else "gem"
+            icon_color = _parse_color(archetype["color"]) if archetype else (160, 160, 170)
+            icon = get_icon(icon_key, icon_color, 64)
+            screen.blit(icon, (box.right - icon.get_width() - 8, box.y + 8))
+
+            rarity_color = (RARITY_COLORS.get(archetype["rarity"], Colors.gold)
+                            if archetype else Colors.gold)
+            name_display = truncate_text(artifact[1], small, box.width - 80)
+            name_text = small.render(name_display, True, rarity_color)
             screen.blit(name_text, (box.x + 10, box.y + 10))
             level_text = small.render(f"Lv.{artifact[8]}/{artifact[10]}",
                                       True, Colors.artifact_text_color)
@@ -186,6 +197,8 @@ class ArtifactDetailScene(Scene):
         # Refresh once here instead of querying the DB every frame.
         self.artifact = db.get_artifact(self.artifact_id)
         self.artifact_points = db.get_artifact_points()
+        self.artifact_def = (db.get_artifact_def(self.artifact[10])
+                             if self.artifact else None)
 
     def _slider_geometry(self, app):
         slider_width = int(app.width * 0.25)
@@ -270,7 +283,7 @@ class ArtifactDetailScene(Scene):
             self.back_button.draw(app)
             return
         (name, main_stat, main_stat_value, sub_stat1, sub_stat1_value,
-         sub_stat2, sub_stat2_value, level, exp, max_level) = self.artifact
+         sub_stat2, sub_stat2_value, level, exp, max_level, _def_key) = self.artifact
 
         panel_width = int(app.width * 0.7)
         panel_height = int(app.height * 0.6)
@@ -278,29 +291,49 @@ class ArtifactDetailScene(Scene):
         panel_y = 50
         draw_panel(screen, pygame.Rect(panel_x, panel_y, panel_width, panel_height))
 
+        rarity_color = (RARITY_COLORS.get(self.artifact_def["rarity"], Colors.gold)
+                        if self.artifact_def else Colors.gold)
         name_font = fit_text_to_box(name, panel_width - 40, 60)
-        name_text = name_font.render(name, True, Colors.gold)
+        name_text = name_font.render(name, True, rarity_color)
         screen.blit(name_text, (panel_x + (panel_width - name_text.get_width()) // 2,
                                panel_y + 20))
         medium, small = get_font(40), get_font(30)
+        if self.artifact_def:
+            subtitle = small.render(
+                f"{self.artifact_def['rarity'].capitalize()} "
+                f"{self.artifact_def['name']}", True, Colors.light_gray)
+        else:
+            subtitle = small.render("Relic", True, Colors.light_gray)
+        screen.blit(subtitle, (panel_x + (panel_width - subtitle.get_width()) // 2,
+                               panel_y + 75))
+        if self.artifact_def:
+            icon = get_icon(self.artifact_def["icon"],
+                            _parse_color(self.artifact_def["color"]), 130)
+            screen.blit(icon, (panel_x + 30, panel_y + 110))
+            lore_lines = wrap_text(self.artifact_def["lore"] or "", small, 190)
+            for i, line in enumerate(lore_lines[:4]):
+                screen.blit(small.render(line, True, Colors.light_gray),
+                            (panel_x + 30, panel_y + 250 + i * 32))
+
+        stat_x = panel_x + 200
         level_text = medium.render(f"Level: {level}/{max_level}", True, Colors.white)
-        screen.blit(level_text, (panel_x + 30, panel_y + 80))
+        screen.blit(level_text, (stat_x, panel_y + 80))
 
         stat_y = panel_y + 130
         spacing = 50
         screen.blit(medium.render(f"Main Stat: {main_stat}", True, Colors.gold),
-                    (panel_x + 30, stat_y))
+                    (stat_x, stat_y))
         screen.blit(medium.render(f"+{db.format_stat_value(main_stat, main_stat_value)}",
                                   True, Colors.gold), (panel_x + panel_width - 150, stat_y))
         if sub_stat1 and sub_stat1_value is not None:
             screen.blit(small.render(f"Sub Stat: {sub_stat1}", True, Colors.white),
-                        (panel_x + 30, stat_y + spacing))
+                        (stat_x, stat_y + spacing))
             screen.blit(small.render(f"+{db.format_stat_value(sub_stat1, sub_stat1_value)}",
                                      True, Colors.white),
                         (panel_x + panel_width - 150, stat_y + spacing))
         if sub_stat2 and sub_stat2_value is not None:
             screen.blit(small.render(f"Sub Stat: {sub_stat2}", True, Colors.white),
-                        (panel_x + 30, stat_y + spacing * 2))
+                        (stat_x, stat_y + spacing * 2))
             screen.blit(small.render(f"+{db.format_stat_value(sub_stat2, sub_stat2_value)}",
                                      True, Colors.white),
                         (panel_x + panel_width - 150, stat_y + spacing * 2))

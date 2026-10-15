@@ -17,6 +17,23 @@ You can also run the game directly:
     python -m pip install -r requirements.txt
     python athas.py
 
+## Adding content (no code required)
+
+All game content lives in plain text files inside `data/`, each with a
+comment legend at the top:
+
+* `data/items.txt` — items and weapons (type, rarity, stats, price, shop
+  stock, icon shape + color, and the `special` category). To add a sword,
+  copy a `[key]` block, edit, done.
+* `data/artifacts.txt` — artifact archetypes. The artifact system is
+  self-generating: it picks an archetype, rolls stats within your ranges,
+  and draws its icon from the shape and color you set.
+* `data/abilities.txt` — the ability tree (roots, upgrades, costs,
+  requirements, glyphs). Node positions are computed automatically.
+
+The game syncs these files into its database on every start; run
+`python init_items.py` to check them without launching.
+
 ## Tests
 
 Headless smoke tests:

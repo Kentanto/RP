@@ -203,12 +203,17 @@ class MathGameScene(Scene):
         correct = round_result(user_answer, precision=0.1) == self.answer
         if correct:
             artifact = db.generate_artifact_by_level(self.difficulty)
-            db.add_artifact(*artifact)
-            db.add_artifact_points(100)
-            lines = [(f"You received: {artifact[0]}", Colors.gold),
-                     (f"Main Stat: {artifact[1]} +{db.format_stat_value(artifact[1], artifact[2])}",
-                      Colors.white),
-                     ("+100 Artifact Points", Colors.green)]
+            if artifact:
+                db.add_artifact(artifact)
+                db.add_artifact_points(100)
+                lines = [(f"You received: {artifact['name']}", Colors.gold),
+                         (f"Main Stat: {artifact['main_stat']} "
+                          f"+{db.format_stat_value(artifact['main_stat'], artifact['main_stat_value'])}",
+                          Colors.white),
+                         ("+100 Artifact Points", Colors.green)]
+            else:
+                db.add_artifact_points(100)
+                lines = [("+100 Artifact Points", Colors.green)]
         else:
             lines = [(f"The correct answer is: {self.answer:g}", Colors.white)]
         self._round_done = True

@@ -1,0 +1,94 @@
+# Athas artifact archetypes.
+#
+# Artifacts are self-generating: when the game rewards an artifact it
+# picks one of these archetypes (by weight), rolls a main stat and sub
+# stats within the given ranges, generates a name, and draws the icon
+# from icon + color. No image files needed.
+#
+# Fields:
+#   rarity:     common | rare | epic | legendary
+#   weight:     how often this archetype is picked (higher = more common)
+#   icon:       shape name or image file inside icons/
+#   color:      r,g,b for the drawn icon
+#   max_level:  level cap of generated instances
+#   main_stats: STAT=low-high, ...   one is picked as the main stat
+#   sub_stats:  STAT=low-high, ...   rolled for sub stats
+#               percent stats must end with % (rolled as fractions)
+#   lore:       flavor text shown in the detail screen
+
+[relic]
+name: Relic
+rarity: common
+weight: 4
+icon: gem
+color: 180,180,190
+max_level: 15
+main_stats: ATK=10-40, DEF=10-35, HP=10-50, ATK%=0.03-0.07, DEF%=0.03-0.07, HP%=0.03-0.07
+sub_stats: ATK=5-20, DEF=5-20, HP=5-25, Crit Rate%=0.01-0.03, SPD%=0.01-0.03, Crit DMG%=0.03-0.08
+lore: An old trinket with a faint pulse of power.
+
+[ember_relic]
+name: Ember Relic
+rarity: rare
+weight: 3
+icon: gem
+color: 255,120,50
+max_level: 20
+main_stats: ATK=15-45, ATK%=0.04-0.09
+sub_stats: Crit Rate%=0.01-0.03, Crit DMG%=0.03-0.08, HP=10-40
+lore: A shard of a fire that never died.
+
+[frost_sigil]
+name: Frost Sigil
+rarity: rare
+weight: 3
+icon: crystal
+color: 120,190,255
+max_level: 20
+main_stats: DEF%=0.04-0.09, HP%=0.04-0.09
+sub_stats: HP=10-40, DEF=10-30, SPD%=0.01-0.03
+lore: Cold radiates from it in slow pulses.
+
+[thunder_core]
+name: Thunder Core
+rarity: epic
+weight: 2
+icon: orb
+color: 255,230,90
+max_level: 25
+main_stats: ATK=25-70, SPD%=0.05-0.11
+sub_stats: Crit Rate%=0.01-0.03, ATK=10-35, Crit DMG%=0.04-0.09
+lore: A captured storm, still restless.
+
+[vampiric_fang]
+name: Vampiric Fang
+rarity: epic
+weight: 2
+icon: fang
+color: 200,50,80
+max_level: 25
+main_stats: ATK%=0.06-0.12, Crit Rate%=0.03-0.06
+sub_stats: HP=15-50, ATK=10-35, SPD%=0.01-0.03
+lore: It thirsts even now.
+
+[guardian_idol]
+name: Guardian Idol
+rarity: common
+weight: 4
+icon: shield
+color: 120,200,140
+max_level: 15
+main_stats: DEF=10-35, HP=15-50
+sub_stats: DEF=5-20, HP=5-25, SPD%=0.01-0.03
+lore: A small carved guardian with patient eyes.
+
+[void_crown]
+name: Void Crown
+rarity: legendary
+weight: 1
+icon: crown
+color: 170,90,220
+max_level: 30
+main_stats: ATK%=0.08-0.14, Crit DMG%=0.06-0.12, HP%=0.06-0.12
+sub_stats: Crit Rate%=0.02-0.05, ATK=20-60, DEF=15-45
+lore: Heavy is the head it no longer sits on.

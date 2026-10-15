@@ -188,17 +188,67 @@ class AthasSmokeTest(unittest.TestCase):
     def test_all_scenes_draw_without_crashing(self):
         app = self.app
         app.scenes.clear()
-        db.add_artifact("Test Artifact", "ATK", 10, "DEF", 5, None, None)
+        artifact_id = db.add_artifact({
+            "name": "Test Artifact", "main_stat": "ATK", "main_stat_value": 10,
+            "sub_stat1": "DEF", "sub_stat1_value": 5,
+            "max_level": 20, "def_key": "relic"})
         from game.scenes.artifacts import ArtifactDetailScene, ArtifactsScene
         for scene in (MainMenuScene(), MinigamesScene(), MathMenuScene(),
                       StatusScene(), SkillTreeScene(), InventoryScene(),
                       ShopScene(), MissionsScene(), ArtifactsScene(),
-                      ArtifactDetailScene(1, equip_slot=1, remove_slot=1)):
+                      ArtifactDetailScene(artifact_id, equip_slot=1, remove_slot=1)):
             app.push_scene(scene)
             self._draw_frame(scene)
             app.dispatch(pygame.event.Event(pygame.MOUSEMOTION, {"pos": (100, 100)}))
             self._draw_frame(scene)
             app.pop_scene()
+
+    # --------------------------------------------------- content definitions
+
+    def test_content_parser(self):
+        from game import content
+        path = os.path.join(TMP, "sample.txt")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("# comment\n[thing]\nname: Thing\ntags: a, b\n"
+                         "boost: damage=1.5, mana_cost=0.9\n"
+                         "range: ATK=10-40\n"
+                         "desc: Long text\n    continues here.\n")
+        entry = content.parse_file(path)["thing"]
+        self.assertEqual(content.as_str(entry, "name"), "Thing")
+        self.assertEqual(content.as_list(entry, "tags"), ("a", "b"))
+        self.assertEqual(content.as_stat_map(entry, "boost"),
+                         {"damage": 1.5, "mana_cost": 0.9})
+        self.assertEqual(content.as_range_map(entry, "range"),
+                         {"ATK": (10.0, 40.0)})
+        self.assertIn("continues", content.as_str(entry, "desc"))
+
+    def test_item_defs_synced_and_purchasable(self):
+        defs = db.get_item_defs()
+        self.assertTrue(any(d["key"] == "health_potion" for d in defs))
+        self.assertTrue(any(d["category"] == "special" for d in defs))
+
+        points = db.get_current_points()
+        ok, message = db.purchase_item("health_potion")
+        self.assertTrue(ok, message)
+        owned = {row["key"]: row["quantity"] for row in db.get_inventory_items()}
+        self.assertEqual(owned.get("health_potion"), 1)
+        self.assertEqual(db.get_current_points(), points - 100)
+
+        # granting respects stacking
+        self.assertTrue(db.add_item("health_potion", 3))
+        owned = {row["key"]: row["quantity"] for row in db.get_inventory_items()}
+        self.assertEqual(owned.get("health_potion"), 4)
+
+    def test_artifacts_generate_from_defs(self):
+        artifact = db.generate_artifact_by_level(8)
+        self.assertIsNotNone(artifact)
+        self.assertIsNotNone(db.get_artifact_def(artifact["def_key"]))
+        self.assertGreater(artifact["main_stat_value"], 0)
+        if "sub_stat2" in artifact:
+            self.assertIn("sub_stat1", artifact)
+        artifact_id = db.add_artifact(artifact)
+        row = db.get_artifact(artifact_id)
+        self.assertEqual(row["def_key"], artifact["def_key"])
 
 
 if __name__ == "__main__":

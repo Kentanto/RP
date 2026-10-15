@@ -8,6 +8,7 @@ else:
     BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DB_PATH = os.path.join(BASE_PATH, "database", "artifacts.db")
+DATA_DIR = os.path.join(BASE_PATH, "data")
 ICONS_DIR = os.path.join(BASE_PATH, "icons")
 SOUNDS_DIR = os.path.join(BASE_PATH, "sounds")
 SONGS_DIR = os.path.join(SOUNDS_DIR, "songs")

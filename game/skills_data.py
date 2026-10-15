@@ -1,13 +1,15 @@
-"""Skill tree content and layout.
+"""Ability definitions loaded from data/abilities.txt.
 
-Skills and upgrades are declared as data with `requires` edges; node
-positions are computed from the graph (BFS depth -> row), so adding a new
-skill or upgrade never touches layout code. The old version hardcoded
-pixel positions in a dict rebuilt every frame and carried a parallel
-"unlocked_paths" list that duplicated the same information.
+The whole ability tree is data-driven: skill roots and upgrades live in
+a plain text file (see data/abilities.txt for the format and a legend),
+node positions are computed from the `requires` graph, and progress is
+stored in the database. Adding or retuning an ability means editing a
+text block - no layout code to touch.
 """
 from dataclasses import dataclass
 from typing import Dict, Tuple
+
+from . import content, settings
 
 
 @dataclass(frozen=True)
@@ -18,7 +20,7 @@ class UpgradeSpec:
     stat_boost: Dict[str, float]
     description: str
     requires: Tuple[str, ...] = ()      # upgrade names that must be unlocked first
-    glyph: str = "mastery"              # key into the GLYPH drawing functions
+    glyph: str = "mastery"              # key into the tree's glyph drawing code
 
 
 @dataclass(frozen=True)
@@ -31,70 +33,53 @@ class SkillSpec:
     upgrades: Tuple[UpgradeSpec, ...] = ()
 
 
-FIREBALL = SkillSpec(
-    "Fireball", "Launches a ball of fire at enemies",
-    {"damage": 5, "mana_cost": 50}, "fireball.png",
-    upgrades=(
-        UpgradeSpec("Fireball Mastery", 2, 50,
-                    {"damage": 1.2, "mana_cost": 0.9},
-                    "Master the basics of fire manipulation",
-                    glyph="mastery"),
-        UpgradeSpec("Inferno", 3, 100,
-                    {"damage": 1.5, "burn_duration": 5, "burn_damage": 20},
-                    "Transform fireball into a lingering inferno that burns enemies over time",
-                    requires=("Fireball Mastery",), glyph="flame"),
-        UpgradeSpec("Explosion", 3, 100,
-                    {"damage": 1.3, "area": 2.0, "knockback": 5},
-                    "Convert fireball into an explosive blast that knocks back enemies",
-                    requires=("Fireball Mastery",), glyph="burst"),
-        UpgradeSpec("True Fire", 5, 200,
-                    {"damage": 2.0, "burn_damage": 40, "area": 3.0},
-                    "All fire abilities double damage, your flame turns a hue of white",
-                    requires=("Inferno",), glyph="star"),
-        UpgradeSpec("Cluster", 5, 200,
-                    {"damage": 1.8, "area": 3.0, "knockback": 8},
-                    "Release a chain of explosions that ripple outward",
-                    requires=("Explosion",), glyph="cluster"),
-        UpgradeSpec("Meteor Shower", 9, 1200,
-                    {"damage": 7.0, "area": 30, "knockback": 14},
-                    "Call down a Meteor Shower that deals massive damage and knocks back enemies",
-                    requires=("True Fire", "Cluster"), glyph="meteor"),
-    ),
-)
+def _load_skills():
+    entries = content.parse_named(settings.DATA_DIR, "abilities.txt")
 
-ICE_SHARD = SkillSpec(
-    "Ice Shard", "Fires a piercing shard of ice",
-    {"damage": 30, "mana_cost": 15}, "ice_shard.jpg",
-    upgrades=(
-        UpgradeSpec("Ice Shard Mastery", 2, 50,
-                    {"damage": 1.2, "mana_cost": 0.9},
-                    "Master the basics of ice manipulation",
-                    glyph="mastery"),
-        UpgradeSpec("Frost", 3, 100,
-                    {"damage": 1.3, "freeze_chance": 0.3, "freeze_duration": 3},
-                    "Add a chance to freeze enemies in place",
-                    requires=("Ice Shard Mastery",), glyph="snow"),
-        UpgradeSpec("Pierce", 3, 100,
-                    {"damage": 1.4, "penetration": 3, "chain_hits": 2},
-                    "Shard pierces through multiple enemies",
-                    requires=("Ice Shard Mastery",), glyph="arrow"),
-        UpgradeSpec("Glacial", 5, 200,
-                    {"damage": 1.6, "freeze_chance": 0.5, "freeze_duration": 5, "area": 2.0},
-                    "Create an expanding ice field that slows enemies",
-                    requires=("Frost",), glyph="shield"),
-        UpgradeSpec("Chain", 5, 200,
-                    {"damage": 1.8, "penetration": 5, "chain_hits": 4, "chain_damage": 0.8},
-                    "Shard bounces between multiple targets with increasing damage",
-                    requires=("Pierce",), glyph="chain"),
-        UpgradeSpec("Ice Age", 9, 1200,
-                    {"damage": 7.0, "area": 30, "knockback": 1},
-                    "Create an ice age that freezes all enemies in the area",
-                    requires=("Glacial", "Chain"), glyph="wave"),
-    ),
-)
+    # upgrades first: `requires` is written with entry keys, but progress is
+    # stored by display name, so keys must resolve to names.
+    upgrade_specs = {}
+    for key, entry in entries.items():
+        if "upgrade_of" not in entry:
+            continue
+        upgrade = UpgradeSpec(
+            name=content.as_str(entry, "name", key),
+            level_req=content.as_int(entry, "level_req", 1),
+            cost=content.as_int(entry, "cost", 50),
+            stat_boost=content.as_stat_map(entry, "boost"),
+            description=content.as_str(entry, "desc"),
+            requires=content.as_list(entry, "requires"),
+            glyph=content.as_str(entry, "glyph", "mastery"),
+        )
+        upgrade_specs[key] = upgrade
 
-SKILLS = (FIREBALL, ICE_SHARD)
+    def display_name(ref):
+        spec = upgrade_specs.get(ref)
+        return spec.name if spec else ref     # tolerate old name-based data
 
+    upgrade_specs = {
+        key: UpgradeSpec(u.name, u.level_req, u.cost, u.stat_boost, u.description,
+                         tuple(display_name(r) for r in u.requires), u.glyph)
+        for key, u in upgrade_specs.items()
+    }
+
+    skills = []
+    for key, entry in entries.items():
+        if "base" not in entry:
+            continue
+        upgrades = tuple(spec for ukey, spec in upgrade_specs.items()
+                         if entries[ukey].get("upgrade_of") == key)
+        skills.append(SkillSpec(
+            name=content.as_str(entry, "name", key),
+            description=content.as_str(entry, "desc"),
+            base_stats=content.as_stat_map(entry, "base"),
+            icon=content.as_str(entry, "icon"),
+            upgrades=upgrades,
+        ))
+    return tuple(skills)
+
+
+SKILLS = _load_skills()
 # -------------------------------------------------------------- layout
 
 ROW_SPACING = 190.0      # vertical distance between tree rows
@@ -182,8 +167,8 @@ def upgrade_owner(name):
 def current_stats(skill, level, active_names):
     """Effective stats of a skill at a level with the given active upgrades.
 
-    Ported from the old Skill.get_current_stats(): level scaling plus
-    multiplicative upgrade boosts, with special damage/mana stacking.
+    Level scaling plus multiplicative upgrade boosts, with special
+    damage/mana stacking.
     """
     stats = dict(skill.base_stats)
     active = set(active_names)
@@ -215,5 +200,4 @@ def current_stats(skill, level, active_names):
         else:
             stats[stat] *= level_multiplier
     return stats
-
 
