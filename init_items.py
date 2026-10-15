@@ -1,7 +1,7 @@
 import sqlite3
 import os
 
-from athas import DB_PATH
+from game.settings import DB_PATH
 
 def init_items():
     items = [
