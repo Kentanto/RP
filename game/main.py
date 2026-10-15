@@ -41,18 +41,9 @@ def organize_files():
             _move(source, os.path.join(sounds, file))
 
 
-def send_launcher_back():
-    """Move launcher.exe next to the game folder (Windows distribution flow)."""
-    launcher_path = os.path.join(settings.BASE_PATH, "launcher.exe")
-    if os.path.exists(launcher_path):
-        destination = os.path.join(os.path.dirname(settings.BASE_PATH), "launcher.exe")
-        _move(launcher_path, destination)
-
-
 def run():
     db.initialize_database()
     organize_files()
-    send_launcher_back()
 
     from .core import App
     from .scenes.boot import BootScene
