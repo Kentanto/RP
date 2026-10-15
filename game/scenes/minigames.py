@@ -214,6 +214,13 @@ class MathGameScene(Scene):
             else:
                 db.add_artifact_points(100)
                 lines = [("+100 Artifact Points", Colors.green)]
+            xp_gain = 20 * self.difficulty
+            xp_result = db.add_xp(xp_gain)
+            if xp_result:
+                lines.append((f"+{xp_gain} XP", Colors.light_blue))
+                if xp_result["levels_gained"]:
+                    lines.append((f"LEVEL UP! Now level {xp_result['level']}",
+                                  Colors.gold))
         else:
             lines = [(f"The correct answer is: {self.answer:g}", Colors.white)]
         self._round_done = True

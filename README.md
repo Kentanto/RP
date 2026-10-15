@@ -23,8 +23,9 @@ All game content lives in plain text files inside `data/`, each with a
 comment legend at the top:
 
 * `data/items.txt` — items and weapons (type, rarity, stats, price, shop
-  stock, icon shape + color, and the `special` category). To add a sword,
-  copy a `[key]` block, edit, done.
+  stock, icon shape + color, and the `special` category). Equippable
+  gear declares a `slot:` (weapon/head/chest/trinket) and feeds the
+  character stats page. To add a sword, copy a `[key]` block, edit, done.
 * `data/artifacts.txt` — artifact archetypes. The artifact system is
   self-generating: it picks an archetype, rolls stats within your ranges,
   and draws its icon from the shape and color you set.

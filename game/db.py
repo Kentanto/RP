@@ -137,6 +137,13 @@ def initialize_database():
         if "def_key" not in _columns(conn, "artifacts"):
             c.execute("ALTER TABLE artifacts ADD COLUMN def_key TEXT DEFAULT 'relic'")
 
+        # character stats: xp column + gear equipment
+        if "xp" not in _columns(conn, "stats"):
+            c.execute("ALTER TABLE stats ADD COLUMN xp INTEGER DEFAULT 0")
+        c.execute("""CREATE TABLE IF NOT EXISTS equipped_gear (
+                    slot TEXT PRIMARY KEY,
+                    item_key TEXT)""")
+
         c.execute("SELECT COUNT(*) FROM skills")
         if c.fetchone()[0] == 0:
             from . import skills_data
@@ -220,6 +227,84 @@ def add_artifact_points(amount):
     current = get_artifact_points()
     update_artifact_points(current + amount)
     return current + amount
+
+
+# ---------------------------------------------------------- character sheet
+
+def xp_for_level(level):
+    """XP needed to advance from `level` to the next one."""
+    return 100 + (level - 1) * 50
+
+
+def get_base_stats():
+    """Persisted base stats; the row is created on first read."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT level, xp, hp, atk, def, spd, mana FROM stats WHERE id=1").fetchone()
+        if row is None:
+            conn.execute("INSERT INTO stats (id, level, hp, atk, def, spd, mana, xp) "
+                         "VALUES (1, 1, 100, 10, 5, 10, 50, 0)")
+            conn.commit()
+            row = conn.execute(
+                "SELECT level, xp, hp, atk, def, spd, mana FROM stats WHERE id=1").fetchone()
+    return dict(row)
+
+
+def add_xp(amount):
+    """Grant XP. Level-ups grow the base stats.
+
+    Returns {"level", "xp", "needed", "levels_gained"} or None when
+    nothing was granted.
+    """
+    if amount <= 0:
+        return None
+    with _connect() as conn:
+        row = conn.execute("SELECT level, xp FROM stats WHERE id=1").fetchone()
+        if row is None:
+            conn.execute("INSERT INTO stats (id, level, hp, atk, def, spd, mana, xp) "
+                         "VALUES (1, 1, 100, 10, 5, 10, 50, 0)")
+            row = conn.execute("SELECT level, xp FROM stats WHERE id=1").fetchone()
+        level, xp = row["level"], row["xp"]
+        xp += amount
+        levels_gained = 0
+        while xp >= xp_for_level(level):
+            xp -= xp_for_level(level)
+            level += 1
+            levels_gained += 1
+            conn.execute("UPDATE stats SET level=?, "
+                         "hp = hp + 20, atk = atk + 2, def = def + 1, "
+                         "spd = spd + 1, mana = mana + 5 WHERE id=1", (level,))
+        conn.execute("UPDATE stats SET xp=? WHERE id=1", (xp,))
+        conn.commit()
+        return {"level": level, "xp": xp, "needed": xp_for_level(level),
+                "levels_gained": levels_gained}
+
+
+# ------------------------------------------------------------------- gear
+
+def get_equipped_gear():
+    with _connect() as conn:
+        rows = conn.execute("SELECT slot, item_key FROM equipped_gear").fetchall()
+    return {row["slot"]: row["item_key"] for row in rows}
+
+
+def equip_gear(slot, item_key):
+    """Equip an item into its gear slot (fails on slot mismatch)."""
+    with _connect() as conn:
+        item = conn.execute("SELECT slot FROM item_defs WHERE key=?",
+                            (item_key,)).fetchone()
+        if item is None or item["slot"] != slot:
+            return False
+        conn.execute("INSERT OR REPLACE INTO equipped_gear (slot, item_key) "
+                     "VALUES (?, ?)", (slot, item_key))
+        conn.commit()
+    return True
+
+
+def unequip_gear(slot):
+    with _connect() as conn:
+        conn.execute("DELETE FROM equipped_gear WHERE slot=?", (slot,))
+        conn.commit()
 
 
 # ---------------------------------------------------------------- skills
@@ -582,6 +667,12 @@ def get_item_defs(shop_only=False):
         return conn.execute(query).fetchall()
 
 
+def get_item_def(item_key):
+    with _connect() as conn:
+        return conn.execute("SELECT * FROM item_defs WHERE key=?",
+                            (item_key,)).fetchone()
+
+
 def get_artifact_defs():
     with _connect() as conn:
         return conn.execute("SELECT * FROM artifact_defs").fetchall()
@@ -591,6 +682,18 @@ def get_artifact_def(def_key):
     with _connect() as conn:
         return conn.execute("SELECT * FROM artifact_defs WHERE key=?",
                             (def_key,)).fetchone()
+
+
+def get_artifacts_by_ids(ids):
+    """Load several artifact rows at once (used by the character page)."""
+    if not ids:
+        return []
+    with _connect() as conn:
+        placeholders = ",".join("?" * len(ids))
+        return conn.execute(
+            "SELECT id, name, main_stat, main_stat_value, sub_stat1, sub_stat1_value, "
+            f"sub_stat2, sub_stat2_value, def_key FROM artifacts WHERE id IN ({placeholders})",
+            list(ids)).fetchall()
 
 
 # ------------------------------------------------------- inventory / shop

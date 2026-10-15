@@ -193,10 +193,12 @@ class AthasSmokeTest(unittest.TestCase):
             "sub_stat1": "DEF", "sub_stat1_value": 5,
             "max_level": 20, "def_key": "relic"})
         from game.scenes.artifacts import ArtifactDetailScene, ArtifactsScene
+        from game.scenes.status import GearPickerScene
         for scene in (MainMenuScene(), MinigamesScene(), MathMenuScene(),
                       StatusScene(), SkillTreeScene(), InventoryScene(),
                       ShopScene(), MissionsScene(), ArtifactsScene(),
-                      ArtifactDetailScene(artifact_id, equip_slot=1, remove_slot=1)):
+                      ArtifactDetailScene(artifact_id, equip_slot=1, remove_slot=1),
+                      GearPickerScene("weapon")):
             app.push_scene(scene)
             self._draw_frame(scene)
             app.dispatch(pygame.event.Event(pygame.MOUSEMOTION, {"pos": (100, 100)}))
@@ -249,6 +251,50 @@ class AthasSmokeTest(unittest.TestCase):
         artifact_id = db.add_artifact(artifact)
         row = db.get_artifact(artifact_id)
         self.assertEqual(row["def_key"], artifact["def_key"])
+
+    # ------------------------------------------------------- character stats
+
+    def test_base_stats_and_leveling(self):
+        base = db.get_base_stats()
+        self.assertEqual(base["level"], 1)
+        self.assertEqual(base["hp"], 100)
+
+        result = db.add_xp(db.xp_for_level(1))
+        self.assertEqual(result["levels_gained"], 1)
+        self.assertEqual(result["level"], 2)
+
+        grown = db.get_base_stats()
+        self.assertEqual(grown["atk"], base["atk"] + 2)
+        self.assertEqual(grown["hp"], base["hp"] + 20)
+        self.assertEqual(grown["def"], base["def"] + 1)
+
+    def test_gear_equip_and_sheet_totals(self):
+        from game import stats_model
+        db.unequip_gear("weapon")
+        bare_atk = stats_model.sheet()["stats"]["ATK"]["total"]
+
+        self.assertTrue(db.add_item("iron_sword"))
+        self.assertTrue(db.equip_gear("weapon", "iron_sword"))
+        self.assertFalse(db.equip_gear("head", "iron_sword"))   # slot mismatch
+
+        equipped = stats_model.sheet()["stats"]["ATK"]
+        self.assertEqual(equipped["gear"], 5)
+        self.assertEqual(equipped["total"], bare_atk + 5)
+
+        db.unequip_gear("weapon")
+        self.assertEqual(stats_model.sheet()["stats"]["ATK"]["total"], bare_atk)
+
+    def test_artifact_bonuses_in_sheet(self):
+        from game import stats_model
+        artifact_id = db.add_artifact({
+            "name": "Sheet Test", "main_stat": "ATK", "main_stat_value": 30,
+            "sub_stat1": "ATK%", "sub_stat1_value": 0.10,
+            "max_level": 20, "def_key": "relic"})
+        self.assertTrue(db.set_equipped_artifact(1, artifact_id))
+        atk = stats_model.sheet()["stats"]["ATK"]
+        self.assertGreaterEqual(atk["artifact"], 30)
+        self.assertGreaterEqual(atk["pct"], 0.10)
+        db.remove_equipped_artifact(1, artifact_id)
 
 
 if __name__ == "__main__":

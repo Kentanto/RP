@@ -3,6 +3,7 @@
 # Every item is one [key] block. Fields:
 #   type:      weapon | armor | consumable | material | quest
 #   category:  normal | special   (special items get their own tab + styling)
+#   slot:      gear slot for equippable items (weapon | head | chest | trinket)
 #   rarity:    common | uncommon | rare | epic | legendary
 #   icon:      shape name (sword, axe, bow, shield, helm, chest, potion, gem,
 #              ring, scroll, star, orb, crystal, fang, feather, book, crown,
@@ -92,6 +93,7 @@ desc: A legendary crafting component.
 name: Iron Sword
 type: weapon
 category: normal
+slot: weapon
 rarity: common
 icon: sword
 color: 190,190,200
@@ -106,6 +108,7 @@ desc: A dependable blade, nicked but keen.
 name: Oak Shield
 type: armor
 category: normal
+slot: chest
 rarity: common
 icon: shield
 color: 150,110,60
@@ -120,6 +123,7 @@ desc: Sturdy oak banded with iron.
 name: Guard Helm
 type: armor
 category: normal
+slot: head
 rarity: uncommon
 icon: helm
 color: 140,170,200
@@ -130,10 +134,26 @@ shop: yes
 stock: 5
 desc: Standard issue, dented once or twice.
 
+[lucky_ring]
+name: Lucky Ring
+type: armor
+category: normal
+slot: trinket
+rarity: rare
+icon: ring
+color: 120,220,140
+stats: crit_rate=0.03
+price: 350
+sell_price: 90
+shop: yes
+stock: 3
+desc: A thin band that always lands right side up.
+
 [ember_blade]
 name: Ember Blade
 type: weapon
 category: special
+slot: weapon
 rarity: epic
 icon: sword
 color: 255,120,50
@@ -148,6 +168,7 @@ desc: Forged in a dying volcano; the edge still smolders.
 name: Storm Lance
 type: weapon
 category: special
+slot: weapon
 rarity: legendary
 icon: crystal
 color: 120,180,255
