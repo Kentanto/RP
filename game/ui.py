@@ -74,7 +74,7 @@ def draw_flash(screen, text, color, width, height, until):
     font = get_font(40)
     surface = font.render(text, True, color)
     x = width // 2 - surface.get_width() // 2
-    y = height - 120
+    y = height - settings.scaled(120)
     bg = pygame.Surface((surface.get_width() + 30, surface.get_height() + 14), pygame.SRCALPHA)
     pygame.draw.rect(bg, (0, 0, 0, 180), bg.get_rect(), border_radius=8)
     screen.blit(bg, (x - 15, y - 7))

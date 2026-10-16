@@ -156,8 +156,30 @@ def initialize_database():
             c.execute("INSERT INTO points (points, last_updated) VALUES (?, ?)",
                       (600, int(time.time())))
 
+        # ---- missions (source: data/missions.txt, synced below)
+        c.execute("""CREATE TABLE IF NOT EXISTS missions (
+                    key TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    mtype TEXT NOT NULL,
+                    target INTEGER DEFAULT 1,
+                    reward_points INTEGER DEFAULT 0,
+                    reward_xp INTEGER DEFAULT 0,
+                    reward_artifact_points INTEGER DEFAULT 0,
+                    progress INTEGER DEFAULT 0,
+                    claimed INTEGER DEFAULT 0)""")
+
+        # character resources: current HP/mana + regen bookkeeping
+        # (-1 = "never read", the first read starts the pool at full)
+        for column, default in (("hp_current", -1), ("mana_current", -1),
+                               ("regen_at", 0)):
+            if column not in _columns(conn, "stats"):
+                c.execute(f"ALTER TABLE stats ADD COLUMN {column} "
+                          f"INTEGER DEFAULT {default}")
+
     sync_item_defs()
     sync_artifact_defs()
+    sync_missions()
 
 
 
@@ -275,9 +297,140 @@ def add_xp(amount):
                          "hp = hp + 20, atk = atk + 2, def = def + 1, "
                          "spd = spd + 1, mana = mana + 5 WHERE id=1", (level,))
         conn.execute("UPDATE stats SET xp=? WHERE id=1", (xp,))
+        try:    # mission tracking: character level (high-water mark)
+            conn.execute("UPDATE missions SET progress = MAX(progress, ?) "
+                         "WHERE mtype='level' AND claimed=0", (level,))
+        except sqlite3.OperationalError:
+            pass    # missions table not created yet (legacy callers)
         conn.commit()
         return {"level": level, "xp": xp, "needed": xp_for_level(level),
                 "levels_gained": levels_gained}
+
+
+# -------------------------------------------------------------- resources
+
+def get_resources():
+    """Current HP/mana pools. Regenerates over time (a slice of max per
+    minute), so coming back later always feels rewarded. The pools start
+    full the first time they are read on a legacy database.
+    """
+    base = get_base_stats()                     # also creates the stats row
+    max_hp, max_mana = base["hp"], base["mana"]
+    with _connect() as conn:
+        row = conn.execute("SELECT hp_current, mana_current, regen_at "
+                           "FROM stats WHERE id=1").fetchone()
+        if row is None:
+            return {"hp": max_hp, "mana": max_mana}
+        hp_current, mana_current, regen_at = row
+        now = int(time.time())
+        if hp_current is None or hp_current < 0 or mana_current is None \
+                or mana_current < 0 or not regen_at:
+            conn.execute("UPDATE stats SET hp_current=?, mana_current=?, regen_at=? "
+                         "WHERE id=1", (max_hp, max_mana, now))
+            conn.commit()
+            return {"hp": max_hp, "mana": max_mana}
+        elapsed = max(0, now - regen_at)
+        if elapsed >= 60:
+            minutes = elapsed / 60.0
+            hp_current = int(min(max_hp, hp_current
+                                 + max(1.0, max_hp * settings.HP_REGEN_PER_MIN) * minutes))
+            mana_current = int(min(max_mana, mana_current
+                                   + max(1.0, max_mana * settings.MANA_REGEN_PER_MIN) * minutes))
+            conn.execute("UPDATE stats SET hp_current=?, mana_current=?, regen_at=? "
+                         "WHERE id=1", (hp_current, mana_current, now))
+            conn.commit()
+        return {"hp": int(hp_current), "mana": int(mana_current)}
+
+
+def adjust_resources(hp_delta=0, mana_delta=0):
+    """Spend or restore HP/mana (positive = restore). Clamped to [0, max]."""
+    res = get_resources()          # regenerates first, so nothing is wasted
+    base = get_base_stats()
+    hp = int(max(0, min(base["hp"], res["hp"] + hp_delta)))
+    mana = int(max(0, min(base["mana"], res["mana"] + mana_delta)))
+    with _connect() as conn:
+        conn.execute("UPDATE stats SET hp_current=?, mana_current=? WHERE id=1",
+                     (hp, mana))
+        conn.commit()
+    return {"hp": hp, "mana": mana}
+
+
+# --------------------------------------------------------------- missions
+
+def sync_missions():
+    """Load data/missions.txt into the missions table.
+
+    Definitions refresh on every start, but progress and claimed state
+    are preserved for keys that already exist.
+    """
+    entries = content.parse_named(settings.DATA_DIR, "missions.txt")
+    with _connect() as conn:
+        for key, entry in entries.items():
+            conn.execute("""INSERT INTO missions
+                            (key, name, description, mtype, target,
+                             reward_points, reward_xp, reward_artifact_points)
+                            VALUES (?,?,?,?,?,?,?,?)
+                            ON CONFLICT(key) DO UPDATE SET
+                              name=excluded.name,
+                              description=excluded.description,
+                              mtype=excluded.mtype,
+                              target=excluded.target,
+                              reward_points=excluded.reward_points,
+                              reward_xp=excluded.reward_xp,
+                              reward_artifact_points=excluded.reward_artifact_points""",
+                         (key,
+                          content.as_str(entry, "name", key),
+                          content.as_str(entry, "desc"),
+                          content.as_str(entry, "type", "math_correct"),
+                          content.as_int(entry, "target", 1),
+                          content.as_int(entry, "reward_points", 0),
+                          content.as_int(entry, "reward_xp", 0),
+                          content.as_int(entry, "reward_artifact_points", 0)))
+        conn.commit()
+
+
+def get_missions():
+    with _connect() as conn:
+        return conn.execute("SELECT * FROM missions ORDER BY key").fetchall()
+
+
+def bump_mission(mtype, amount=1):
+    """Counter progress (math rounds solved, ...). Never decreases."""
+    with _connect() as conn:
+        conn.execute("UPDATE missions SET progress = progress + ? "
+                     "WHERE mtype=? AND claimed=0", (amount, mtype))
+        conn.commit()
+
+
+def set_mission(mtype, value):
+    """High-water-mark progress (character level, total upgrades, ...)."""
+    with _connect() as conn:
+        conn.execute("UPDATE missions SET progress = MAX(progress, ?) "
+                     "WHERE mtype=? AND claimed=0", (value, mtype))
+        conn.commit()
+
+
+def claim_mission(key):
+    """Claim the rewards of a completed mission. Returns (ok, message)."""
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM missions WHERE key=?", (key,)).fetchone()
+        if row is None:
+            return False, "Unknown mission"
+        if row["claimed"]:
+            return False, "Already claimed"
+        if row["progress"] < row["target"]:
+            return False, "Not complete yet"
+        conn.execute("UPDATE missions SET claimed=1 WHERE key=?", (key,))
+        if row["reward_points"]:
+            conn.execute("UPDATE points SET points = points + ?, last_updated=?",
+                         (row["reward_points"], int(time.time())))
+        if row["reward_artifact_points"]:
+            conn.execute("UPDATE points SET artifact_points = artifact_points + ?",
+                         (row["reward_artifact_points"],))
+        conn.commit()
+    if row["reward_xp"]:
+        add_xp(row["reward_xp"])
+    return True, "Reward claimed!"
 
 
 # ------------------------------------------------------------------- gear
@@ -350,6 +503,13 @@ def save_skill_progress(name, level, upgrade_names):
         conn.execute(
             "UPDATE skills SET level = ?, active_upgrades = ?, unlocked_paths = ? WHERE name = ?",
             (level, payload, payload, name))
+        try:    # mission tracking: total upgrades owned
+            total = sum(len(_parse_upgrade_names(row[0])) for row in
+                        conn.execute("SELECT active_upgrades FROM skills").fetchall())
+            conn.execute("UPDATE missions SET progress = MAX(progress, ?) "
+                         "WHERE mtype='upgrades' AND claimed=0", (total,))
+        except sqlite3.OperationalError:
+            pass    # missions table not created yet (legacy callers)
         conn.commit()
 
 
@@ -409,6 +569,13 @@ def add_artifact(artifact):
              artifact.get("sub_stat2"), artifact.get("sub_stat2_value"),
              artifact["max_level"], artifact["def_key"]))
         conn.commit()
+        try:    # mission tracking: artifacts owned
+            conn.execute("UPDATE missions SET progress = MAX(progress, "
+                         "(SELECT COUNT(*) FROM artifacts)) "
+                         "WHERE mtype='artifacts' AND claimed=0")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass    # missions table not created yet (legacy callers)
         return cursor.lastrowid
 
 
@@ -767,6 +934,81 @@ def purchase_item(item_key):
         except sqlite3.Error as error:
             conn.rollback()
             return False, str(error)
+
+
+def _consume_item(item_key, quantity=1):
+    """Remove quantity from the inventory stack (inside a transaction)."""
+    with _connect() as conn:
+        conn.execute("UPDATE inventory SET quantity = quantity - ? WHERE item_key=?",
+                     (quantity, item_key))
+        conn.execute("DELETE FROM inventory WHERE item_key=? AND quantity <= 0",
+                     (item_key,))
+        conn.commit()
+
+
+def use_item(item_key, quantity=1):
+    """Use a consumable. Its hp/mana stats restore the resource pools.
+
+    Returns (success, message).
+    """
+    item = get_item_def(item_key)
+    if item is None:
+        return False, "Unknown item"
+    if item["type"] != "consumable":
+        return False, "That can't be used"
+    with _connect() as conn:
+        row = conn.execute("SELECT quantity FROM inventory WHERE item_key=?",
+                           (item_key,)).fetchone()
+    if row is None or row["quantity"] < quantity:
+        return False, "You don't have that many"
+
+    try:
+        stats = json.loads(item["stats"] or "{}")
+    except ValueError:
+        stats = {}
+    hp = float(stats.get("hp", 0))
+    mana = float(stats.get("mana", 0))
+    if hp or mana:
+        adjust_resources(hp, mana)
+        if hp and mana:
+            message = f"Restored {int(hp)} HP and {int(mana)} mana"
+        elif hp:
+            message = f"Restored {int(hp)} HP"
+        else:
+            message = f"Restored {int(mana)} mana"
+    else:
+        message = "Nothing happened..."
+
+    _consume_item(item_key, quantity)
+    return True, message
+
+
+def sell_item(item_key, quantity=1):
+    """Sell an owned item back for its sell_price per unit.
+
+    Equipped gear has to be taken off first. Returns (success, message).
+    """
+    item = get_item_def(item_key)
+    if item is None:
+        return False, "Unknown item"
+    if item["sell_price"] <= 0:
+        return False, "That can't be sold"
+    if item["slot"] and item_key in get_equipped_gear().values():
+        return False, "Unequip it first"
+    with _connect() as conn:
+        row = conn.execute("SELECT quantity FROM inventory WHERE item_key=?",
+                           (item_key,)).fetchone()
+        if row is None or row["quantity"] < quantity:
+            return False, "You don't have that many"
+        conn.execute("UPDATE inventory SET quantity = quantity - ? WHERE item_key=?",
+                     (quantity, item_key))
+        conn.execute("DELETE FROM inventory WHERE item_key=? AND quantity <= 0",
+                     (item_key,))
+        payout = item["sell_price"] * quantity
+        conn.execute("UPDATE points SET points = points + ?, last_updated=?",
+                     (payout, int(time.time())))
+        conn.commit()
+    return True, f"+{payout} points"
 
 
 

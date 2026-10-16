@@ -19,7 +19,7 @@ import pygame
 
 from .. import audio, db, skills_data
 from ..core import Scene
-from ..settings import Colors, get_font, ICONS_DIR
+from ..settings import Colors, get_font, scaled, ICONS_DIR
 from ..ui import Button, create_circular_icon, draw_panel, wrap_text
 
 NODE_RADIUS = 42.0        # world-space radius of upgrade nodes
@@ -221,15 +221,17 @@ class SkillTreeScene(Scene):
 
     # ------------------------------------------------------------- events
 
-    PANEL_WIDTH = 360
+    PANEL_WIDTH = 360          # design pixels, scaled and capped at use
 
     def _panel_rect(self, app):
-        return pygame.Rect(app.width - self.PANEL_WIDTH - 16, 70,
-                           self.PANEL_WIDTH, app.height - 110)
+        width = min(scaled(self.PANEL_WIDTH), int(app.width * 0.45))
+        return pygame.Rect(app.width - width - scaled(16), scaled(70),
+                           width, app.height - scaled(110))
 
     def _action_button_rect(self, app):
         panel = self._panel_rect(app)
-        return pygame.Rect(panel.x + 24, panel.bottom - 66, panel.width - 48, 44)
+        return pygame.Rect(panel.x + scaled(24), panel.bottom - scaled(66),
+                           panel.width - scaled(48), scaled(44))
 
     def handle_event(self, app, event):
         if self.back_button.is_clicked(app, event):
@@ -404,7 +406,8 @@ class SkillTreeScene(Scene):
                                 pos[1] + radius + 8))
         level_text = small.render(f"Lv.{state['level']}", True, Colors.light_gray)
         screen.blit(level_text, (pos[0] - level_text.get_width() // 2,
-                                pos[1] + radius + 32))
+                                pos[1] + radius + name_text.get_height()
+                                + scaled(4)))
 
     def _draw_upgrade_node(self, screen, upgrade, pos, name, pulse, small):
         radius = NODE_RADIUS * self.camera.zoom
@@ -433,18 +436,20 @@ class SkillTreeScene(Scene):
         name_text = small.render(upgrade.name, True,
                                  Colors.white if owned or can_buy else Colors.gray)
         screen.blit(name_text, (pos[0] - name_text.get_width() // 2,
-                                pos[1] + radius + 8))
+                                pos[1] + radius + scaled(8)))
 
     def _draw_header(self, app):
         screen = app.screen
         large, small = get_font(55), get_font(30)
         title = large.render("Skill Tree", True, Colors.gold)
-        screen.blit(title, (app.width // 2 - title.get_width() // 2, 12))
+        screen.blit(title, (app.width // 2 - title.get_width() // 2, scaled(12)))
         points_text = small.render(f"Skill Points: {self.points}", True, Colors.gold)
-        screen.blit(points_text, (app.width - points_text.get_width() - 20, 18))
+        screen.blit(points_text, (app.width - points_text.get_width() - scaled(20),
+                                  scaled(18)))
         hint = small.render("Drag to pan • Scroll to zoom • Click a node, then confirm",
                             True, Colors.light_gray)
-        screen.blit(hint, (app.width // 2 - hint.get_width() // 2, app.height - 34))
+        screen.blit(hint, (app.width // 2 - hint.get_width() // 2,
+                          app.height - hint.get_height() - scaled(12)))
         self.back_button.draw(app)
 
     def _draw_side_panel(self, app):
@@ -454,46 +459,47 @@ class SkillTreeScene(Scene):
         if self.selected is None:
             small = get_font(30)
             text = small.render("Select a node to inspect it.", True, Colors.gray)
-            screen.blit(text, (panel.x + 24, panel.y + 24))
+            screen.blit(text, (panel.x + scaled(24), panel.y + scaled(24)))
             return
 
         medium, small = get_font(40), get_font(30)
-        x = panel.x + 24
-        y = panel.y + 18
-        max_text_width = panel.width - 48
+        x = panel.x + scaled(24)
+        y = panel.y + scaled(18)
+        max_text_width = panel.width - scaled(48)
+        line_h = small.get_height() + scaled(6)
 
         skill = skills_data.skill_by_name(self.selected)
         if skill is not None:
             state = self.progress[skill.name]
             name_text = medium.render(skill.name, True, Colors.gold)
             screen.blit(name_text, (x, y))
-            y += 42
+            y += name_text.get_height() + scaled(8)
             sub = small.render(f"Skill • Level {state['level']}/{skill.max_level}",
                                True, Colors.white)
             screen.blit(sub, (x, y))
-            y += 34
+            y += sub.get_height() + scaled(8)
             stats = skills_data.current_stats(skill, state["level"], state["upgrades"])
             for stat, value in stats.items():
                 stat_text = small.render(f"{stat}: {value:.1f}", True, Colors.stat_text_color)
                 screen.blit(stat_text, (x, y))
-                y += 26
-            y += 8
+                y += line_h
+            y += scaled(8)
             for line in wrap_text(skill.description, small, max_text_width)[:4]:
                 screen.blit(small.render(line, True, Colors.light_gray), (x, y))
-                y += 26
+                y += line_h
         else:
             owner, upgrade = skills_data.upgrade_owner(self.selected)
             name_text = medium.render(upgrade.name, True, Colors.gold)
             screen.blit(name_text, (x, y))
-            y += 42
+            y += name_text.get_height() + scaled(8)
             sub = small.render(f"Upgrade • {owner.name}", True, Colors.white)
             screen.blit(sub, (x, y))
-            y += 34
+            y += sub.get_height() + scaled(8)
 
             cost_color = Colors.green if self.points >= upgrade.cost else Colors.red
             cost_text = small.render(f"Cost: {upgrade.cost} SP", True, cost_color)
             screen.blit(cost_text, (x, y))
-            y += 30
+            y += cost_text.get_height() + scaled(6)
 
             current = skills_data.current_stats(
                 owner, self.progress[owner.name]["level"], self.progress[owner.name]["upgrades"])
@@ -505,20 +511,20 @@ class SkillTreeScene(Scene):
                 else:
                     line = f"+{boost:g} {stat}"
                 screen.blit(small.render(line, True, Colors.stat_text_color), (x, y))
-                y += 26
+                y += line_h
 
             if upgrade.requires:
-                y += 6
+                y += scaled(6)
                 for req in upgrade.requires:
                     mark = "OK " if self._is_owned(req) else "X  "
                     color = Colors.green if self._is_owned(req) else Colors.red
                     screen.blit(small.render(f"{mark}{req}", True, color), (x, y))
-                    y += 26
+                    y += line_h
 
-            y += 6
+            y += scaled(6)
             for line in wrap_text(upgrade.description, small, max_text_width)[:4]:
                 screen.blit(small.render(line, True, Colors.light_gray), (x, y))
-                y += 26
+                y += line_h
 
         # Action button + reason.
         info = self._action()
@@ -536,7 +542,7 @@ class SkillTreeScene(Scene):
                 reason_surface = small.render(reason, True, Colors.red)
                 screen.blit(reason_surface,
                             (panel.centerx - reason_surface.get_width() // 2,
-                             button_rect.bottom + 8))
+                             button_rect.bottom + scaled(8)))
 
 
 

@@ -47,10 +47,13 @@ def format_stat(key, value):
 def sheet():
     """The full character sheet.
 
-    Returns {"level", "xp", "needed", "stats": {key: breakdown}} where each
-    breakdown is {"base", "gear", "artifact", "pct", "total"}.
+    Returns {"level", "xp", "needed", "stats": {key: breakdown},
+    "hp_current", "mana_current"} where each breakdown is
+    {"base", "gear", "artifact", "pct", "total"}. The currents are the
+    live resource pools (regenerating, spent by consumables).
     """
     base = db.get_base_stats()
+    resources = db.get_resources()
     entry = {key: {"base": 0, "gear": 0, "artifact": 0, "pct": 0.0}
              for key in STAT_ORDER}
     entry["HP"]["base"] = base["hp"]
@@ -110,6 +113,8 @@ def sheet():
         "xp": base["xp"],
         "needed": db.xp_for_level(base["level"]),
         "stats": entry,
+        "hp_current": int(min(resources["hp"], entry["HP"]["total"])),
+        "mana_current": int(min(resources["mana"], entry["Mana"]["total"])),
     }
 
 

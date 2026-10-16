@@ -4,7 +4,7 @@ import pygame
 from .. import audio, db
 from ..core import Scene
 from ..icons import get_icon
-from ..settings import Colors, get_font
+from ..settings import Colors, get_font, scaled
 from ..ui import (Button, Checkbox, DropdownMenu, draw_panel,
                   fit_text_to_box, truncate_text, wrap_text)
 from .inventory import RARITY_COLORS, _parse_color
@@ -28,9 +28,6 @@ class ArtifactsScene(Scene):
         self.artifact_points = 0
         self.scroll_y = 0
         self.items_per_row = 3
-        self.box_width = 220
-        self.box_height = 160
-        self.box_padding = 20
         self.dropdown = None
         self.checkbox = None
         self.hovered_box_index = -1
@@ -44,6 +41,18 @@ class ArtifactsScene(Scene):
             small = get_font(30)
             self.dropdown = DropdownMenu(SORT_OPTIONS, 40, 70, 180, 35, small)
             self.checkbox = Checkbox(230, 78, 22, checked=True, label="Descending", font=small)
+        self._sync_controls(app)
+
+    def _sync_controls(self, app):
+        """Keep the sort controls anchored to the window: they follow
+        resizes instead of staying stuck at construction-time pixels."""
+        self.dropdown.x = int(app.width * 0.05)
+        self.dropdown.y = scaled(70)
+        self.dropdown.width = scaled(180)
+        self.dropdown.height = scaled(35)
+        self.checkbox.x = self.dropdown.x + self.dropdown.width + scaled(12)
+        self.checkbox.y = self.dropdown.y + scaled(8)
+        self.checkbox.size = scaled(22)
 
     def _sorted_artifacts(self):
         selected_sort = self.dropdown.get_selected()
@@ -67,9 +76,10 @@ class ArtifactsScene(Scene):
             app.pop_scene()
             return
         if event.type == pygame.MOUSEWHEEL:
-            self.scroll_y += event.y * 20
+            self.scroll_y += event.y * scaled(20)
+            row_step = scaled(160) + scaled(20)
             max_rows = (len(self.artifacts) + self.items_per_row - 1) // self.items_per_row
-            min_scroll = -((max_rows * (self.box_height + self.box_padding)) - app.height + 150)
+            min_scroll = -((max_rows * row_step) - app.height + scaled(150))
             self.scroll_y = max(min_scroll, min(0, self.scroll_y))
             return
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -80,26 +90,30 @@ class ArtifactsScene(Scene):
                     return
 
     def _boxes(self, app):
+        box_w, box_h = scaled(220), scaled(160)
+        padding = scaled(20)
         result = []
-        start_x = (app.width - (self.box_width * self.items_per_row +
-                                self.box_padding * (self.items_per_row - 1))) // 2
-        start_y = 100 + self.scroll_y
+        start_x = (app.width - (box_w * self.items_per_row
+                                + padding * (self.items_per_row - 1))) // 2
+        start_y = scaled(100) + self.scroll_y
         for i, artifact in enumerate(self._sorted_artifacts()):
             row, col = divmod(i, self.items_per_row)
-            x = start_x + col * (self.box_width + self.box_padding)
-            y = start_y + row * (self.box_height + self.box_padding)
-            result.append((pygame.Rect(x, y, self.box_width, self.box_height), artifact[0]))
+            x = start_x + col * (box_w + padding)
+            y = start_y + row * (box_h + padding)
+            result.append((pygame.Rect(x, y, box_w, box_h), artifact[0]))
         return result
 
     def draw(self, app):
         screen = app.screen
         mouse_pos = pygame.mouse.get_pos()
+        self._sync_controls(app)
 
         title = get_font(55).render("Artifacts", True, Colors.gold)
-        screen.blit(title, (app.width // 2 - title.get_width() // 2, 30))
+        screen.blit(title, (app.width // 2 - title.get_width() // 2, scaled(30)))
         points_text = get_font(40).render(f"Artifact Points: {self.artifact_points}",
                                           True, Colors.white)
-        screen.blit(points_text, (app.width - points_text.get_width() - 20, 20))
+        screen.blit(points_text, (app.width - points_text.get_width() - scaled(20),
+                                  scaled(20)))
 
         small = get_font(30)
         boxes = self._boxes(app)
@@ -128,18 +142,19 @@ class ArtifactsScene(Scene):
             archetype = self.artifact_defs.get(artifact[11])
             icon_key = archetype["icon"] if archetype else "gem"
             icon_color = _parse_color(archetype["color"]) if archetype else (160, 160, 170)
-            icon = get_icon(icon_key, icon_color, 64)
-            screen.blit(icon, (box.right - icon.get_width() - 8, box.y + 8))
+            icon = get_icon(icon_key, icon_color, scaled(64))
+            screen.blit(icon, (box.right - icon.get_width() - scaled(8),
+                               box.y + scaled(8)))
 
             rarity_color = (RARITY_COLORS.get(archetype["rarity"], Colors.gold)
                             if archetype else Colors.gold)
-            name_display = truncate_text(artifact[1], small, box.width - 80)
+            name_display = truncate_text(artifact[1], small, box.width - scaled(80))
             name_text = small.render(name_display, True, rarity_color)
-            screen.blit(name_text, (box.x + 10, box.y + 10))
+            screen.blit(name_text, (box.x + scaled(10), box.y + scaled(10)))
             level_text = small.render(f"Lv.{artifact[8]}/{artifact[10]}",
                                       True, Colors.artifact_text_color)
             screen.blit(level_text, (box.x + box.width // 2 - level_text.get_width() // 2,
-                                     box.y + box.height - 30))
+                                     box.y + box.height - scaled(30)))
             main_stat_text = small.render(
                 f"{artifact[2]}: +{db.format_stat_value(artifact[2], artifact[3])}",
                 True, Colors.white)
@@ -149,9 +164,12 @@ class ArtifactsScene(Scene):
             sub2_text = small.render(
                 f"{artifact[6]}: +{db.format_stat_value(artifact[6], artifact[7])}"
                 if artifact[6] else "", True, Colors.light_gray)
-            screen.blit(main_stat_text, (box.x + 10, box.y + 40))
-            screen.blit(sub1_text, (box.x + 10, box.y + 70))
-            screen.blit(sub2_text, (box.x + 10, box.y + 95))
+            # Stat lines stacked by measured height, below the name.
+            stats_y = box.y + scaled(10) + name_text.get_height() + scaled(10)
+            for stat_text in (main_stat_text, sub1_text, sub2_text):
+                if stat_text.get_width():
+                    screen.blit(stat_text, (box.x + scaled(10), stats_y))
+                stats_y += stat_text.get_height() + scaled(6)
 
         if (self.hovered_box_index != -1
                 and self.hovered_box_index != self.last_hovered_box_index):
@@ -190,6 +208,7 @@ class ArtifactDetailScene(Scene):
         self.slider_dragging = False
         self.showing_upgrade = False
         self.upgrade_info = None
+        self.last_slider_y = None
         self.upgrade_start = 0
         self.upgrade_duration = 2000
 
@@ -201,10 +220,15 @@ class ArtifactDetailScene(Scene):
                              if self.artifact else None)
 
     def _slider_geometry(self, app):
+        """Return slider rectangle. When last_slider_y is cached from draw(),
+        use that so hit-testing stays aligned with the rendered slider."""
         slider_width = int(app.width * 0.25)
         slider_height = int(app.height * 0.015)
         slider_x = (app.width - slider_width) // 2
-        slider_y = int(app.height * 0.82)
+        if _is_original_window(app) and self.last_slider_y is not None:
+            slider_y = self.last_slider_y
+        else:
+            slider_y = int(app.height * 0.82)
         return slider_x, slider_y, slider_width, slider_height
 
     def _level_up(self, app):
@@ -286,17 +310,29 @@ class ArtifactDetailScene(Scene):
          sub_stat2, sub_stat2_value, level, exp, max_level, _def_key) = self.artifact
 
         panel_width = int(app.width * 0.7)
-        panel_height = int(app.height * 0.6)
+        if app.height < 500:
+            # At very low resolutions, keep the panel within the safe vertical
+            # strip between the top buttons and the bottom Level Up button.
+            panel_y = 36
+            panel_height = max(160, int(app.height * 0.62))
+            # Clamp so the panel never overlaps bottom buttons (~y=app.height*0.78)
+            panel_height = min(panel_height, int(app.height * 0.72) - panel_y)
+        elif app.height < 900:
+            panel_height = int(app.height * 0.65)
+            panel_y = scaled(30)
+        else:
+            panel_height = int(app.height * 0.6)
+            panel_y = scaled(50)
         panel_x = (app.width - panel_width) // 2
-        panel_y = 50
         draw_panel(screen, pygame.Rect(panel_x, panel_y, panel_width, panel_height))
 
         rarity_color = (RARITY_COLORS.get(self.artifact_def["rarity"], Colors.gold)
                         if self.artifact_def else Colors.gold)
-        name_font = fit_text_to_box(name, panel_width - 40, 60)
+        name_font = fit_text_to_box(name, panel_width - scaled(40), scaled(60))
         name_text = name_font.render(name, True, rarity_color)
+        name_y = panel_y + scaled(20)
         screen.blit(name_text, (panel_x + (panel_width - name_text.get_width()) // 2,
-                               panel_y + 20))
+                                name_y))
         medium, small = get_font(40), get_font(30)
         if self.artifact_def:
             subtitle = small.render(
@@ -304,53 +340,122 @@ class ArtifactDetailScene(Scene):
                 f"{self.artifact_def['name']}", True, Colors.light_gray)
         else:
             subtitle = small.render("Relic", True, Colors.light_gray)
+        subtitle_y = name_y + name_text.get_height() + scaled(6)
         screen.blit(subtitle, (panel_x + (panel_width - subtitle.get_width()) // 2,
-                               panel_y + 75))
+                               subtitle_y))
         if self.artifact_def:
+            is_compact = app.height < 500
+            if is_compact:
+                icon_size = scaled(55)
+                max_lore = 0
+                lore_width = 0
+            elif app.height < 900:
+                icon_size = scaled(110)
+                max_lore = 3
+                lore_width = scaled(170)
+            else:
+                icon_size = scaled(130)
+                max_lore = 4
+                lore_width = scaled(190)
             icon = get_icon(self.artifact_def["icon"],
-                            _parse_color(self.artifact_def["color"]), 130)
-            screen.blit(icon, (panel_x + 30, panel_y + 110))
-            lore_lines = wrap_text(self.artifact_def["lore"] or "", small, 190)
-            for i, line in enumerate(lore_lines[:4]):
-                screen.blit(small.render(line, True, Colors.light_gray),
-                            (panel_x + 30, panel_y + 250 + i * 32))
+                            _parse_color(self.artifact_def["color"]), icon_size)
+            icon_y = subtitle_y + subtitle.get_height() + (scaled(6) if is_compact else scaled(10))
+            screen.blit(icon, (panel_x + scaled(20), icon_y))
+            if max_lore > 0:
+                lore_lines = wrap_text(self.artifact_def["lore"] or "", small, lore_width)
+                for i, line in enumerate(lore_lines[:max_lore]):
+                    screen.blit(small.render(line, True, Colors.light_gray),
+                                (panel_x + scaled(20),
+                                 icon_y + icon_size
+                                 + i * (small.get_height() + scaled(6))))
+                icon_bottom = icon_y + icon_size + len(lore_lines[:max_lore]) * (small.get_height() + scaled(6)) + scaled(8)
+            else:
+                icon_bottom = icon_y + icon_size + scaled(4)
+        else:
+            icon_bottom = subtitle_y + subtitle.get_height() + scaled(10)
 
-        stat_x = panel_x + 200
+        # Compact mode places stats to the right of the icon to save
+        # vertical space at very low resolutions.
+        is_compact = app.height < 500
+        if is_compact:
+            stat_x = panel_x + icon_size + scaled(25)
+            value_x = panel_x + panel_width - scaled(10)
+            level_y = icon_y + scaled(2)
+            spacing = scaled(22)
+        else:
+            stat_x = panel_x + scaled(200)
+            value_x = panel_x + panel_width - scaled(30)
+            level_y = max(panel_y + scaled(80), icon_bottom)
+            spacing = scaled(50)
         level_text = medium.render(f"Level: {level}/{max_level}", True, Colors.white)
-        screen.blit(level_text, (stat_x, panel_y + 80))
+        screen.blit(level_text, (stat_x, level_y))
 
-        stat_y = panel_y + 130
-        spacing = 50
+        stat_y = level_y + level_text.get_height() + scaled(14)
         screen.blit(medium.render(f"Main Stat: {main_stat}", True, Colors.gold),
                     (stat_x, stat_y))
-        screen.blit(medium.render(f"+{db.format_stat_value(main_stat, main_stat_value)}",
-                                  True, Colors.gold), (panel_x + panel_width - 150, stat_y))
+        main_value = medium.render(
+            f"+{db.format_stat_value(main_stat, main_stat_value)}", True, Colors.gold)
+        screen.blit(main_value, (value_x - main_value.get_width(), stat_y))
         if sub_stat1 and sub_stat1_value is not None:
             screen.blit(small.render(f"Sub Stat: {sub_stat1}", True, Colors.white),
                         (stat_x, stat_y + spacing))
-            screen.blit(small.render(f"+{db.format_stat_value(sub_stat1, sub_stat1_value)}",
-                                     True, Colors.white),
-                        (panel_x + panel_width - 150, stat_y + spacing))
+            sub1_value = small.render(
+                f"+{db.format_stat_value(sub_stat1, sub_stat1_value)}",
+                True, Colors.white)
+            screen.blit(sub1_value, (value_x - sub1_value.get_width(),
+                                    stat_y + spacing))
         if sub_stat2 and sub_stat2_value is not None:
             screen.blit(small.render(f"Sub Stat: {sub_stat2}", True, Colors.white),
                         (stat_x, stat_y + spacing * 2))
-            screen.blit(small.render(f"+{db.format_stat_value(sub_stat2, sub_stat2_value)}",
-                                     True, Colors.white),
-                        (panel_x + panel_width - 150, stat_y + spacing * 2))
+            sub2_value = small.render(
+                f"+{db.format_stat_value(sub_stat2, sub_stat2_value)}",
+                True, Colors.white)
+            screen.blit(sub2_value, (value_x - sub2_value.get_width(),
+                                     stat_y + spacing * 2))
+
+        # Compute where stats ended so we can place the EXP bar & slider
+        # dynamically rather than using fixed panel-relative positions.
+        stat_bottom = stat_y + scaled(14)  # base line after main stat
+        if sub_stat1 and sub_stat1_value is not None:
+            stat_bottom = stat_y + spacing + small.get_height()
+        if sub_stat2 and sub_stat2_value is not None:
+            stat_bottom = stat_y + spacing * 2 + small.get_height()
+
+        # Reserve about 12 % of panel height for the EXP bar + slider area at
+        # the bottom of the panel.  Position the bar inside that reserve so
+        # that even when stat_bottom comes down low there is still room.
+        reserve = int(panel_height * 0.12)
+        bottom_zone = panel_y + panel_height - reserve
+
+        bar_width = panel_width - scaled(60)
+        bar_height = scaled(16 if app.height < 500 else 25)
+        bar_x = panel_x + scaled(30)
+        bar_y = max(stat_bottom + scaled(10), bottom_zone + scaled(2))
+        # Ensure the whole bar + slider + labels block fits inside the panel.
+        slider_height = int(app.height * 0.015)
+        exp_block = bar_height + scaled(10) + slider_height
+        max_bar_y = panel_y + panel_height - exp_block
+        bar_y = min(bar_y, max_bar_y)
 
         exp_required = 100 + (level * 20)
         exp_ratio = min(exp / exp_required, 1.0)
-        bar_width = panel_width - 60
-        bar_x, bar_y = panel_x + 30, panel_y + panel_height - 80
-        pygame.draw.rect(screen, (80, 80, 80), (bar_x, bar_y, bar_width, 25), border_radius=5)
+        pygame.draw.rect(screen, (80, 80, 80),
+                         (bar_x, bar_y, bar_width, bar_height), border_radius=5)
         pygame.draw.rect(screen, (100, 150, 255),
-                         (bar_x, bar_y, int(bar_width * exp_ratio), 25), border_radius=5)
+                         (bar_x, bar_y, int(bar_width * exp_ratio), bar_height),
+                         border_radius=5)
 
         points_text = medium.render(f"Artifact Points: {self.artifact_points}",
                                     True, Colors.white)
-        screen.blit(points_text, (app.width - points_text.get_width() - 20, 20))
+        screen.blit(points_text, (app.width - points_text.get_width() - scaled(20),
+                                  scaled(20)))
 
-        slider_x, slider_y, slider_width, slider_height = self._slider_geometry(app)
+        slider_width = int(app.width * 0.25)
+        slider_height = int(app.height * 0.015)
+        slider_x = (app.width - slider_width) // 2
+        slider_y = bar_y + bar_height + scaled(10)
+        # Cache the computed slider Y for consistent hit-testing.
+        self.last_slider_y = slider_y
         if level < max_level:
             pygame.draw.rect(screen, (80, 80, 80),
                              (slider_x, slider_y, slider_width, slider_height), border_radius=5)
@@ -359,16 +464,30 @@ class ArtifactDetailScene(Scene):
             handle_radius = int(app.height * 0.02)
             pygame.draw.circle(screen, (150, 150, 255),
                                (int(position), slider_y + slider_height // 2), handle_radius)
-            exp_text = small.render(f"EXP: {exp}/{exp_required}", True, Colors.white)
-            screen.blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2,
-                                   bar_y + int(app.height * 0.04)))
-            invest_text = small.render(f"Investment: {self.current_invest} points",
-                                       True, Colors.white)
-            screen.blit(invest_text, (slider_x + (slider_width - invest_text.get_width()) // 2,
-                                      slider_y - int(app.height * 0.04)))
-            gain_text = small.render(f"XP Gain: {self.current_invest * 4}", True, Colors.white)
-            screen.blit(gain_text, (slider_x + (slider_width - gain_text.get_width()) // 2,
-                                    slider_y + int(app.height * 0.03)))
+
+            if app.height < 500:
+                # Compact: one combined label above slider; EXP text inside the bar
+                bar_y_center = bar_y + bar_height // 2
+                exp_text = small.render(f"EXP {exp}/{exp_required}", True, Colors.white)
+                screen.blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2,
+                                       bar_y_center - exp_text.get_height() // 2))
+                invest_text = small.render(
+                    f"Invest {self.current_invest} pts  (+{self.current_invest * 4} XP)",
+                    True, Colors.white)
+                screen.blit(invest_text,
+                            (slider_x + (slider_width - invest_text.get_width()) // 2,
+                             slider_y - scaled(28)))
+            else:
+                exp_text = small.render(f"EXP: {exp}/{exp_required}", True, Colors.white)
+                screen.blit(exp_text, (bar_x + (bar_width - exp_text.get_width()) // 2,
+                                       bar_y + bar_height + scaled(8)))
+                invest_text = small.render(f"Investment: {self.current_invest} points",
+                                           True, Colors.white)
+                screen.blit(invest_text, (slider_x + (slider_width - invest_text.get_width()) // 2,
+                                          slider_y - scaled(34)))
+                gain_text = small.render(f"XP Gain: {self.current_invest * 4}", True, Colors.white)
+                screen.blit(gain_text, (slider_x + (slider_width - gain_text.get_width()) // 2,
+                                       slider_y + slider_height + scaled(12)))
             self.level_button.draw(app)
         else:
             max_text = medium.render("Maximum Level Reached!", True, Colors.gold)
@@ -390,14 +509,16 @@ class ArtifactDetailScene(Scene):
         if progress >= 1.0:
             self.showing_upgrade = False
             return
-        draw_panel(screen, pygame.Rect(app.width // 2 - 200, app.height // 2 - 150,
-                                       400, 300), (0, 0, 0, 180), radius=10)
+        draw_panel(screen, pygame.Rect(app.width // 2 - scaled(200),
+                                       app.height // 2 - scaled(150),
+                                       scaled(400), scaled(300)),
+                   (0, 0, 0, 180), radius=10)
         medium, small = get_font(40), get_font(30)
         level_text = medium.render(f"Level Up! +{self.upgrade_info['levels_gained']}",
                                    True, Colors.gold)
         screen.blit(level_text, (app.width // 2 - level_text.get_width() // 2,
-                                app.height // 2 - 120))
-        y_offset = app.height // 2 - 60
+                                app.height // 2 - scaled(120)))
+        y_offset = app.height // 2 - scaled(60)
         for stat_type, stat_name, old_value, new_value in self.upgrade_info["stats_improved"]:
             current_value = old_value + (new_value - old_value) * progress
             label = "Main Stat" if stat_type == "main" else "Sub Stat"
@@ -405,9 +526,9 @@ class ArtifactDetailScene(Scene):
                                      True, Colors.gold if stat_type == "main" else Colors.white)
             value_text = small.render(f"{old_value:.1f} -> {current_value:.1f}",
                                      True, Colors.green)
-            screen.blit(stat_text, (app.width // 2 - 180, y_offset))
-            screen.blit(value_text, (app.width // 2 + 50, y_offset))
-            y_offset += 40
+            screen.blit(stat_text, (app.width // 2 - scaled(180), y_offset))
+            screen.blit(value_text, (app.width // 2 + scaled(50), y_offset))
+            y_offset += small.get_height() + scaled(16)
 
 
 

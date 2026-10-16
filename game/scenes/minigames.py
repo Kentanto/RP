@@ -12,8 +12,9 @@ import pygame
 
 from .. import db
 from ..core import Scene
-from ..settings import Colors, get_font
-from ..ui import Button, draw_panel
+from ..settings import Colors, get_font, scaled
+from ..ui import Button, draw_panel, truncate_text
+from .math_menu import tier_for
 
 
 # ------------------------------------------------------- equation generation
@@ -114,24 +115,30 @@ class ResultOverlayScene(Scene):
             app.pop_scene()
 
     def draw(self, app):
-        panel_width = 600
-        line_height = 36
-        panel_height = 130 + line_height * len(self.lines)
+        title_font, line_font, hint_font = get_font(55), get_font(40), get_font(30)
+        panel_width = min(int(app.width * 0.92), scaled(620))
+        # Truncate reward lines to the panel: artifact names can be long.
+        lines = [(truncate_text(line, line_font, panel_width - scaled(40)), color)
+                 for line, color in self.lines]
+        line_height = line_font.get_height() + scaled(8)
+        panel_height = (title_font.get_height() + scaled(36)
+                        + line_height * len(lines)
+                        + hint_font.get_height() + scaled(24))
         panel_x = app.width // 2 - panel_width // 2
-        panel_y = max(60, app.height // 2 - panel_height // 2)
+        panel_y = max(scaled(20), app.height // 2 - panel_height // 2)
         draw_panel(app.screen, pygame.Rect(panel_x, panel_y, panel_width, panel_height))
 
-        title_surface = get_font(55).render(self.title, True,
-                                            Colors.green if self.title == "Correct!" else Colors.red)
+        title_surface = title_font.render(self.title, True,
+                                          Colors.green if self.title == "Correct!" else Colors.red)
         app.screen.blit(title_surface, (app.width // 2 - title_surface.get_width() // 2,
-                                        panel_y + 25))
-        y = panel_y + 100
-        for line, color in self.lines:
-            surface = get_font(40).render(line, True, color)
+                                        panel_y + scaled(18)))
+        y = panel_y + title_font.get_height() + scaled(30)
+        for line, color in lines:
+            surface = line_font.render(line, True, color)
             app.screen.blit(surface, (app.width // 2 - surface.get_width() // 2, y))
             y += line_height
-        hint = get_font(30).render("Press any key to continue...", True, Colors.white)
-        app.screen.blit(hint, (app.width // 2 - hint.get_width() // 2, y + 10))
+        hint = hint_font.render("Press any key to continue...", True, Colors.white)
+        app.screen.blit(hint, (app.width // 2 - hint.get_width() // 2, y))
 
 
 # ---------------------------------------------------------- minigames hub
@@ -159,7 +166,8 @@ class MinigamesScene(Scene):
         self.math_button.draw(app)
         self.back_button.draw(app)
         text = get_font(40).render(f"Points: {self.points}", True, Colors.white)
-        app.screen.blit(text, (app.width - 200, 50))
+        app.screen.blit(text, (app.width - text.get_width() - scaled(20),
+                               scaled(50)))
         self.draw_flash(app)
 
 
@@ -168,14 +176,22 @@ class MinigamesScene(Scene):
 class MathGameScene(Scene):
     """One math round. After the result overlay is dismissed the scene
     charges the fee for the next round and continues, or pops back when
-    the player can't pay / leaves (the leave fee is refunded)."""
+    the player can't pay / leaves (the leave fee is refunded).
 
-    FEE = 20
+    Correct answers pay skill points (per tier) and build a streak that
+    boosts artifact points up to double; a wrong answer resets it.
+    """
+
+    MAX_STREAK_BONUS = 10           # +10% artifact points per streak step
     handles_escape = True  # ESC leaves (with refund) instead of plain back
 
     def __init__(self, difficulty):
         super().__init__()
         self.difficulty = difficulty
+        tier = tier_for(difficulty)
+        self.fee = tier.fee          # every round costs the tier entry fee
+        self.reward = tier.reward    # skill points for a correct answer
+        self.streak = 0
         self.leave_button = Button("Leave", 0.1, 0.1, 0.1, 0.1, Colors.hover_color,
                                    is_back_button=True)
         self.user_input = ""
@@ -202,18 +218,24 @@ class MathGameScene(Scene):
             return
         correct = round_result(user_answer, precision=0.1) == self.answer
         if correct:
+            self.streak += 1
+            artifact_points = int(100 * (1 + 0.1 * min(self.streak - 1,
+                                                        self.MAX_STREAK_BONUS)))
+            db.add_artifact_points(artifact_points)
             artifact = db.generate_artifact_by_level(self.difficulty)
+            lines = []
             if artifact:
                 db.add_artifact(artifact)
-                db.add_artifact_points(100)
-                lines = [(f"You received: {artifact['name']}", Colors.gold),
-                         (f"Main Stat: {artifact['main_stat']} "
-                          f"+{db.format_stat_value(artifact['main_stat'], artifact['main_stat_value'])}",
-                          Colors.white),
-                         ("+100 Artifact Points", Colors.green)]
-            else:
-                db.add_artifact_points(100)
-                lines = [("+100 Artifact Points", Colors.green)]
+                lines.append((f"You received: {artifact['name']}", Colors.gold))
+                lines.append((f"Main Stat: {artifact['main_stat']} "
+                              f"+{db.format_stat_value(artifact['main_stat'], artifact['main_stat_value'])}",
+                              Colors.white))
+            lines.append((f"+{artifact_points} Artifact Points"
+                          + (f"  (streak x{self.streak})" if self.streak > 1 else ""),
+                          Colors.green))
+            db.add_points(self.reward)
+            db.bump_mission("math_correct", 1)
+            lines.append((f"+{self.reward} Points", Colors.gold))
             xp_gain = 20 * self.difficulty
             xp_result = db.add_xp(xp_gain)
             if xp_result:
@@ -222,20 +244,22 @@ class MathGameScene(Scene):
                     lines.append((f"LEVEL UP! Now level {xp_result['level']}",
                                   Colors.gold))
         else:
-            lines = [(f"The correct answer is: {self.answer:g}", Colors.white)]
+            self.streak = 0
+            lines = [(f"The correct answer is: {self.answer:g}", Colors.white),
+                     ("Streak reset", Colors.light_gray)]
         self._round_done = True
         app.push_scene(ResultOverlayScene("Correct!" if correct else "Incorrect!", lines))
         self.user_input = ""
 
     def _charge_next_round(self, app):
-        if db.subtract_points(self.FEE):
+        if db.subtract_points(self.fee):
             self._new_round()
         else:
             self.flash("Not enough points!", Colors.red)
             app.pop_scene()
 
     def _leave(self, app):
-        db.add_points(self.FEE)  # refund the round fee, as the old game did
+        db.add_points(self.fee)  # refund the round fee, as the old game did
         app.pop_scene()
 
     def on_enter(self, app):
@@ -260,13 +284,32 @@ class MathGameScene(Scene):
                 self.user_input += event.unicode
 
     def draw(self, app):
-        font = get_font(55)
-        equation_surface = font.render(f"Solve: {self.equation}", True, Colors.white)
+        # Shrink the equation font until it fits the window: the harder
+        # tiers generate long equations that would overflow any width.
+        text = f"Solve: {self.equation}"
+        size = 55
+        font = get_font(size)
+        while font.size(text)[0] > app.width * 0.92 and size > 24:
+            size -= 5
+            font = get_font(size)
+        equation_surface = font.render(text, True, Colors.white)
+        equation_y = int(app.height * 0.24)
         app.screen.blit(equation_surface,
-                        (app.width // 2 - equation_surface.get_width() // 2, 150))
-        input_surface = font.render(self.user_input, True, Colors.white)
+                        (app.width // 2 - equation_surface.get_width() // 2,
+                         equation_y))
+
+        if self.streak >= 2:
+            streak_text = get_font(30).render(f"Streak x{self.streak}", True,
+                                              Colors.gold)
+            app.screen.blit(streak_text,
+                            (app.width // 2 - streak_text.get_width() // 2,
+                             equation_y + equation_surface.get_height()
+                             + scaled(12)))
+
+        input_surface = font.render(self.user_input or " ", True, Colors.white)
         app.screen.blit(input_surface,
-                        (app.width // 2 - input_surface.get_width() // 2, 300))
+                        (app.width // 2 - input_surface.get_width() // 2,
+                         int(app.height * 0.52)))
         self.leave_button.draw(app)
         self.draw_flash(app)
 

@@ -1,9 +1,9 @@
 """Main menu."""
 import pygame
 
-from .. import audio
+from .. import audio, db, stats_model
 from ..core import Scene
-from ..settings import Colors
+from ..settings import Colors, get_font, scaled
 from ..ui import Button
 
 
@@ -14,9 +14,14 @@ class MainMenuScene(Scene):
         self.inventory = Button("Inventory", 0.5, 0.35, 0.1, 0.1, Colors.hover_color)
         self.missions = Button("Missions", 0.5, 0.5, 0.1, 0.1, Colors.hover_color)
         self.stats = Button("Stats", 0.5, 0.65, 0.1, 0.1, Colors.hover_color)
+        self.header = ""
 
     def on_enter(self, app):
         audio.schedule_music_fade(app)
+        sheet = stats_model.sheet()
+        self.header = (f"Level {sheet['level']}    "
+                       f"Points: {db.get_current_points()}    "
+                       f"XP: {sheet['xp']}/{sheet['needed']}")
 
     def handle_event(self, app, event):
         if self.minigames.is_clicked(app, event):
@@ -33,6 +38,9 @@ class MainMenuScene(Scene):
             app.push_scene(StatusScene())
 
     def draw(self, app):
+        header = get_font(30).render(self.header, True, Colors.light_gray)
+        app.screen.blit(header, (app.width // 2 - header.get_width() // 2,
+                                 scaled(14)))
         self.minigames.draw(app)
         self.inventory.draw(app)
         self.missions.draw(app)

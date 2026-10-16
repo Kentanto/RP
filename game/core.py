@@ -58,6 +58,7 @@ class App:
         pygame.display.set_caption("Athas system")
         self.width, self.height = 800, 600
         self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
+        settings.set_ui_scale(self.width, self.height)
         self.clock = pygame.time.Clock()
         self.scenes = []
         self.sounds = {}
@@ -120,6 +121,7 @@ class App:
         if event.type == pygame.VIDEORESIZE:
             self.width = max(1, event.w)
             self.height = max(1, event.h)
+            settings.set_ui_scale(self.width, self.height)
             self._background_scaled = None
             return
         # ESC goes back everywhere, except in scenes that opt out

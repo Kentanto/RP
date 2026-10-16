@@ -7,6 +7,7 @@ unlocking, persistence, navigation).
 import os
 import sys
 import tempfile
+import time
 import unittest
 
 os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -23,7 +24,7 @@ db.initialize_database()
 
 from game.core import App  # noqa: E402
 from game.scenes.inventory import InventoryScene  # noqa: E402
-from game.scenes.math_menu import MathMenuScene  # noqa: E402
+from game.scenes.math_menu import MathMenuScene, TIERS  # noqa: E402
 from game.scenes.menu import MainMenuScene  # noqa: E402
 from game.scenes.missions import MissionsScene  # noqa: E402
 from game.scenes.minigames import (MathGameScene, MinigamesScene,  # noqa: E402
@@ -165,6 +166,7 @@ class AthasSmokeTest(unittest.TestCase):
         app = self.app
         app.scenes.clear()
         points_before = db.get_current_points()
+        artifact_points_before = db.get_artifact_points()
         app.push_scene(MathGameScene(1))
         scene = app.scene
         answer = scene.answer
@@ -176,14 +178,157 @@ class AthasSmokeTest(unittest.TestCase):
         self.assertEqual(len(app.scenes), 2)  # result overlay pushed
         self._draw_frame()
 
-        # Dismiss the overlay -> next round is charged (20) and continues.
+        # A correct Easy answer pays 10 skill points + 100 artifact points.
+        self.assertEqual(db.get_current_points(), points_before + 10)
+        self.assertEqual(db.get_artifact_points(), artifact_points_before + 100)
+        self.assertEqual(scene.streak, 1)
+
+        # Dismiss the overlay -> the next round fee (20) is charged.
         app.dispatch(key(key_code=pygame.K_SPACE))
         self.assertEqual(len(app.scenes), 1)
+        self.assertEqual(db.get_current_points(), points_before - 10)
+
+        # A second correct answer grows the streak (+10% artifact points).
+        for char in str(scene.answer):
+            app.dispatch(key(unicode=char))
+        app.dispatch(key(key_code=pygame.K_RETURN))
+        self.assertEqual(scene.streak, 2)
+        self.assertEqual(db.get_artifact_points(), artifact_points_before + 210)
+
+        # A wrong answer resets the streak.
+        app.dispatch(key(key_code=pygame.K_SPACE))
+        wrong = scene.answer + 0.7
+        for char in str(wrong):
+            app.dispatch(key(unicode=char))
+        app.dispatch(key(key_code=pygame.K_RETURN))
+        self.assertEqual(scene.streak, 0)
+
+        # Dismiss the result overlay like a player, then leave: the pending
+        # round fee is refunded and rewards are kept. Net for the session:
+        # two rounds consumed (40) minus the two solve rewards (20).
+        app.dispatch(key(key_code=pygame.K_SPACE))
+        scene._leave(app)
         self.assertEqual(db.get_current_points(), points_before - 20)
 
-        # Leaving refunds the round fee.
-        scene._leave(app)
-        self.assertEqual(db.get_current_points(), points_before)
+    def test_math_difficulty_locks(self):
+        app = self.app
+        app.scenes.clear()
+        app.push_scene(MathMenuScene())
+        scene = app.scene
+        self._draw_frame()
+        points = db.get_current_points()
+        level = db.get_base_stats()["level"]
+
+        # Tiers above the character level are locked: nothing charged.
+        locked = [tier for tier in TIERS if tier.level_req > level]
+        if locked:                               # skipped naturally at high level
+            rect = next(rect for rect, tier in scene.row_rects
+                        if tier is locked[0])
+            app.dispatch(click(rect.center))
+            self.assertIsInstance(app.scene, MathMenuScene)
+            self.assertEqual(db.get_current_points(), points)
+
+        # Easy is open from the start and charges its fee.
+        easy = TIERS[0]
+        rect = next(rect for rect, tier in scene.row_rects if tier is easy)
+        app.dispatch(click(rect.center))
+        self.assertIsInstance(app.scene, MathGameScene)
+        self.assertEqual(db.get_current_points(), points - easy.fee)
+
+        # Leaving mid-round refunds the fee.
+        app.scene._leave(app)
+        self.assertEqual(db.get_current_points(), points)
+
+    def test_item_use_and_sell(self):
+        def owned(item_key):
+            for row in db.get_inventory_items():
+                if row["key"] == item_key:
+                    return row["quantity"]
+            return 0
+
+        # Using a consumable restores HP and consumes one unit.
+        db.add_item("health_potion")
+        potions_before = owned("health_potion")
+        db.adjust_resources(-10000, -10000)          # drop both pools to zero
+        ok, message = db.use_item("health_potion")
+        self.assertTrue(ok, message)
+        self.assertGreater(db.get_resources()["hp"], 0)
+        self.assertEqual(owned("health_potion"), potions_before - 1)
+
+        # Selling pays the sell_price and consumes one unit.
+        db.add_item("mana_crystal")
+        crystals_before = owned("mana_crystal")
+        points_before = db.get_current_points()
+        ok, message = db.sell_item("mana_crystal")
+        self.assertTrue(ok, message)
+        self.assertEqual(db.get_current_points(), points_before + 50)
+        self.assertEqual(owned("mana_crystal"), crystals_before - 1)
+
+        # Equipped gear has to be taken off before selling it.
+        db.add_item("iron_sword")
+        db.equip_gear("weapon", "iron_sword")
+        ok, _ = db.sell_item("iron_sword")
+        self.assertFalse(ok)
+        db.unequip_gear("weapon")
+
+    def test_resources_regen_and_clamp(self):
+        base = db.get_base_stats()
+
+        # Spending clamps at zero, restoring clamps at the max.
+        db.adjust_resources(-10000, -10000)
+        self.assertEqual(db.get_resources()["hp"], 0)
+        self.assertEqual(db.get_resources()["mana"], 0)
+        db.adjust_resources(10000, 10000)
+        self.assertEqual(db.get_resources()["hp"], base["hp"])
+        self.assertEqual(db.get_resources()["mana"], base["mana"])
+
+        # Time-based regen: fake ten minutes of rest.
+        with db._connect() as conn:
+            conn.execute("UPDATE stats SET hp_current=0, mana_current=0, "
+                         "regen_at=? WHERE id=1", (int(time.time()) - 600,))
+            conn.commit()
+        resources = db.get_resources()
+        self.assertGreater(resources["hp"], 0)
+        self.assertGreater(resources["mana"], 0)
+        self.assertLessEqual(resources["hp"], base["hp"])
+
+    def test_missions_progress_and_claim(self):
+        # Definitions were synced from data/missions.txt.
+        missions = {m["key"]: m for m in db.get_missions()}
+        self.assertTrue(missions)
+        self.assertGreaterEqual(missions["boot_camp"]["target"], 1)
+
+        # Counter progress bumps add up.
+        db.bump_mission("math_correct", 3)
+        self.assertGreaterEqual(
+            {m["key"]: m for m in db.get_missions()}["boot_camp"]["progress"], 3)
+
+        # Push to completion, then claim exactly once.
+        boot = {m["key"]: m for m in db.get_missions()}["boot_camp"]
+        db.bump_mission("math_correct", max(0, boot["target"] - boot["progress"]))
+        mission = {m["key"]: m for m in db.get_missions()}["boot_camp"]
+        points_before = db.get_current_points()
+        ok, message = db.claim_mission("boot_camp")
+        self.assertTrue(ok, message)
+        self.assertEqual(db.get_current_points(),
+                         points_before + mission["reward_points"])
+        ok, _ = db.claim_mission("boot_camp")
+        self.assertFalse(ok)                        # a mission pays out once
+
+        # The artifact hook moves artifact missions along.
+        before = next(m["progress"] for m in db.get_missions()
+                      if m["mtype"] == "artifacts" and m["target"] == 3)
+        db.add_artifact({"name": "Mission Hook", "main_stat": "ATK",
+                         "main_stat_value": 1, "max_level": 5, "def_key": "relic"})
+        after = next(m["progress"] for m in db.get_missions()
+                     if m["mtype"] == "artifacts" and m["target"] == 3)
+        self.assertEqual(after, before + 1)
+
+        # The skill-upgrade hook counts owned upgrades.
+        db.save_skill_progress("Ice Shard", 1, ["Frost"])
+        upgrades = next(m["progress"] for m in db.get_missions()
+                        if m["mtype"] == "upgrades")
+        self.assertGreaterEqual(upgrades, 1)
 
     def test_all_scenes_draw_without_crashing(self):
         app = self.app
@@ -193,17 +338,86 @@ class AthasSmokeTest(unittest.TestCase):
             "sub_stat1": "DEF", "sub_stat1_value": 5,
             "max_level": 20, "def_key": "relic"})
         from game.scenes.artifacts import ArtifactDetailScene, ArtifactsScene
+        from game.scenes.inventory import ItemActionScene
         from game.scenes.status import GearPickerScene
+        item = dict(db.get_item_defs()[0])
+        item["quantity"] = 1
         for scene in (MainMenuScene(), MinigamesScene(), MathMenuScene(),
                       StatusScene(), SkillTreeScene(), InventoryScene(),
                       ShopScene(), MissionsScene(), ArtifactsScene(),
                       ArtifactDetailScene(artifact_id, equip_slot=1, remove_slot=1),
-                      GearPickerScene("weapon")):
+                      GearPickerScene("weapon"), ItemActionScene(item)):
             app.push_scene(scene)
             self._draw_frame(scene)
             app.dispatch(pygame.event.Event(pygame.MOUSEMOTION, {"pos": (100, 100)}))
             self._draw_frame(scene)
             app.pop_scene()
+
+    def test_ui_scale_system(self):
+        """Fonts and fixed offsets scale with the window size, and resize
+        events flow through the App."""
+        settings.set_ui_scale(800, 600)
+        self.assertEqual(settings.ui_scale(), 1.0)
+        base = settings.get_font(40).get_height()
+
+        settings.set_ui_scale(1600, 1200)
+        self.assertEqual(settings.ui_scale(), 2.0)
+        self.assertGreater(settings.get_font(40).get_height(), base)
+        self.assertEqual(settings.scaled(20), 40)
+
+        # Clamped at both ends so extreme windows stay usable.
+        settings.set_ui_scale(4000, 4000)
+        self.assertEqual(settings.ui_scale(), 2.0)
+        settings.set_ui_scale(100, 100)
+        self.assertEqual(settings.ui_scale(), 0.75)
+
+        # VIDEORESIZE events update the app and the scale.
+        self.app.dispatch(pygame.event.Event(
+            pygame.VIDEORESIZE, {"w": 1024, "h": 768}))
+        self.assertEqual((self.app.width, self.app.height), (1024, 768))
+        self.assertAlmostEqual(settings.ui_scale(), 1.28)
+
+        settings.set_ui_scale(800, 600)
+
+    def test_scenes_draw_at_other_window_sizes(self):
+        """The layout must survive window resizes: every scene renders at a
+        large and a small window without crashing."""
+        from game.scenes.artifacts import ArtifactDetailScene, ArtifactsScene
+        from game.scenes.inventory import ItemActionScene
+        from game.scenes.status import GearPickerScene
+        artifact_id = db.add_artifact({
+            "name": "Resize Artifact", "main_stat": "ATK",
+            "main_stat_value": 10, "sub_stat1": "DEF", "sub_stat1_value": 5,
+            "max_level": 20, "def_key": "relic"})
+        item = dict(db.get_item_defs()[0])
+        item["quantity"] = 1
+        app = self.app
+        app.scenes.clear()
+        for width, height in ((1280, 800), (480, 320)):
+            app.width, app.height = width, height
+            settings.set_ui_scale(width, height)
+            scenes = (MainMenuScene(), MinigamesScene(), MathMenuScene(),
+                      StatusScene(), SkillTreeScene(), InventoryScene(),
+                      ShopScene(), MissionsScene(), ArtifactsScene(),
+                      ArtifactDetailScene(artifact_id, equip_slot=1,
+                                         remove_slot=1),
+                      GearPickerScene("weapon"), ItemActionScene(item),
+                      MathGameScene(20))
+            for scene in scenes:
+                app.push_scene(scene)
+                self._draw_frame(scene)
+                if isinstance(scene, InventoryScene):
+                    # Tabs must wrap inside the window, never overflow it,
+                    # and the grid starts below the last tab row.
+                    for rect in scene.tab_rects:
+                        self.assertLessEqual(rect.right, width)
+                        self.assertGreaterEqual(rect.x, 0)
+                    padding, cell, _x, start_y, _cols, _rows = scene._grid(app)
+                    self.assertGreater(start_y, max(r.bottom for r in scene.tab_rects))
+                app.pop_scene()
+        app.scenes.clear()
+        app.width, app.height = 800, 600
+        settings.set_ui_scale(800, 600)
 
     # --------------------------------------------------- content definitions
 
