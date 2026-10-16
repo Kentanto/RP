@@ -1,0 +1,4 @@
+title: Explore the Unknown Dungeon
+description: Enter a C-Rank dungeon and survey the area without combat.
+difficulty: C
+reward: Bronze Key, +200 EXP

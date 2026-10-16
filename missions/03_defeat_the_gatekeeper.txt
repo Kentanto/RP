@@ -1,0 +1,4 @@
+title: Defeat the Gatekeeper
+description: A boss-monster guards the lower floor. Defeat it to proceed.
+difficulty: B
+reward: Rare Artifact, +500 EXP

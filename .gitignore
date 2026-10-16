@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 database/
+cache/
+draft_missions/
+
