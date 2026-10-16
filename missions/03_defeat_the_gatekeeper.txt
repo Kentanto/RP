@@ -1,4 +1,4 @@
-title: Defeat the Gatekeeper
+title: Defeat the idiot in green clothes
 description: A boss-monster guards the lower floor. Defeat it to proceed.
 difficulty: B
 reward: Rare Artifact, +500 EXP
