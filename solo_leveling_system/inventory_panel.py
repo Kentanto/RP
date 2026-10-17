@@ -187,7 +187,12 @@ class InventoryDetailView(QFrame):
         else:
             self._img_label.setText("[image]")
         self.show()
+        self.raise_()
 
+    def _close(self):
+        self.hide()
+        if self._on_close:
+            self._on_close()
 
 class InventoryPanel(QWidget):
     """Tabbed inventory grid: Items | Artifacts."""
@@ -281,11 +286,11 @@ class InventoryPanel(QWidget):
         """
 
         if tab == "items":
-            items = self.inv_manager.scan_items()
+            items = self.inv_manager.scan_items() if self.inv_manager else []
             self._btn_items.setStyleSheet(active)
             self._btn_artifacts.setStyleSheet(inactive)
         else:
-            items = self.inv_manager.get_artifacts()
+            items = self.inv_manager.get_artifacts() if self.inv_manager else []
             self._btn_items.setStyleSheet(inactive)
             self._btn_artifacts.setStyleSheet(active)
 
@@ -307,11 +312,4 @@ class InventoryPanel(QWidget):
 
     def _open_detail(self, item):
         self._detail.show_item(item, on_close=lambda: self._detail.hide())
-
-        self.raise_()
-
-    def _close(self):
-        self.hide()
-        if self._on_close:
-            self._on_close()
 
