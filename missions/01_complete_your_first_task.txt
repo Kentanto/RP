@@ -1,4 +1,0 @@
-title: Complete Your First Task
-description: Prove your worth to the System by completing a daily goal.
-difficulty: E
-reward: +50 EXP

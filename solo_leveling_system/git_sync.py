@@ -46,7 +46,7 @@ class GitSyncWorker(QObject):
         return {
             str(p.resolve())
             for p in self.missions_dir.iterdir()
-            if p.is_file() and p.suffix.lower() in (".txt", ".md")
+            if p.is_file() and p.suffix.lower() in (".txt", ".md", ".json")
         }
 
     def _do_sync(self):

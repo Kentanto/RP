@@ -1,5 +1,5 @@
 """
-Solo Leveling System — Settings panel built dynamically from JSON config.
+Solo Leveling System - Settings panel built dynamically from JSON config.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -17,16 +17,10 @@ class HoverButton(QPushButton):
 
 
 class SettingsPanel(QFrame):
-    """
-    A tabbed settings overlay.  Each config section becomes a tab,
-    each key-value pair becomes a row with an appropriate control
-    (checkbox for bool, slider for number, label for string).
-    Changes are written back to ``ConfigManager.set`` immediately.
-    """
-
-    def __init__(self, config, parent=None):
+    def __init__(self, config, audio_output=None, parent=None):
         super().__init__(parent)
         self.config = config
+        self._audio_output = audio_output
         self.setObjectName("SettingsPanel")
         self.setStyleSheet(f"""
             QFrame#SettingsPanel {{
@@ -66,16 +60,24 @@ class SettingsPanel(QFrame):
                 background-color: {CYAN};
             }}
             QSlider::groove:horizontal {{
-                height: 6px;
+                height: 8px;
                 background: #333;
-                border-radius: 3px;
+                border-radius: 4px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {CYAN};
+                border-radius: 4px;
             }}
             QSlider::handle:horizontal {{
-                width: 16px;
-                height: 16px;
-                background: {CYAN};
-                border-radius: 8px;
+                width: 18px;
+                height: 18px;
+                background: white;
+                border: 2px solid {CYAN};
+                border-radius: 9px;
                 margin: -5px 0;
+            }}
+            QSlider::handle:horizontal:hover {{
+                background-color: {CYAN};
             }}
             QTabWidget::pane {{
                 border: 1px solid {CYAN}44;
@@ -98,7 +100,6 @@ class SettingsPanel(QFrame):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
 
-        # Header row
         header_row = QHBoxLayout()
         header = QLabel("SYSTEM SETTINGS")
         header.setStyleSheet(
@@ -117,12 +118,14 @@ class SettingsPanel(QFrame):
         line.setStyleSheet(f"background-color: {CYAN}44;")
         outer.addWidget(line)
 
-        # Tabs
         tabs = QTabWidget()
         self._tabs = tabs
-        self._widget_map: dict = {}
+        self._widget_map = {}
 
         for section, values in config.data.items():
+            if section == "player":
+                continue
+
             tab_w = QWidget()
             grid = QGridLayout(tab_w)
             grid.setContentsMargins(16, 16, 16, 16)
@@ -157,16 +160,68 @@ class SettingsPanel(QFrame):
             return cb
 
         if isinstance(default, (int, float)):
-            slider = QSlider(Qt.Orientation.Horizontal)
-            is_ratio = "volume" in key or 0 <= default <= 1.0
-            slider.setRange(0, 100)
-            if current is not None:
-                slider.setValue(int(current * 100) if is_ratio else int(current))
-            slider.valueChanged.connect(
-                lambda v, s=section, k=key, r=is_ratio: self.config.set(
-                    s, k, round(v / 100.0, 2) if r else v
-                )
-            )
-            return slider
+            return self._build_slider(section, key, default, current)
 
-        return QLabel(str(current))
+        lbl = QLabel(str(current))
+        lbl.setStyleSheet(f"color: {CYAN}; font-size: 13px; font-weight: bold;")
+        return lbl
+
+    def _build_slider(self, section, key, default, current):
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        slider = QSlider(Qt.Orientation.Horizontal)
+
+        if "volume" in key.lower():
+            _min, _max = 0, 100
+            _is_ratio = True
+            _suffix = "%"
+            slider.setSingleStep(1)
+        elif "duration_ms" in key.lower():
+            _min, _max = 500, 30000
+            _is_ratio = False
+            _suffix = " ms"
+            slider.setSingleStep(100)
+        elif "interval_ms" in key.lower():
+            _min, _max = 1000, 300000
+            _is_ratio = False
+            _suffix = " ms"
+            slider.setSingleStep(1000)
+        else:
+            _min, _max = 0, 1000
+            _is_ratio = False
+            _suffix = ""
+            slider.setSingleStep(10)
+
+        slider.setRange(_min, _max)
+        if current is not None:
+            raw = int(current * 100) if _is_ratio else int(current)
+            slider.setValue(max(_min, min(_max, raw)))
+
+        value_lbl = QLabel()
+        value_lbl.setStyleSheet(
+            f"color: {CYAN}; font-size: 13px; font-weight: bold; min-width: 70px;"
+        )
+        value_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        def _update_label(v):
+            if _is_ratio:
+                value_lbl.setText(f"{v}%")
+            else:
+                value_lbl.setText(f"{v}{_suffix}")
+
+        _update_label(slider.value())
+
+        def _on_change(v, s=section, k=key):
+            value = round(v / 100.0, 2) if _is_ratio else v
+            self.config.set(s, k, value)
+            _update_label(v)
+            if "volume" in k.lower() and self._audio_output is not None:
+                self._audio_output.setVolume(value)
+
+        slider.valueChanged.connect(_on_change)
+        layout.addWidget(slider, 1)
+        layout.addWidget(value_lbl)
+        return container

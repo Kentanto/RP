@@ -33,12 +33,20 @@ def panel_style(bg: str = DARK, border: str = CYAN) -> str:
     """
 
 
-def mission_card_style(difficulty: str = "E") -> str:
+def mission_card_style(difficulty: str = "E", completed: bool = False) -> str:
     col = DIFF_COLOURS.get(difficulty.upper(), CYAN)
+    if completed:
+        bg = "rgba(10,10,10,140)"
+        hover_bg = "rgba(10,10,10,160)"
+        border_col = "#555555"
+    else:
+        bg = "rgba(10,10,10,210)"
+        hover_bg = "rgba(20,30,40,230)"
+        border_col = col
     return f"""
         QFrame#MissionCard {{
-            background-color: rgba(10,10,10,210);
-            border-left: 4px solid {col};
+            background-color: {bg};
+            border-left: 4px solid {border_col};
             border-top: 1px solid #222;
             border-right: 1px solid #222;
             border-bottom: 1px solid #222;
@@ -46,16 +54,15 @@ def mission_card_style(difficulty: str = "E") -> str:
             padding: 8px;
         }}
         QFrame#MissionCard:hover {{
-            background-color: rgba(20,30,40,230);
-            border-left: 4px solid {col};
-            border-top: 1px solid {col};
-            border-right: 1px solid {col};
-            border-bottom: 1px solid {col};
+            background-color: {hover_bg};
+            border-left: 4px solid {border_col};
+            border-top: 1px solid {border_col};
+            border-right: 1px solid {border_col};
+            border-bottom: 1px solid {border_col};
         }}
         QLabel {{
             background: transparent;
             border: none;
-            color: {WHITE};
         }}
     """
 
