@@ -28,6 +28,7 @@ DEFAULTS = {
             "defense": 0,
             "speed": 0,
         },
+        "constellation_points": 0,
     },
 }
 

@@ -1,7 +1,7 @@
 """
 Solo Leveling System — Player stats dashboard with temporary point allocation.
 """
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QFrame, QProgressBar, QPushButton,
@@ -160,6 +160,8 @@ class StatsWidget(QWidget):
     """Status Window with temp point allocation."""
 
     MAX_STAT = 500
+    abilities_clicked = Signal()
+    skills_clicked = Signal()
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -220,6 +222,25 @@ class StatsWidget(QWidget):
         self._pool_hint.setStyleSheet(f"color: {GRAY}; font-size: 10px;")
         pool_layout.addWidget(self._pool_hint)
         right.addWidget(pool_frame)
+
+        cp_frame = QFrame()
+        cp_frame.setStyleSheet(f"""
+            QFrame {{ background-color: rgba(255,215,0,6); border: 1px solid #ffd70044; border-radius: 4px; }}
+        """)
+        cp_layout = QHBoxLayout(cp_frame)
+        cp_layout.setContentsMargins(16, 8, 16, 8)
+        cp_icon = QLabel("✦")
+        cp_icon.setStyleSheet("color: #ffd700; font-size: 14px; font-weight: bold;")
+        cp_layout.addWidget(cp_icon)
+        self._cp_lbl = QLabel(f"CONSTELLATION: {config.get('player', 'constellation_points', 0)}")
+        self._cp_lbl.setStyleSheet(f"color: {WHITE}; font-size: 13px; font-weight: bold; letter-spacing: 1px;")
+        cp_layout.addWidget(self._cp_lbl)
+        cp_layout.addStretch()
+        cp_hint = QLabel("Spend in Skill Tree.")
+        cp_hint.setStyleSheet(f"color: {GRAY}; font-size: 10px;")
+        cp_layout.addWidget(cp_hint)
+        right.addWidget(cp_frame)
+
         right.addStretch()
         top.addLayout(right, 1)
 
@@ -251,8 +272,43 @@ class StatsWidget(QWidget):
 
         main_layout.addStretch()
 
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(16)
+        abilities_btn = QPushButton("ABILITIES")
+        skills_btn = QPushButton("SKILLS")
+        for btn in (abilities_btn, skills_btn):
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setMinimumHeight(48)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {CYAN}11;
+                    border: 1px solid {CYAN};
+                    color: {CYAN};
+                    padding: 12px 0px;
+                    border-radius: 2px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    letter-spacing: 3px;
+                }}
+                QPushButton:hover {{
+                    background-color: {CYAN};
+                    color: #0a0a0a;
+                }}
+            """)
+        abilities_btn.clicked.connect(self._on_abilities_clicked)
+        skills_btn.clicked.connect(self._on_skills_clicked)
+        btn_row.addWidget(abilities_btn, 1)
+        btn_row.addWidget(skills_btn, 1)
+        main_layout.addLayout(btn_row)
+
         self._refresh_xp_display()
         self._refresh_pool_display()
+
+    def _on_abilities_clicked(self):
+        self.abilities_clicked.emit()
+
+    def _on_skills_clicked(self):
+        self.skills_clicked.emit()
 
     def _try_spend(self, delta):
         if delta > 0 and self._pool <= 0:
@@ -306,4 +362,6 @@ class StatsWidget(QWidget):
             bar.temp = temp
         self._pool = self.config.get("player", "temp_points", 10)
         self._refresh_pool_display()
+        cp = self.config.get("player", "constellation_points", 0)
+        self._cp_lbl.setText(f"CONSTELLATION: {cp}")
 

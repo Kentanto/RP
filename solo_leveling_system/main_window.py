@@ -20,6 +20,7 @@ from solo_leveling_system.git_sync import GitSyncWorker
 from solo_leveling_system.notification_widget import NotificationWidget
 from solo_leveling_system.settings_panel import SettingsPanel
 from solo_leveling_system.stats_widget import StatsWidget
+from solo_leveling_system.ability_tree_panel import AbilityTreePanel
 
 
 class HoverButton(QPushButton):
@@ -494,6 +495,11 @@ class MainWindow(QMainWindow):
         # ── Page 2 : INVENTORY ──
         self._inv_panel = InventoryPanel(inv_manager=None, parent=None)
         self._content_pages.addWidget(self._inv_panel)
+
+        # ── Page 3 : ABILITY TREE ──
+        self._ability_panel = AbilityTreePanel(self.config, on_back=lambda: self._show_page(0))
+        self._content_pages.addWidget(self._ability_panel)
+        self._stats_widget.abilities_clicked.connect(lambda: self._show_page(3))
 
         return self._content_pages
 
