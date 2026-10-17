@@ -10,6 +10,17 @@ DEFAULTS = {
     "audio": {"enabled": True, "volume": 0.1},
     "notifications": {"enabled": True, "duration_ms": 8000},
     "git_sync": {"enabled": True, "interval_ms": 15000},
+    "player": {
+        "name": "Hunter",
+        "rank": "E",
+        "level": 1,
+        "xp": 0,
+        "health": 100,
+        "magic": 50,
+        "attack": 10,
+        "defense": 5,
+        "speed": 8,
+    },
 }
 
 

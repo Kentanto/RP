@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, QTimer, QPoint
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QFrame, QGraphicsDropShadowEffect,
+    QStackedWidget,
 )
 from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -16,6 +17,7 @@ from solo_leveling_system.mission_manager import MissionManager, Mission
 from solo_leveling_system.git_sync import GitSyncWorker
 from solo_leveling_system.notification_widget import NotificationWidget
 from solo_leveling_system.settings_panel import SettingsPanel
+from solo_leveling_system.stats_widget import StatsWidget
 
 
 class HoverButton(QPushButton):
@@ -219,7 +221,11 @@ class MainWindow(QMainWindow):
                     color: {CYAN};
                 }}
             """)
-            if label == "SETTINGS":
+            if label == "DASHBOARD":
+                btn.clicked.connect(lambda _=None: self._show_page(0))
+            elif label == "MISSIONS":
+                btn.clicked.connect(lambda _=None: self._show_page(1))
+            elif label == "SETTINGS":
                 btn.clicked.connect(self._toggle_settings)
             sb_layout.addWidget(btn)
             self._nav_buttons[label] = btn
@@ -233,11 +239,19 @@ class MainWindow(QMainWindow):
 
 
     def _build_content(self):
-        content = QFrame()
-        content.setStyleSheet("background: transparent; border: none;")
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(32, 32, 32, 32)
-        content_layout.setSpacing(20)
+        self._content_pages = QStackedWidget()
+        self._content_pages.setStyleSheet("background: transparent; border: none;")
+
+        # ── Page 0 : DASHBOARD / Stats ──
+        self._stats_widget = StatsWidget(self.config)
+        self._content_pages.addWidget(self._stats_widget)
+
+        # ── Page 1 : MISSIONS ──
+        missions_page = QFrame()
+        missions_page.setStyleSheet("background: transparent; border: none;")
+        m_layout = QVBoxLayout(missions_page)
+        m_layout.setContentsMargins(32, 32, 32, 32)
+        m_layout.setSpacing(20)
 
         header = QLabel("AVAILABLE QUESTS")
         header.setStyleSheet(f"""
@@ -246,12 +260,12 @@ class MainWindow(QMainWindow):
             font-weight: bold;
             letter-spacing: 3px;
         """)
-        content_layout.addWidget(header)
+        m_layout.addWidget(header)
 
         line = QFrame()
         line.setFixedHeight(2)
         line.setStyleSheet(f"background-color: {CYAN}44;")
-        content_layout.addWidget(line)
+        m_layout.addWidget(line)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -264,7 +278,7 @@ class MainWindow(QMainWindow):
         self.missions_layout.setContentsMargins(0, 0, 8, 0)
         self.missions_layout.addStretch()
         scroll.setWidget(self.missions_container)
-        content_layout.addWidget(scroll)
+        m_layout.addWidget(scroll)
 
         self.pull_btn = HoverButton("SYNC WITH REMOTE")
         self.pull_btn.setStyleSheet(f"""
@@ -283,13 +297,28 @@ class MainWindow(QMainWindow):
             }}
         """)
         self.pull_btn.clicked.connect(self._manual_pull)
-        content_layout.addWidget(self.pull_btn, alignment=Qt.AlignmentFlag.AlignRight)
-        return content
+        m_layout.addWidget(self.pull_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        self._content_pages.addWidget(missions_page)
+
+        return self._content_pages
+
+    def _show_page(self, index: int):
+        """Switch the content area between pages."""
+        if self._settings_panel.isVisible():
+            self._settings_panel.hide()
+        self._content_pages.setCurrentIndex(index)
+        for i, (label, btn) in enumerate(self._nav_buttons.items()):
+            if i < 2 and i == index:
+                btn.setStyleSheet(btn.styleSheet() + f"color: {CYAN}; border-left: 3px solid {CYAN};")
+            elif i < 2:
+                btn.setStyleSheet(btn.styleSheet().replace(f"color: {CYAN}; border-left: 3px solid {CYAN};", ""))
 
     def _toggle_settings(self):
         if self._settings_panel.isVisible():
             self._settings_panel.hide()
+            self._content_pages.setCurrentIndex(0)
         else:
+            self._content_pages.setCurrentIndex(0)
             w = int(self.root.width() * 0.7)
             h = int(self.root.height() * 0.7)
             x = (self.root.width() - w) // 2
