@@ -20,6 +20,14 @@ DEFAULTS = {
         "attack": 10,
         "defense": 5,
         "speed": 8,
+        "temp_points": 10,
+        "temp_allocations": {
+            "health": 0,
+            "magic": 0,
+            "attack": 0,
+            "defense": 0,
+            "speed": 0,
+        },
     },
 }
 
@@ -66,6 +74,29 @@ class ConfigManager:
         if section not in self._data:
             self._data[section] = {}
         self._data[section][key] = value
+        self.save()
+
+    def get_nested(self, section: str, *keys, default=None):
+        """Deep-get inside dicts, e.g. get_nested('player','temp_allocations','health')."""
+        try:
+            node = self._data[section]
+            for key in keys:
+                node = node[key]
+            return node
+        except (KeyError, TypeError):
+            return default
+
+    def set_nested(self, section: str, *keys_and_value):
+        """Deep-set: set_nested('player','temp_allocations','health', 3)."""
+        *keys, value = keys_and_value
+        if section not in self._data:
+            self._data[section] = {}
+        node = self._data[section]
+        for key in keys[:-1]:
+            if key not in node or not isinstance(node[key], dict):
+                node[key] = {}
+            node = node[key]
+        node[keys[-1]] = value
         self.save()
 
     @property
