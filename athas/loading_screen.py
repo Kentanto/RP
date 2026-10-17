@@ -1,5 +1,5 @@
 """
-Solo Leveling System — Loading overlay painted on top of MainWindow.
+Athas — Loading overlay painted on top of MainWindow.
 The parent window UI is built but idle; when the bar hits 100 %
 the overlay is destroyed and the parent unpauses background tasks.
 """
@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtGui import QPainter, QColor, QFont, QPen
 
-from solo_leveling_system.styles import WHITE, GOLD
+from athas.styles import WHITE, GOLD
 
 
 class LoadingScreen(QWidget):

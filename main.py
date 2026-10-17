@@ -1,5 +1,5 @@
 """
-Solo Leveling System — Entry Point
+Athas — Entry Point
 Run this to launch the System UI.
 """
 import sys
@@ -8,16 +8,16 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
-from solo_leveling_system.config import ConfigManager
-from solo_leveling_system.loading_screen import LoadingScreen
-from solo_leveling_system.main_window import MainWindow
+from athas.config import ConfigManager
+from athas.loading_screen import LoadingScreen
+from athas.main_window import MainWindow
 
 _CONFIG_PATH = Path(__file__).parent / "cache" / "system_config.json"
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setApplicationName("SoloLevelingSystem")
-    app.setApplicationDisplayName("System — Solo Leveling")
+    app.setApplicationName("Athas")
+    app.setApplicationDisplayName("Athas System")
 
     config = ConfigManager(_CONFIG_PATH)
 

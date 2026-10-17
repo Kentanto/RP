@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QRadialGradient
 
-from solo_leveling_system.styles import CYAN, WHITE
+from athas.styles import CYAN, WHITE
 
 
 @dataclass
@@ -362,5 +362,3 @@ class AbilityTreePanel(QFrame):
     def _zoom_out(self):
         self._canvas.scale = max(0.2, self._canvas.scale / 1.2)
         self._canvas.update()
-
-        self.update()

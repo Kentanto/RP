@@ -1,7 +1,7 @@
 """
 Inventory Manager -- handles two categories:
   * Items     : hand-made JSON files in items/*.json  (scanned, git-synced)
-  * Artifacts : auto-generated from librarby/*.txt, stored in SQLite
+  * Artifacts : auto-generated from library/*.txt, stored in SQLite
 """
 import json
 import random
@@ -34,12 +34,12 @@ class InventoryManager:
     def __init__(
         self,
         items_dir: str,
-        librarby_dir: str,
+        library_dir: str,
         cache_dir: str,
         rp_root: str,
     ):
         self.items_dir = Path(items_dir)
-        self.librarby_dir = Path(librarby_dir)
+        self.library_dir = Path(library_dir)
         self.cache_dir = Path(cache_dir)
         self.rp_root = Path(rp_root)
 
@@ -68,7 +68,7 @@ class InventoryManager:
             conn.commit()
 
     def _read_wordlist(self, filename: str) -> List[str]:
-        path = self.librarby_dir / filename
+        path = self.library_dir / filename
         if not path.exists():
             return []
         raw = path.read_text(encoding="utf-8")

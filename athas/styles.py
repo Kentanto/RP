@@ -1,5 +1,5 @@
 """
-Solo Leveling System — visual styles / QSS strings.
+Athas — visual styles / QSS strings.
 """
 
 # ── Colour Palette ──

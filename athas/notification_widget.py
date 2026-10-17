@@ -1,12 +1,12 @@
 """
-Solo Leveling System — animated notification popup for new missions.
+Athas — animated notification popup for new missions.
 Slides in from the right with a typing effect.
 """
 from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QTimer, Qt, QPoint
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget, QGraphicsDropShadowEffect
 from PySide6.QtGui import QColor, QFont
 
-from solo_leveling_system.styles import CYAN, BLACK, WHITE, DIFF_COLOURS
+from athas.styles import CYAN, BLACK, WHITE, DIFF_COLOURS
 
 
 class NotificationWidget(QFrame):
@@ -86,6 +86,8 @@ class NotificationWidget(QFrame):
         self._animation = QPropertyAnimation(self, b"pos")
         self._animation.setDuration(500)
         self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._hiding = False
+        self._animation.finished.connect(self._on_slide_finished)
 
         self._dismiss_timer = QTimer(self)
         self._dismiss_timer.setSingleShot(True)
@@ -114,6 +116,7 @@ class NotificationWidget(QFrame):
         """)
 
         self.mission_label.setText(title)
+        self._hiding = False
         self._type_text = description
         self._type_index = 0
         self.desc_label.setText("")
@@ -129,10 +132,15 @@ class NotificationWidget(QFrame):
         self._dismiss_timer.start(duration_ms)
 
     def hide_notification(self):
+        self._hiding = True
         self._animation.setStartValue(self._show_pos)
         self._animation.setEndValue(self._hide_pos)
-        self._animation.finished.connect(self.hide)
         self._animation.start()
+
+    def _on_slide_finished(self):
+        if self._hiding:
+            self._hiding = False
+            self.hide()
 
     def _type_next_char(self):
         if self._type_index < len(self._type_text):

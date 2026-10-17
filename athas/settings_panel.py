@@ -1,5 +1,5 @@
 """
-Solo Leveling System - Settings panel built dynamically from JSON config.
+Athas - Settings panel built dynamically from JSON config.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QCheckBox, QSlider, QTabWidget,
 )
 
-from solo_leveling_system.styles import CYAN, BLACK, WHITE
+from athas.styles import CYAN, BLACK, WHITE
 
 
 class HoverButton(QPushButton):

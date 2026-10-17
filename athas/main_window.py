@@ -1,5 +1,5 @@
 """
-Solo Leveling System — Main Window.
+Athas — Main Window.
 """
 from pathlib import Path
 
@@ -12,15 +12,15 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
-from solo_leveling_system.styles import MAIN_QSS, CYAN, BLACK, WHITE, DIFF_COLOURS, mission_card_style
-from solo_leveling_system.mission_manager import MissionManager, Mission
-from solo_leveling_system.inventory_manager import InventoryManager
-from solo_leveling_system.inventory_panel import InventoryPanel
-from solo_leveling_system.git_sync import GitSyncWorker
-from solo_leveling_system.notification_widget import NotificationWidget
-from solo_leveling_system.settings_panel import SettingsPanel
-from solo_leveling_system.stats_widget import StatsWidget
-from solo_leveling_system.ability_tree_panel import AbilityTreePanel
+from athas.styles import MAIN_QSS, CYAN, BLACK, WHITE, DIFF_COLOURS, mission_card_style
+from athas.mission_manager import MissionManager, Mission
+from athas.inventory_manager import InventoryManager
+from athas.inventory_panel import InventoryPanel
+from athas.git_sync import GitSyncWorker
+from athas.notification_widget import NotificationWidget
+from athas.settings_panel import SettingsPanel
+from athas.stats_widget import StatsWidget
+from athas.ability_tree_panel import AbilityTreePanel
 
 
 class HoverButton(QPushButton):
@@ -256,10 +256,18 @@ class MainWindow(QMainWindow):
     def __init__(self, config=None, player: QMediaPlayer | None = None, audio_output: QAudioOutput | None = None):
         super().__init__()
         self.config = config
-        self.setWindowTitle("System — Solo Leveling")
+        self.setWindowTitle("Athas System")
         self.resize(1280, 720)
         self.setMinimumSize(960, 600)
         self.setStyleSheet(MAIN_QSS)
+
+        # Initialise optional members BEFORE building the UI,
+        # otherwise _build_content()'s inventory panel gets clobbered.
+        self._manager: MissionManager | None = None
+        self._inv_manager: InventoryManager | None = None
+        self._inv_panel: InventoryPanel | None = None
+        self._git_sync: GitSyncWorker | None = None
+        self._scan_timer: QTimer | None = None
 
         self.root = QWidget(self)
         self.setCentralWidget(self.root)
@@ -303,12 +311,6 @@ class MainWindow(QMainWindow):
         self._fade_timer = None
         self._fade_target_duration_ms = 13000
 
-        self._manager: MissionManager | None = None
-        self._inv_manager: InventoryManager | None = None
-        self._inv_panel: InventoryPanel | None = None
-        self._git_sync: GitSyncWorker | None = None
-        self._scan_timer: QTimer | None = None
-
         self._loading_screen = None
         self._last_missions_state = {}
 
@@ -316,7 +318,7 @@ class MainWindow(QMainWindow):
 
     def _resolve_paths(self):
         rp = Path(__file__).parent.parent
-        return rp / "missions", rp / "cache", rp / "items", rp / "librarby", rp
+        return rp / "missions", rp / "cache", rp / "items", rp / "library", rp
 
     def attach_loading_screen(self, loading_screen):
         """Overlay the loading screen and wait for ``finished``."""
@@ -338,7 +340,7 @@ class MainWindow(QMainWindow):
         self._start_background_tasks()
     def _start_background_tasks(self):
         """Start scanning, git sync, and timers."""
-        missions_dir, cache_dir, items_dir, librarby_dir, rp = self._resolve_paths()
+        missions_dir, cache_dir, items_dir, library_dir, rp = self._resolve_paths()
         cache_dir.mkdir(exist_ok=True)
         self._manager = MissionManager(
             missions_dir=str(missions_dir),
@@ -347,26 +349,35 @@ class MainWindow(QMainWindow):
         )
         self._inv_manager = InventoryManager(
             items_dir=str(items_dir),
-            librarby_dir=str(librarby_dir),
+            library_dir=str(library_dir),
             cache_dir=str(cache_dir),
             rp_root=str(rp),
         )
         if self._inv_panel is not None:
             self._inv_panel.inv_manager = self._inv_manager
             self._inv_panel.refresh()
-        self._git_sync = GitSyncWorker(
-            repo_path=str(rp),
-            missions_dir=str(missions_dir),
-            items_dir=str(items_dir),
-            interval_ms=15000,
-        )
-        self._git_sync.pull_complete.connect(self._on_git_pull)
-        self._git_sync.new_files_detected.connect(self._on_new_files)
+        if self.config.get("git_sync", "enabled", True):
+            self._git_sync = GitSyncWorker(
+                repo_path=str(rp),
+                missions_dir=str(missions_dir),
+                items_dir=str(items_dir),
+                interval_ms=int(self.config.get("git_sync", "interval_ms", 15000)),
+            )
+            self._git_sync.pull_complete.connect(self._on_git_pull)
+            self._git_sync.new_files_detected.connect(self._on_new_files)
+            self._git_sync.start()
         self._scan_timer = QTimer(self)
         self._scan_timer.timeout.connect(self._scan_missions)
         self._scan_timer.start(5000)
         self._scan_missions()
-        self._git_sync.start()
+
+    def _refresh_sidebar_player(self):
+        """Keep the sidebar rank/level line in sync with the config."""
+        rank = self.config.get("player", "rank", "E")
+        level = self.config.get("player", "level", 1)
+        if isinstance(level, float) and level.is_integer():
+            level = int(level)
+        self._sidebar_player_lbl.setText(f"Rank: {rank}\nLevel: {level}")
 
     def _build_sidebar(self):
         sidebar = QFrame()
@@ -381,13 +392,14 @@ class MainWindow(QMainWindow):
         sb_layout.setContentsMargins(16, 24, 16, 24)
         sb_layout.setSpacing(16)
 
-        sys_title = QLabel("_SYSTEM")
+        sys_title = QLabel("ATHAS")
         sys_title.setStyleSheet(f"color: {CYAN}; font-size: 20px; font-weight: bold; letter-spacing: 4px;")
         sb_layout.addWidget(sys_title)
 
-        rank = QLabel("Rank: E\nLevel: 1")
-        rank.setStyleSheet("color: #888; font-size: 12px;")
-        sb_layout.addWidget(rank)
+        self._sidebar_player_lbl = QLabel()
+        self._sidebar_player_lbl.setStyleSheet("color: #888; font-size: 12px;")
+        sb_layout.addWidget(self._sidebar_player_lbl)
+        self._refresh_sidebar_player()
 
         sb_layout.addSpacing(20)
 
@@ -508,6 +520,9 @@ class MainWindow(QMainWindow):
         if self._settings_panel.isVisible():
             self._settings_panel.hide()
         self._content_pages.setCurrentIndex(index)
+        if index == 0:
+            self._refresh_sidebar_player()
+            self._stats_widget.refresh()
         for i, (label, btn) in enumerate(self._nav_buttons.items()):
             if label == "SETTINGS":
                 continue
@@ -601,11 +616,13 @@ class MainWindow(QMainWindow):
         self._scan_missions()
 
     def _on_new_mission(self, mission: Mission):
+        if not self.config.get("notifications", "enabled", True):
+            return
         self.notif.show_notification(
             title=mission.title,
             description=mission.description,
             difficulty=mission.difficulty,
-            duration_ms=8000,
+            duration_ms=int(self.config.get("notifications", "duration_ms", 8000)),
         )
 
     def _on_git_pull(self, success: bool, msg: str):

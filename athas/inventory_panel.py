@@ -10,8 +10,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QPixmap
 
-from solo_leveling_system.styles import CYAN, WHITE, GOLD
-from solo_leveling_system.inventory_manager import InventoryItem
+from athas.styles import CYAN, WHITE, GOLD
+from athas.inventory_manager import InventoryItem
 
 
 RARITY_COLORS = {

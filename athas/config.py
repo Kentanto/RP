@@ -1,5 +1,5 @@
 """
-Solo Leveling System — JSON config manager with auto-save.
+Athas — JSON config manager with auto-save.
 """
 import json
 from pathlib import Path
@@ -11,7 +11,7 @@ DEFAULTS = {
     "notifications": {"enabled": True, "duration_ms": 8000},
     "git_sync": {"enabled": True, "interval_ms": 15000},
     "player": {
-        "name": "Hunter",
+        "name": "Wanderer",
         "rank": "E",
         "level": 1,
         "xp": 0,

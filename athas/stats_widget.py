@@ -1,5 +1,5 @@
 """
-Solo Leveling System — Player stats dashboard with temporary point allocation.
+Athas — Player stats dashboard with temporary point allocation.
 """
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QLabel, QFrame, QProgressBar, QPushButton,
 )
 
-from solo_leveling_system.styles import CYAN, WHITE, GRAY
+from athas.styles import CYAN, WHITE, GRAY
 
 
 STAT_COLORS = {
@@ -145,7 +145,7 @@ class LevelBadge(QFrame):
         rank_lbl.setStyleSheet(f"color: {CYAN}; font-size: 14px; font-weight: bold; letter-spacing: 3px;")
         layout.addWidget(rank_lbl)
 
-        lvl_lbl = QLabel(str(level))
+        lvl_lbl = QLabel(str(int(level) if isinstance(level, float) and level.is_integer() else level))
         lvl_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lvl_lbl.setStyleSheet(f"color: {WHITE}; font-size: 48px; font-weight: bold;")
         layout.addWidget(lvl_lbl)
@@ -186,7 +186,7 @@ class StatsWidget(QWidget):
         right.setSpacing(10)
 
         name_row = QHBoxLayout()
-        self._name_lbl = QLabel(config.get("player", "name", "Hunter"))
+        self._name_lbl = QLabel(config.get("player", "name", "Wanderer"))
         self._name_lbl.setStyleSheet(f"color: {WHITE}; font-size: 22px; font-weight: bold;")
         name_row.addWidget(self._name_lbl)
         name_row.addStretch()
@@ -222,24 +222,6 @@ class StatsWidget(QWidget):
         self._pool_hint.setStyleSheet(f"color: {GRAY}; font-size: 10px;")
         pool_layout.addWidget(self._pool_hint)
         right.addWidget(pool_frame)
-
-        cp_frame = QFrame()
-        cp_frame.setStyleSheet(f"""
-            QFrame {{ background-color: rgba(255,215,0,6); border: 1px solid #ffd70044; border-radius: 4px; }}
-        """)
-        cp_layout = QHBoxLayout(cp_frame)
-        cp_layout.setContentsMargins(16, 8, 16, 8)
-        cp_icon = QLabel("✦")
-        cp_icon.setStyleSheet("color: #ffd700; font-size: 14px; font-weight: bold;")
-        cp_layout.addWidget(cp_icon)
-        self._cp_lbl = QLabel(f"CONSTELLATION: {config.get('player', 'constellation_points', 0)}")
-        self._cp_lbl.setStyleSheet(f"color: {WHITE}; font-size: 13px; font-weight: bold; letter-spacing: 1px;")
-        cp_layout.addWidget(self._cp_lbl)
-        cp_layout.addStretch()
-        cp_hint = QLabel("Spend in Skill Tree.")
-        cp_hint.setStyleSheet(f"color: {GRAY}; font-size: 10px;")
-        cp_layout.addWidget(cp_hint)
-        right.addWidget(cp_frame)
 
         right.addStretch()
         top.addLayout(right, 1)
@@ -355,13 +337,11 @@ class StatsWidget(QWidget):
         self.layout().itemAt(1).layout().insertWidget(
             0, self._badge, alignment=Qt.AlignmentFlag.AlignVCenter
         )
-        self._name_lbl.setText(self.config.get("player", "name", "Hunter"))
+        self._name_lbl.setText(self.config.get("player", "name", "Wanderer"))
         self._refresh_xp_display()
         for key, bar in self._bars.items():
             temp = self.config.get_nested("player", "temp_allocations", key, default=0)
             bar.temp = temp
         self._pool = self.config.get("player", "temp_points", 10)
         self._refresh_pool_display()
-        cp = self.config.get("player", "constellation_points", 0)
-        self._cp_lbl.setText(f"CONSTELLATION: {cp}")
 
