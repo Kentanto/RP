@@ -14,6 +14,8 @@ from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 from solo_leveling_system.styles import MAIN_QSS, CYAN, BLACK, WHITE, DIFF_COLOURS, mission_card_style
 from solo_leveling_system.mission_manager import MissionManager, Mission
+from solo_leveling_system.inventory_manager import InventoryManager
+from solo_leveling_system.inventory_panel import InventoryPanel
 from solo_leveling_system.git_sync import GitSyncWorker
 from solo_leveling_system.notification_widget import NotificationWidget
 from solo_leveling_system.settings_panel import SettingsPanel
@@ -301,6 +303,8 @@ class MainWindow(QMainWindow):
         self._fade_target_duration_ms = 13000
 
         self._manager: MissionManager | None = None
+        self._inv_manager: InventoryManager | None = None
+        self._inv_panel: InventoryPanel | None = None
         self._git_sync: GitSyncWorker | None = None
         self._scan_timer: QTimer | None = None
 
@@ -311,7 +315,7 @@ class MainWindow(QMainWindow):
 
     def _resolve_paths(self):
         rp = Path(__file__).parent.parent
-        return rp / "missions", rp / "cache", rp
+        return rp / "missions", rp / "cache", rp / "items", rp / "librarby", rp
 
     def attach_loading_screen(self, loading_screen):
         """Overlay the loading screen and wait for ``finished``."""
@@ -333,16 +337,26 @@ class MainWindow(QMainWindow):
         self._start_background_tasks()
     def _start_background_tasks(self):
         """Start scanning, git sync, and timers."""
-        missions_dir, cache_dir, rp = self._resolve_paths()
+        missions_dir, cache_dir, items_dir, librarby_dir, rp = self._resolve_paths()
         cache_dir.mkdir(exist_ok=True)
         self._manager = MissionManager(
             missions_dir=str(missions_dir),
             cache_path=str(cache_dir / "seen_missions.json"),
             on_new_mission=self._on_new_mission,
         )
+        self._inv_manager = InventoryManager(
+            items_dir=str(items_dir),
+            librarby_dir=str(librarby_dir),
+            cache_dir=str(cache_dir),
+            rp_root=str(rp),
+        )
+        if self._inv_panel is not None:
+            self._inv_panel.inv_manager = self._inv_manager
+            self._inv_panel.refresh()
         self._git_sync = GitSyncWorker(
             repo_path=str(rp),
             missions_dir=str(missions_dir),
+            items_dir=str(items_dir),
             interval_ms=15000,
         )
         self._git_sync.pull_complete.connect(self._on_git_pull)
@@ -400,6 +414,8 @@ class MainWindow(QMainWindow):
                 btn.clicked.connect(lambda _=None: self._show_page(0))
             elif label == "MISSIONS":
                 btn.clicked.connect(lambda _=None: self._show_page(1))
+            elif label == "INVENTORY":
+                btn.clicked.connect(lambda _=None: self._show_page(2))
             elif label == "SETTINGS":
                 btn.clicked.connect(self._toggle_settings)
             sb_layout.addWidget(btn)
@@ -475,6 +491,10 @@ class MainWindow(QMainWindow):
         m_layout.addWidget(self.pull_btn, alignment=Qt.AlignmentFlag.AlignRight)
         self._content_pages.addWidget(missions_page)
 
+        # ── Page 2 : INVENTORY ──
+        self._inv_panel = InventoryPanel(inv_manager=None, parent=None)
+        self._content_pages.addWidget(self._inv_panel)
+
         return self._content_pages
 
     def _show_page(self, index: int):
@@ -483,9 +503,11 @@ class MainWindow(QMainWindow):
             self._settings_panel.hide()
         self._content_pages.setCurrentIndex(index)
         for i, (label, btn) in enumerate(self._nav_buttons.items()):
-            if i < 2 and i == index:
+            if label == "SETTINGS":
+                continue
+            if i == index:
                 btn.setStyleSheet(btn.styleSheet() + f"color: {CYAN}; border-left: 3px solid {CYAN};")
-            elif i < 2:
+            else:
                 btn.setStyleSheet(btn.styleSheet().replace(f"color: {CYAN}; border-left: 3px solid {CYAN};", ""))
 
     def _toggle_settings(self):
@@ -590,6 +612,8 @@ class MainWindow(QMainWindow):
 
     def _on_new_files(self, files: list):
         self._scan_missions()
+        if self._inv_panel is not None:
+            self._inv_panel.refresh()
 
     def _manual_pull(self):
         if self._git_sync is None:

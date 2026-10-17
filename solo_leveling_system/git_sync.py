@@ -17,10 +17,11 @@ class GitSyncWorker(QObject):
     pull_complete = Signal(bool, str)
     new_files_detected = Signal(list)  # list of file paths
 
-    def __init__(self, repo_path: str, missions_dir: str, interval_ms: int = 30000):
+    def __init__(self, repo_path: str, missions_dir: str, items_dir: str = "", interval_ms: int = 30000):
         super().__init__()
         self.repo_path = Path(repo_path)
         self.missions_dir = Path(missions_dir)
+        self.items_dir = Path(items_dir) if items_dir else None
         self.interval_ms = interval_ms
 
         self._timer = QTimer(self)
@@ -29,7 +30,7 @@ class GitSyncWorker(QObject):
 
     def start(self):
         # Initial scan
-        self._last_known_files = self._scan_mission_files()
+        self._last_known_files = self._scan_tracked_files()
         # First pull
         self._do_sync()
         self._timer.start(self.interval_ms)
@@ -40,14 +41,17 @@ class GitSyncWorker(QObject):
     def force_pull(self):
         self._do_sync()
 
-    def _scan_mission_files(self) -> set:
-        if not self.missions_dir.exists():
-            return set()
-        return {
-            str(p.resolve())
-            for p in self.missions_dir.iterdir()
-            if p.is_file() and p.suffix.lower() in (".txt", ".md", ".json")
-        }
+    def _scan_tracked_files(self) -> set:
+        files: set = set()
+        for dir_path in (self.missions_dir, self.items_dir):
+            if dir_path is None or not dir_path.exists():
+                continue
+            files.update({
+                str(p.resolve())
+                for p in dir_path.iterdir()
+                if p.is_file() and p.suffix.lower() in (".txt", ".md", ".json")
+            })
+        return files
 
     def _do_sync(self):
         """Run git stash -> pull -> restore safely."""
@@ -76,8 +80,8 @@ class GitSyncWorker(QObject):
             # Restore stash
             self._run_git(["stash", "pop"])
 
-            # Check for new mission files
-            current_files = self._scan_mission_files()
+            # Check for new tracked files
+            current_files = self._scan_tracked_files()
             new_files = list(current_files - self._last_known_files)
             self._last_known_files = current_files
 

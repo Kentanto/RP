@@ -1,0 +1,17 @@
+{
+  "name": "Sword of Dawn",
+  "type": "Longsword",
+  "description": "A blade forged in the first light of a dying star. It hums with a faint warmth.",
+  "story": "Long before the System awakened in humanity, a lone blacksmith climbed the highest peak of the Frostfang Mountains to witness the last sunrise of an age. As the star collapsed into itself, a single sliver of its essence rained down upon the forge. The blacksmith caught it on his anvil and hammered for seven days and seven nights without sleep. When the blade emerged, it glowed not with fire, but with the memory of dawn. Every swing leaves a trail of golden light. Those who wield it feel a warmth that defies the coldest dungeon depths. Hunters speak of it in hushed tones — some say it chooses its master, striking down the unworthy with blinding radiance. You hold not just a weapon, but a fragment of a star's final breath.",
+  "rarity": "Legendary",
+  "level": 5,
+  "count": 1,
+  "image": "",
+  "stats": {
+    "attack": 45,
+    "magic": 20,
+    "speed": 8,
+    "health": 0,
+    "defense": 5
+  }
+}
