@@ -9,11 +9,13 @@ from PySide6.QtWidgets import (
     QPushButton, QScrollArea, QFrame, QGraphicsDropShadowEffect,
 )
 from PySide6.QtGui import QPixmap, QColor
+from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 from solo_leveling_system.styles import MAIN_QSS, CYAN, BLACK, WHITE, DIFF_COLOURS, mission_card_style
 from solo_leveling_system.mission_manager import MissionManager, Mission
 from solo_leveling_system.git_sync import GitSyncWorker
 from solo_leveling_system.notification_widget import NotificationWidget
+from solo_leveling_system.settings_panel import SettingsPanel
 
 
 class HoverButton(QPushButton):
@@ -74,8 +76,9 @@ class MissionCard(QFrame):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, config=None, player: QMediaPlayer | None = None, audio_output: QAudioOutput | None = None):
         super().__init__()
+        self.config = config
         self.setWindowTitle("System — Solo Leveling")
         self.resize(1280, 720)
         self.setMinimumSize(960, 600)
@@ -94,12 +97,12 @@ class MainWindow(QMainWindow):
         self.bg_label.lower()
         self.bg_label.setGeometry(self.root.rect())
 
-        self.overlay = QFrame(self.root)
-        self.overlay.setStyleSheet("background: transparent; border: none;")
-        overlay_layout = QHBoxLayout(self.overlay)
+        self._ui_overlay = QFrame(self.root)
+        self._ui_overlay.setStyleSheet("background: transparent; border: none;")
+        overlay_layout = QHBoxLayout(self._ui_overlay)
         overlay_layout.setContentsMargins(0, 0, 0, 0)
         overlay_layout.setSpacing(0)
-        self._root_layout.addWidget(self.overlay)
+        self._root_layout.addWidget(self._ui_overlay)
 
         sidebar = self._build_sidebar()
         overlay_layout.addWidget(sidebar)
@@ -110,32 +113,68 @@ class MainWindow(QMainWindow):
         self.notif = NotificationWidget(self.root)
         self.notif.raise_()
 
-        rp = Path(__file__).parent.parent
-        self.missions_dir = rp / "missions"
-        self.cache_dir = rp / "cache"
-        self.cache_dir.mkdir(exist_ok=True)
+        self._settings_panel = SettingsPanel(self.config, parent=self.root)
+        self._settings_panel.hide()
+        self._settings_panel.setGeometry(0, 0, self.root.width(), self.root.height())
 
-        self.manager = MissionManager(
-            missions_dir=str(self.missions_dir),
-            cache_path=str(self.cache_dir / "seen_missions.json"),
+        self.resizeEvent(None)
+
+        self._player = player
+        self._audio_output = audio_output
+        self._fade_timer = None
+        self._fade_target_duration_ms = 13000
+
+        self._manager: MissionManager | None = None
+        self._git_sync: GitSyncWorker | None = None
+        self._scan_timer: QTimer | None = None
+
+        self._loading_screen = None
+
+    # ── Idle / Active lifecycle ──
+
+    def _resolve_paths(self):
+        rp = Path(__file__).parent.parent
+        return rp / "missions", rp / "cache", rp
+
+    def attach_loading_screen(self, loading_screen):
+        """Overlay the loading screen and wait for ``finished``."""
+        self._loading_screen = loading_screen
+        self._loading_screen.setParent(self.root)
+        self._loading_screen.setGeometry(self.root.rect())
+        self._loading_screen.raise_()
+        self._loading_screen.finished.connect(self._on_loading_finished)
+
+    def _on_loading_finished(self):
+        """Remove overlay and wake up background logic."""
+        if self._loading_screen:
+            self._loading_screen.deleteLater()
+            self._loading_screen = None
+        self._start_background_tasks()
+
+    def show_without_loading_screen(self):
+        """Start background tasks immediately when loading screen is disabled."""
+        self._start_background_tasks()
+    def _start_background_tasks(self):
+        """Start scanning, git sync, and timers."""
+        missions_dir, cache_dir, rp = self._resolve_paths()
+        cache_dir.mkdir(exist_ok=True)
+        self._manager = MissionManager(
+            missions_dir=str(missions_dir),
+            cache_path=str(cache_dir / "seen_missions.json"),
             on_new_mission=self._on_new_mission,
         )
-
-        self.git_sync = GitSyncWorker(
+        self._git_sync = GitSyncWorker(
             repo_path=str(rp),
-            missions_dir=str(self.missions_dir),
+            missions_dir=str(missions_dir),
             interval_ms=15000,
         )
-        self.git_sync.pull_complete.connect(self._on_git_pull)
-        self.git_sync.new_files_detected.connect(self._on_new_files)
-
-        self.scan_timer = QTimer(self)
-        self.scan_timer.timeout.connect(self._scan_missions)
-        self.scan_timer.start(5000)
-
+        self._git_sync.pull_complete.connect(self._on_git_pull)
+        self._git_sync.new_files_detected.connect(self._on_new_files)
+        self._scan_timer = QTimer(self)
+        self._scan_timer.timeout.connect(self._scan_missions)
+        self._scan_timer.start(5000)
         self._scan_missions()
-        self.git_sync.start()
-        self.resizeEvent(None)
+        self._git_sync.start()
 
     def _build_sidebar(self):
         sidebar = QFrame()
@@ -160,6 +199,7 @@ class MainWindow(QMainWindow):
 
         sb_layout.addSpacing(20)
 
+        self._nav_buttons = {}
         for label in ["DASHBOARD", "MISSIONS", "INVENTORY", "SETTINGS"]:
             btn = HoverButton(label)
             btn.setStyleSheet(f"""
@@ -179,7 +219,10 @@ class MainWindow(QMainWindow):
                     color: {CYAN};
                 }}
             """)
+            if label == "SETTINGS":
+                btn.clicked.connect(self._toggle_settings)
             sb_layout.addWidget(btn)
+            self._nav_buttons[label] = btn
 
         sb_layout.addStretch()
 
@@ -187,6 +230,7 @@ class MainWindow(QMainWindow):
         self.git_status.setStyleSheet("color: #555; font-size: 10px;")
         sb_layout.addWidget(self.git_status)
         return sidebar
+
 
     def _build_content(self):
         content = QFrame()
@@ -242,6 +286,19 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.pull_btn, alignment=Qt.AlignmentFlag.AlignRight)
         return content
 
+    def _toggle_settings(self):
+        if self._settings_panel.isVisible():
+            self._settings_panel.hide()
+        else:
+            w = int(self.root.width() * 0.7)
+            h = int(self.root.height() * 0.7)
+            x = (self.root.width() - w) // 2
+            y = (self.root.height() - h) // 2
+            self._settings_panel.setGeometry(x, y, w, h)
+            self._settings_panel.show()
+            self._settings_panel.raise_()
+
+
     def _load_background(self):
         bg_path = Path(__file__).parent.parent / "icons" / "background_menu.png"
         if bg_path.exists():
@@ -260,12 +317,14 @@ class MainWindow(QMainWindow):
             )
             self.bg_label.setPixmap(scaled)
         self.bg_label.setGeometry(self.root.rect())
-        self.overlay.setGeometry(self.root.rect())
+        self._ui_overlay.setGeometry(self.root.rect())
         self.notif.reposition(QPoint(self.root.width(), 0))
         super().resizeEvent(event)
 
     def _scan_missions(self):
-        missions = self.manager.scan()
+        if self._manager is None:
+            return
+        missions = self._manager.scan()
         if len(missions) != getattr(self, "_last_count", -1):
             self._rebuild_missions(missions)
             self._last_count = len(missions)
@@ -304,15 +363,49 @@ class MainWindow(QMainWindow):
         self._scan_missions()
 
     def _manual_pull(self):
+        if self._git_sync is None:
+            return
         self.pull_btn.setText("SYNCING...")
         self.pull_btn.setEnabled(False)
-        self.git_sync.force_pull()
+        self._git_sync.force_pull()
         QTimer.singleShot(1500, lambda: (
             self.pull_btn.setText("SYNC WITH REMOTE"),
             self.pull_btn.setEnabled(True),
         ))
 
+    def set_media_player(self, player: QMediaPlayer, audio_output: QAudioOutput):
+        self._player = player
+        self._audio_output = audio_output
+
+    def fade_out_music(self):
+        if self._fade_timer is not None:
+            self._fade_timer.stop()
+        self._fade_steps = getattr(self, "_fade_target_duration_ms", 13000) // 100
+        self._volume_drop = 0.1 / self._fade_steps
+        self._fade_timer = QTimer(self)
+        self._fade_timer.timeout.connect(self._step_fade)
+        self._fade_timer.start(100)
+
+    def _step_fade(self):
+        if self._audio_output is None:
+            self._fade_timer.stop()
+            return
+        new_vol = max(0.0, self._audio_output.volume() - self._volume_drop)
+        self._audio_output.setVolume(new_vol)
+        if new_vol <= 0.0:
+            self._audio_output.setVolume(0.0)
+            self._fade_timer.stop()
+            if self._player is not None:
+                self._player.stop()
+
     def closeEvent(self, event):
-        self.git_sync.stop()
-        self.scan_timer.stop()
+        if self._git_sync is not None:
+            self._git_sync.stop()
+        if self._scan_timer is not None:
+            self._scan_timer.stop()
+        if self._fade_timer is not None:
+            self._fade_timer.stop()
+        if self._player is not None:
+            self._player.stop()
         super().closeEvent(event)
+
