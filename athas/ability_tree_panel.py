@@ -36,9 +36,9 @@ LIBRA_CYAN = "#00e5ff"
 # right. Regulus, the Lion's Heart, is the branch's entry star.
 NODES = [
     SkillNode("c_root", "Combat Focus", "Foundation of martial prowess.",
-            522, 285, 5, 0, LEO_GOLD, ["c_pow"], "Regulus · the Lion's Heart"),
+            522, 285, 5, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
     SkillNode("c_pow", "Power Strike", "A devastating heavy blow.",
-            420, 165, 5, 0, LEO_GOLD, ["c_ber"], "Algieba · the Mane"),
+            420, 165, 5, 0, LEO_GOLD, ["c_ber", "c_root"], "Algieba · the Mane"),
     SkillNode("c_crit", "Critical Blow", "Increased critical hit chance.",
             400, -40, 3, 0, LEO_GOLD, ["c_agi"], "Adhafera · the Sickle"),
     SkillNode("c_agi", "Agility", "Move faster and dodge attacks.",
