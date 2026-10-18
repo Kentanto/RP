@@ -36,19 +36,19 @@ LIBRA_CYAN = "#00e5ff"
 # right. Regulus, the Lion's Heart, is the branch's entry star.
 NODES = [
     SkillNode("c_root", "Combat Focus", "Foundation of martial prowess.",
-            522, 349, 5, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
+            522, 310, 5, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
     SkillNode("c_pow", "Power Strike", "A devastating heavy blow.",
-            465, 164, 5, 0, LEO_GOLD, ["c_root"], "Algieba · the Mane"),
+            430, 215, 5, 0, LEO_GOLD, ["c_root"], "Algieba · the Mane"),
     SkillNode("c_crit", "Critical Blow", "Increased critical hit chance.",
-            480, 74, 3, 0, LEO_GOLD, ["c_pow"], "Adhafera · the Sickle"),
+            445, 125, 3, 0, LEO_GOLD, ["c_pow"], "Adhafera · the Sickle"),
     SkillNode("c_ber", "Berserker", "Trade defense for raw damage.",
-            636, 65, 3, 0, LEO_GOLD, ["c_pow"], "Algenubi · the Mane"),
+            520, 75, 3, 0, LEO_GOLD, ["c_pow"], "Algenubi · the Mane"),
     SkillNode("c_def", "Iron Skin", "Harden your body against blows.",
-            192, 266, 5, 0, LEO_GOLD, ["c_root"], "Chertan · the Hip"),
+            350, 270, 5, 0, LEO_GOLD, ["c_root"], "Chertan · the Hip"),
     SkillNode("c_for", "Fortress", "Massively increase damage reduction.",
-            192, 143, 3, 0, LEO_GOLD, ["c_def"], "Zosma · the Back"),
+            265, 175, 3, 0, LEO_GOLD, ["c_def"], "Zosma · the Back"),
     SkillNode("c_shd", "Shield Slam", "Stun enemies with a bash.",
-            18, 286, 3, 0, LEO_GOLD, ["c_def"], "Denebola · the Tail"),
+            145, 255, 3, 0, LEO_GOLD, ["c_def"], "Denebola · the Tail"),
     # --- LIBRA · The Scales -------------------------------------------------
     # Stars are placed on Libra's real figure: the beam held up by
     # Zubeneschamali with the two pans hanging from its arms.
@@ -72,16 +72,27 @@ NODES = [
 
 # Faint extra stars that fill out the real constellations (non-interactive).
 DECOR_STARS = {
-    "leo": [(126, 234), (54, 12)],         # Eta & Mu Leonis (the mane)
-    "libra": [(965, 300), (1225, 260)],    # Theta & 48 Librae (the cords)
+    "leo": [
+        (475, 95),    # Extra point along the Sickle
+        (490, 155),   # Curvature of the mane
+    ],        # Eta & Mu Leonis (the mane)
+    "libra": [
+        (965, 300), (1225, 260)
+        ],    # Theta & 48 Librae (the cords)
 }
 
 # Extra lines that complete each figure without being unlock paths.
 DECOR_LINES = {
     "leo": [
-        ((18, 286), (192, 143)),      # Adhafera - Algenubi (closes the Sickle)
-        ((192, 143), (480, 74)),   # Zosma - Denebola (hindquarter triangle)
-        ((480, 74), (636, 65)),   # Algieba - Zosma (the back)
+        ((145, 255), (265, 175)),
+        ((265, 175), (430, 215)),
+        ((430, 215), (350, 270)),
+        ((350, 270), (145, 255)),
+        ((430, 215), (445, 125)),
+        ((445, 125), (520, 75)),
+        ((520, 75), (475, 95)),
+        ((475, 95), (490, 155)),
+        ((490, 155), (522, 310)),
     ],
     "libra": [
         ((880, 85), (1190, 150)), 
