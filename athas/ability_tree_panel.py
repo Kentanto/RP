@@ -36,19 +36,21 @@ LIBRA_CYAN = "#00e5ff"
 # right. Regulus, the Lion's Heart, is the branch's entry star.
 NODES = [
     SkillNode("c_root", "Combat Focus", "Foundation of martial prowess.",
-            522, 285, 5, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
+            522, 285, 5, 0, LEO_GOLD, ["c_pow"], "Regulus · the Lion's Heart"),
     SkillNode("c_pow", "Power Strike", "A devastating heavy blow.",
-            420, 165, 5, 0, LEO_GOLD, ["c_root"], "Algieba · the Mane"),
+            420, 165, 5, 0, LEO_GOLD, ["c_ber"], "Algieba · the Mane"),
     SkillNode("c_crit", "Critical Blow", "Increased critical hit chance.",
-            380, 30, 3, 0, LEO_GOLD, ["c_pow"], "Adhafera · the Sickle"),
+            400, -40, 3, 0, LEO_GOLD, ["c_agi"], "Adhafera · the Sickle"),
+    SkillNode("c_agi", "Agility", "Move faster and dodge attacks.",
+            330, 70, 5, 0, LEO_GOLD, ["c_for"], "Zosma · the Back"),
     SkillNode("c_ber", "Berserker", "Trade defense for raw damage.",
-            465, 55, 3, 0, LEO_GOLD, ["c_pow"], "Algenubi · the Mane"),
+            465, 55, 3, 0, LEO_GOLD, ["c_crit"], "Algenubi · the Mane"),
     SkillNode("c_def", "Iron Skin", "Harden your body against blows.",
-            305, 265, 5, 0, LEO_GOLD, ["c_root"], "Chertan · the Hip"),
+            275, 265, 5, 0, LEO_GOLD, ["c_shd"], "Chertan · the Hip"),
     SkillNode("c_for", "Fortress", "Massively increase damage reduction.",
             260, 160, 3, 0, LEO_GOLD, ["c_def"], "Zosma · the Back"),
     SkillNode("c_shd", "Shield Slam", "Stun enemies with a bash.",
-            145, 255, 3, 0, LEO_GOLD, ["c_def"], "Denebola · the Tail"),
+            145, 270, 3, 0, LEO_GOLD, ["c_def"], "Denebola · the Tail"),
     # --- LIBRA · The Scales -------------------------------------------------
     # Stars are placed on Libra's real figure: the beam held up by
     # Zubeneschamali with the two pans hanging from its arms.
@@ -84,15 +86,7 @@ DECOR_STARS = {
 # Extra lines that complete each figure without being unlock paths.
 DECOR_LINES = {
     "leo": [
-        ((145, 255), (260, 160)),
-        ((260, 160), (420, 165)),
-        ((420, 165), (305, 265)),
-        ((305, 265), (145, 255)),
-        ((420, 165), (380, 30)),
-        ((380, 30), (440, 90)),
-        ((440, 90), (465, 55)),
-        ((465, 55), (485, 170)),
-        ((485, 170), (522, 285)),
+        ((145, 270), (260, 160)),
     ],
     "libra": [
         ((880, 85), (1190, 150)), 
@@ -182,8 +176,8 @@ class SkillMapCanvas(QWidget):
         ys = [n.y for n in self.nodes.values()]
         cx = (min(xs) + max(xs)) / 2
         cy = (min(ys) + max(ys)) / 2
-        self.scale = 1.0
-        self.offset = QPointF(self.width() / 2 - cx, self.height() / 2 - cy)
+        self.scale = 0.8
+        self.offset = QPointF(self.width() / 2 - cx * self.scale, self.height() / 2 - cy * self.scale)
         self.update()
 
     def resizeEvent(self, event):
