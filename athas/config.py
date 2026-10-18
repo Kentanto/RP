@@ -62,8 +62,12 @@ class ConfigManager:
         self._merge_defaults()
 
     def save(self):
+        """Atomic save: write to a temp file first, then swap it in, so a
+        crash mid-write can never leave a truncated/corrupt config."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(self._data, indent=2), encoding="utf-8")
+        tmp = self._path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(self._data, indent=2), encoding="utf-8")
+        tmp.replace(self._path)
 
     def get(self, section: str, key: str, default=None):
         try:
@@ -71,11 +75,12 @@ class ConfigManager:
         except (KeyError, TypeError):
             return default
 
-    def set(self, section: str, key: str, value):
+    def set(self, section: str, key: str, value, save=True):
         if section not in self._data:
             self._data[section] = {}
         self._data[section][key] = value
-        self.save()
+        if save:
+            self.save()
 
     def get_nested(self, section: str, *keys, default=None):
         """Deep-get inside dicts, e.g. get_nested('player','temp_allocations','health')."""
@@ -87,7 +92,7 @@ class ConfigManager:
         except (KeyError, TypeError):
             return default
 
-    def set_nested(self, section: str, *keys_and_value):
+    def set_nested(self, section: str, *keys_and_value, save=True):
         """Deep-set: set_nested('player','temp_allocations','health', 3)."""
         *keys, value = keys_and_value
         if section not in self._data:
@@ -98,7 +103,8 @@ class ConfigManager:
                 node[key] = {}
             node = node[key]
         node[keys[-1]] = value
-        self.save()
+        if save:
+            self.save()
 
     @property
     def data(self):

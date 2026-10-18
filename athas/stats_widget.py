@@ -19,6 +19,20 @@ STAT_COLORS = {
 }
 
 
+def _as_int(value, fallback=0):
+    """Coerce a config value to a non-negative int; fall back if missing/corrupt."""
+    if isinstance(value, bool):
+        return fallback
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return fallback
+    return fallback
+
+
 class TinyButton(QPushButton):
     """Square +/- pill button."""
     def __init__(self, text, color, parent=None):
@@ -49,13 +63,14 @@ class TinyButton(QPushButton):
 class AllocatedStatBar(QFrame):
     """A stat bar that shows base + temporary values, with tiny +/- buttons."""
 
-    def __init__(self, label, base, temp, max_total, color_tuple, on_change, parent=None):
+    def __init__(self, label, base, temp, max_total, color_tuple, on_change, on_commit, parent=None):
         super().__init__(parent)
-        self._base = base
-        self._temp = temp
+        self._base = _as_int(base)
+        self._temp = max(0, _as_int(temp))
         self._max_total = max_total
         self._color = color_tuple[0]
         self._on_change = on_change
+        self._on_commit = on_commit
 
         self.setStyleSheet("background: transparent; border: none;")
         layout = QHBoxLayout(self)
@@ -107,18 +122,26 @@ class AllocatedStatBar(QFrame):
 
     @temp.setter
     def temp(self, value):
-        self._temp = value
+        self._temp = max(0, _as_int(value))
         self._update_display()
 
     def _increment(self):
+        # Never allocate past the stat cap.
+        if self._base + self._temp >= self._max_total:
+            return
+        # on_change only validates + applies the pool change; persistence
+        # happens in on_commit AFTER self._temp is updated, so the config
+        # never records a stale temp value.
         if self._on_change(+1):
             self._temp += 1
             self._update_display()
+            self._on_commit()
 
     def _decrement(self):
         if self._temp > 0 and self._on_change(-1):
             self._temp -= 1
             self._update_display()
+            self._on_commit()
 
     def _update_display(self):
         total = self._base + self._temp
@@ -166,7 +189,7 @@ class StatsWidget(QWidget):
     def __init__(self, config, parent=None):
         super().__init__(parent)
         self.config = config
-        self._pool = config.get("player", "temp_points", 10)
+        self._pool = max(0, _as_int(config.get("player", "temp_points", 10), 10))
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(32, 32, 32, 32)
@@ -248,6 +271,7 @@ class StatsWidget(QWidget):
                 label, base, temp, self.MAX_STAT,
                 STAT_COLORS[key],
                 on_change=self._try_spend,
+                on_commit=self._commit_state,
             )
             main_layout.addWidget(bar)
             self._bars[key] = bar
@@ -293,17 +317,25 @@ class StatsWidget(QWidget):
         self.skills_clicked.emit()
 
     def _try_spend(self, delta):
+        """Validate and apply a pool change. Does NOT persist anything —
+        the calling bar updates its temp value first, then calls
+        _commit_state, so the saved data is never stale."""
         if delta > 0 and self._pool <= 0:
             return False
         self._pool -= delta
-        self._refresh_pool_display()
-        self._persist_state()
         return True
 
+    def _commit_state(self):
+        """Called after a bar's temp value changed: refresh UI, then save
+        the pool and all allocations together in a single atomic write."""
+        self._refresh_pool_display()
+        self._persist_state()
+
     def _persist_state(self):
-        self.config.set("player", "temp_points", self._pool)
+        self.config.set("player", "temp_points", self._pool, save=False)
         for key, bar in self._bars.items():
-            self.config.set_nested("player", "temp_allocations", key, bar.temp)
+            self.config.set_nested("player", "temp_allocations", key, bar.temp, save=False)
+        self.config.save()
 
     def _refresh_pool_display(self):
         self._pool_lbl.setText(f"POINTS: {self._pool}")
@@ -340,8 +372,7 @@ class StatsWidget(QWidget):
         self._name_lbl.setText(self.config.get("player", "name", "Wanderer"))
         self._refresh_xp_display()
         for key, bar in self._bars.items():
-            temp = self.config.get_nested("player", "temp_allocations", key, default=0)
-            bar.temp = temp
-        self._pool = self.config.get("player", "temp_points", 10)
+            bar.temp = self.config.get_nested("player", "temp_allocations", key, default=0)
+        self._pool = max(0, _as_int(self.config.get("player", "temp_points", 10), 10))
         self._refresh_pool_display()
 
