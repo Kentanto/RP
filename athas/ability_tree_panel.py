@@ -54,20 +54,20 @@ NODES = [
     # --- LIBRA · The Scales -------------------------------------------------
     # Stars are placed on Libra's real figure: the beam held up by
     # Zubeneschamali with the two pans hanging from its arms.
-    SkillNode("a_root", "Arcane Focus", "Tap into the flow of magic.",
-              1030, 25, 5, 2, LIBRA_CYAN, [], "Zubeneschamali · the Beam"),
+    SkillNode("a_foc", "Arcane Focus", "Tap into the flow of magic.",
+              1030, 25, 5, 2, LIBRA_CYAN, ["a_men"], "Zubeneschamali · the Beam"),
     SkillNode("a_man", "Mana Flow", "Accelerate mana regeneration.",
-              1190, 150, 5, 0, LIBRA_CYAN, ["a_root"], "Zuben Elakrab · the East Arm"),
+              1190, 150, 5, 0, LIBRA_CYAN, ["a_foc"], "Zuben Elakrab · the East Arm"),
     SkillNode("a_sur", "Energy Surge", "Overcharge your next spell.",
               1135, 235, 3, 0, LIBRA_CYAN, ["a_man"], "Upsilon Librae · the East Pan"),
     SkillNode("a_rif", "Elemental Rift", "Rip open a portal of raw elements.",
-              840, 310, 3, 0, LIBRA_CYAN, ["a_psy"], "Tau Librae · the Cord"),
+              840, 310, 3, 0, LIBRA_CYAN, [], "Tau Librae · the Cord"),
     SkillNode("a_men", "Mental Barrier", "Shield the mind from harm.",
-              880, 85, 5, 0, LIBRA_CYAN, ["a_root"], "Zubenelgenubi · the West Arm"),
+              880, 85, 5, 0, LIBRA_CYAN, ["a_shl"], "Zubenelgenubi · the West Arm"),
     SkillNode("a_shl", "Mind Shield", "Reflect psychic damage.",
-              950, 195, 3, 0, LIBRA_CYAN, ["a_men"], "Brachium · the East Pan"),
+              950, 195, 3, 0, LIBRA_CYAN, ["a_psy"], "Brachium · the East Pan"),
     SkillNode("a_psy", "Psychic Blast", "Unleash a wave of mental force.",
-              900, 255, 3, 0, LIBRA_CYAN, ["a_shl"], "The West Pan"),
+              900, 255, 3, 0, LIBRA_CYAN, ["a_rif"], "The West Pan"),
     SkillNode("a_bal", "Balance", "Harmonize body and mind.",
               1200, 310, 3, 0, LIBRA_CYAN, ["a_sur"], "Theta Librae · the Cord"),
 ]
@@ -89,8 +89,7 @@ DECOR_LINES = {
         ((145, 270), (260, 160)),
     ],
     "libra": [
-        ((880, 85), (1190, 150)), 
-        ((840, 310), (1200, 310)), # Brachium - Zuben Elakrab (closes the Scales)
+        ((810, 380), (1230, 380)), # Brachium - Zuben Elakrab (closes the Scales)
     ],
 }
 
