@@ -4,11 +4,11 @@ import random
 from dataclasses import dataclass, field
 from typing import List
 
-from PySide6.QtCore import Qt, QPoint, QPointF, QRectF, Signal, QTimer
+from PySide6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, Signal, QTimer
 from PySide6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
+    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QToolTip,
 )
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QRadialGradient
+from PySide6.QtGui import QCursor, QPainter, QColor, QPen, QBrush, QFont, QRadialGradient
 
 from athas.styles import CYAN, WHITE
 
@@ -208,12 +208,21 @@ class SkillMapCanvas(QWidget):
             self.update()
         else:
             self._update_hover(self._to_world(event.position()))
+            if self._hovered:
+                self._update_tooltip()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             wp = self._to_world(event.position())
             self._try_click(wp)
+
+    def leaveEvent(self, event):
+        if self._hovered:
+            self._hovered = None
+            QToolTip.hideText()
+            self.update()
+        super().leaveEvent(event)
 
     def _to_world(self, screen_pos):
         return QPointF(
@@ -231,15 +240,14 @@ class SkillMapCanvas(QWidget):
                 self._hovered = node.id
                 break
         if self._hovered != prev:
-            self._update_tooltip()
             self.update()
 
     def _update_tooltip(self):
         if not self._hovered:
-            self.setToolTip("")
+            QToolTip.hideText()
             return
+
         n = self.nodes[self._hovered]
-        state = ""
         if n.current_rank >= n.max_rank:
             state = "<span style=\"color:#ffd700\">MAXED</span>"
         elif self._can_unlock(n.id):
@@ -249,13 +257,19 @@ class SkillMapCanvas(QWidget):
             )
         else:
             state = "<span style=\"color:#666\">Locked — requires parent</span>"
+
         name_line = f"<b>{n.name}</b>"
         if n.star:
             name_line += f" · <i>{n.star}</i>"
-        self.setToolTip(
+
+        text = (
             f"{name_line}<br>{n.description}<br>"
             f"Rank {n.current_rank}/{n.max_rank}<br>{state}"
         )
+
+        # Show immediately at the cursor with no auto-timeout so it
+        # stays visible while we update position on every mouse move.
+        QToolTip.showText(QCursor.pos(), text, self, QRect(), 0)
 
     def _try_click(self, world_pos):
         for node in self.nodes.values():
