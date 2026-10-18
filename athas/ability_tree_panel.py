@@ -36,17 +36,17 @@ LIBRA_CYAN = "#00e5ff"
 # right. Regulus, the Lion's Heart, is the branch's entry star.
 NODES = [
     SkillNode("c_root", "Combat Focus", "Foundation of martial prowess.",
-            522, 310, 5, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
+            522, 285, 5, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
     SkillNode("c_pow", "Power Strike", "A devastating heavy blow.",
-            430, 215, 5, 0, LEO_GOLD, ["c_root"], "Algieba · the Mane"),
+            420, 165, 5, 0, LEO_GOLD, ["c_root"], "Algieba · the Mane"),
     SkillNode("c_crit", "Critical Blow", "Increased critical hit chance.",
-            445, 125, 3, 0, LEO_GOLD, ["c_pow"], "Adhafera · the Sickle"),
+            380, 30, 3, 0, LEO_GOLD, ["c_pow"], "Adhafera · the Sickle"),
     SkillNode("c_ber", "Berserker", "Trade defense for raw damage.",
-            520, 75, 3, 0, LEO_GOLD, ["c_pow"], "Algenubi · the Mane"),
+            465, 55, 3, 0, LEO_GOLD, ["c_pow"], "Algenubi · the Mane"),
     SkillNode("c_def", "Iron Skin", "Harden your body against blows.",
-            350, 270, 5, 0, LEO_GOLD, ["c_root"], "Chertan · the Hip"),
+            305, 265, 5, 0, LEO_GOLD, ["c_root"], "Chertan · the Hip"),
     SkillNode("c_for", "Fortress", "Massively increase damage reduction.",
-            265, 175, 3, 0, LEO_GOLD, ["c_def"], "Zosma · the Back"),
+            260, 160, 3, 0, LEO_GOLD, ["c_def"], "Zosma · the Back"),
     SkillNode("c_shd", "Shield Slam", "Stun enemies with a bash.",
             145, 255, 3, 0, LEO_GOLD, ["c_def"], "Denebola · the Tail"),
     # --- LIBRA · The Scales -------------------------------------------------
@@ -73,8 +73,8 @@ NODES = [
 # Faint extra stars that fill out the real constellations (non-interactive).
 DECOR_STARS = {
     "leo": [
-        (475, 95),    # Extra point along the Sickle
-        (490, 155),   # Curvature of the mane
+        (440, 90),    # Extra point along the Sickle
+        (485, 170),   # Curvature of the mane
     ],        # Eta & Mu Leonis (the mane)
     "libra": [
         (965, 300), (1225, 260)
@@ -84,15 +84,15 @@ DECOR_STARS = {
 # Extra lines that complete each figure without being unlock paths.
 DECOR_LINES = {
     "leo": [
-        ((145, 255), (265, 175)),
-        ((265, 175), (430, 215)),
-        ((430, 215), (350, 270)),
-        ((350, 270), (145, 255)),
-        ((430, 215), (445, 125)),
-        ((445, 125), (520, 75)),
-        ((520, 75), (475, 95)),
-        ((475, 95), (490, 155)),
-        ((490, 155), (522, 310)),
+        ((145, 255), (260, 160)),
+        ((260, 160), (420, 165)),
+        ((420, 165), (305, 265)),
+        ((305, 265), (145, 255)),
+        ((420, 165), (380, 30)),
+        ((380, 30), (440, 90)),
+        ((440, 90), (465, 55)),
+        ((465, 55), (485, 170)),
+        ((485, 170), (522, 285)),
     ],
     "libra": [
         ((880, 85), (1190, 150)), 
