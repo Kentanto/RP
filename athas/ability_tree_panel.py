@@ -34,73 +34,71 @@ LIBRA_CYAN = "#00e5ff"
 # Stars are placed on Leo's real stick figure: the Sickle (head and mane)
 # on the left, the hindquarter triangle (Zosma - Denebola - Chertan) on the
 # right. Regulus, the Lion's Heart, is the branch's entry star.
-# --- LEO · The Lion (reversed / mirrored) ---------------------------------
-# The sickle (head & mane) is on the RIGHT, tail on the LEFT so the Lion
-# faces the centre of the sky.  Same real stellar names, just flipped.
 NODES = [
     SkillNode("c_root", "Combat Focus", "Foundation of martial prowess.",
-              300, 300, 5, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
+            522, 349, 5, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
     SkillNode("c_pow", "Power Strike", "A devastating heavy blow.",
-              440, 190, 5, 0, LEO_GOLD, ["c_root"], "Algieba · the Mane"),
+            465, 164, 5, 0, LEO_GOLD, ["c_root"], "Algieba · the Mane"),
     SkillNode("c_crit", "Critical Blow", "Increased critical hit chance.",
-              520, 110, 3, 0, LEO_GOLD, ["c_pow"], "Adhafera · the Sickle"),
+            480, 74, 3, 0, LEO_GOLD, ["c_pow"], "Adhafera · the Sickle"),
     SkillNode("c_ber", "Berserker", "Trade defense for raw damage.",
-              560, 230, 3, 0, LEO_GOLD, ["c_pow"], "Algenubi · the Mane"),
+            636, 65, 3, 0, LEO_GOLD, ["c_pow"], "Algenubi · the Mane"),
     SkillNode("c_def", "Iron Skin", "Harden your body against blows.",
-              160, 310, 5, 0, LEO_GOLD, ["c_root"], "Chertan · the Hip"),
+            192, 266, 5, 0, LEO_GOLD, ["c_root"], "Chertan · the Hip"),
     SkillNode("c_for", "Fortress", "Massively increase damage reduction.",
-              140, 180, 3, 0, LEO_GOLD, ["c_def"], "Zosma · the Back"),
+            192, 143, 3, 0, LEO_GOLD, ["c_def"], "Zosma · the Back"),
     SkillNode("c_shd", "Shield Slam", "Stun enemies with a bash.",
-              30, 330, 3, 0, LEO_GOLD, ["c_def"], "Denebola · the Tail"),
-
-    # --- LIBRA · The Scales -----------------------------------------------
-    # A classic balance scale hanging from a single pivot at the top.
-    # Two arms spread diagonally, each drops a chain to a pan below.
+            18, 286, 3, 0, LEO_GOLD, ["c_def"], "Denebola · the Tail"),
+    # --- LIBRA · The Scales -------------------------------------------------
+    # Stars are placed on Libra's real figure: the beam held up by
+    # Zubeneschamali with the two pans hanging from its arms.
     SkillNode("a_root", "Arcane Focus", "Tap into the flow of magic.",
-              900, 100, 5, 0, LIBRA_CYAN, [], "Zubeneschamali · the Beam"),
+              1030, 25, 5, 2, LIBRA_CYAN, [], "Zubeneschamali · the Beam"),
     SkillNode("a_man", "Mana Flow", "Accelerate mana regeneration.",
-              1050, 240, 5, 0, LIBRA_CYAN, ["a_root"], "Zuben Elakrab · the East Arm"),
-    SkillNode("a_men", "Mental Barrier", "Shield the mind from harm.",
-              750, 240, 5, 0, LIBRA_CYAN, ["a_root"], "Zubenelgenubi · the West Arm"),
-    SkillNode("a_shl", "Mind Shield", "Reflect psychic damage.",
-              1120, 400, 3, 0, LIBRA_CYAN, ["a_man"], "Brachium · the East Chain"),
-    SkillNode("a_psy", "Psychic Blast", "Unleash a wave of mental force.",
-              680, 400, 3, 0, LIBRA_CYAN, ["a_men"], "Theta Librae · the West Chain"),
+              1190, 150, 5, 0, LIBRA_CYAN, ["a_root"], "Zuben Elakrab · the East Arm"),
     SkillNode("a_sur", "Energy Surge", "Overcharge your next spell.",
-              1190, 560, 3, 0, LIBRA_CYAN, ["a_shl"], "Upsilon Librae · the East Pan"),
+              1135, 235, 3, 0, LIBRA_CYAN, ["a_man"], "Upsilon Librae · the East Pan"),
     SkillNode("a_rif", "Elemental Rift", "Rip open a portal of raw elements.",
-              610, 560, 3, 0, LIBRA_CYAN, ["a_psy"], "Tau Librae · the West Pan"),
+              840, 310, 3, 0, LIBRA_CYAN, ["a_psy"], "Tau Librae · the Cord"),
+    SkillNode("a_men", "Mental Barrier", "Shield the mind from harm.",
+              880, 85, 5, 0, LIBRA_CYAN, ["a_root"], "Zubenelgenubi · the West Arm"),
+    SkillNode("a_shl", "Mind Shield", "Reflect psychic damage.",
+              950, 195, 3, 0, LIBRA_CYAN, ["a_men"], "Brachium · the East Pan"),
+    SkillNode("a_psy", "Psychic Blast", "Unleash a wave of mental force.",
+              900, 255, 3, 0, LIBRA_CYAN, ["a_shl"], "The West Pan"),
+    SkillNode("a_bal", "Balance", "Harmonize body and mind.",
+              1200, 310, 3, 0, LIBRA_CYAN, ["a_sur"], "Theta Librae · the Cord"),
 ]
 
 # Faint extra stars that fill out the real constellations (non-interactive).
 DECOR_STARS = {
-    "leo": [(380, 300), (100, 130)],          # Rasalas, Eta Leonis
-    "libra": [(900, 340), (900, 500)],        # Spica-pointers, decorative mid-stars
+    "leo": [(126, 234), (54, 12)],         # Eta & Mu Leonis (the mane)
+    "libra": [(965, 300), (1225, 260)],    # Theta & 48 Librae (the cords)
 }
 
 # Extra lines that complete each figure without being unlock paths.
 DECOR_LINES = {
     "leo": [
-        ((520, 110), (560, 230)),    # closes the sickle hook
-        ((140, 180), (30, 330)),     # Zosma → Denebola (body edge)
-        ((440, 190), (140, 180)),    # Algieba → Zosma (back)
+        ((18, 286), (192, 143)),      # Adhafera - Algenubi (closes the Sickle)
+        ((192, 143), (480, 74)),   # Zosma - Denebola (hindquarter triangle)
+        ((480, 74), (636, 65)),   # Algieba - Zosma (the back)
     ],
     "libra": [
-        ((680, 400), (1120, 400)),   # horizontal pan-joining bar
-        ((610, 560), (1190, 560)),   # bottom crossbar (pans)
+        ((880, 85), (1190, 150)), 
+        ((840, 310), (1200, 310)), # Brachium - Zuben Elakrab (closes the Scales)
     ],
 }
 
 # Soft nebulas behind each figure.
 GLOWS = [
-    (300, 200, 380, LEO_GOLD),
-    (900, 310, 420, LIBRA_CYAN),
+    (327, 180, 420, LEO_GOLD),
+    (1030, 275, 420, LIBRA_CYAN),
 ]
 
 # Watermark labels: key, zodiac glyph, spaced name, color, center x, top y.
 CONSTELLATION_LABELS = [
-    (LEO_GOLD, "♌", "L  E  O", 300, -85),
-    (LIBRA_CYAN, "♎", "L  I  B  R  A", 900, -85),
+    (LEO_GOLD, "♌", "L  E  O", 327, -95),
+    (LIBRA_CYAN, "♎", "L  I  B  R  A", 1030, -110),
 ]
 
 
@@ -387,6 +385,7 @@ class SkillMapCanvas(QWidget):
             )
 
     def _draw_node(self, painter, node):
+        ring_r = 26
         hover = self._hovered == node.id
         flash = self._flash_node == node.id
         cx = int(node.x)
@@ -399,77 +398,55 @@ class SkillMapCanvas(QWidget):
         if flash:
             ring_col = QColor("#ff2222")
 
-        pulse = 1.0 + 0.12 * math.sin(self._twinkle * 0.4) if is_unlocked else 1.0
-        bright = QColor(node.color) if (is_unlocked or can_unlock) else QColor("#5a6070")
-
-        # ---- outer halo (radial colour wash) ----
-        for r, alpha in ((55, 24), (42, 40), (30, 70), (18, 120)):
-            halo = QRadialGradient(QPointF(cx, cy), r * pulse)
-            c0 = QColor(bright)
-            c0.setAlpha(alpha if (is_unlocked or can_unlock) else int(alpha * 0.35))
-            halo.setColorAt(0, c0)
-            halo.setColorAt(1, QColor(0, 0, 0, 0))
-            painter.setBrush(QBrush(halo))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPointF(cx, cy), r * pulse, r * pulse)
-
-        # ---- moon-white inner star (tiny disc) ----
-        core_r = 6 * (1.2 if hover else 1.0)
-        painter.setBrush(QColor(255, 255, 255) if (is_unlocked or can_unlock) else QColor(180, 185, 200))
+        # Soft stellar glow around the star.
+        glow = QRadialGradient(QPointF(cx, cy), 60)
+        g0 = QColor(col)
+        g0.setAlpha(160 if is_unlocked else (90 if can_unlock else 30))
+        if hover and (is_unlocked or can_unlock):
+            g0 = g0.lighter(130)
+        g1 = QColor(col)
+        g1.setAlpha(0)
+        glow.setColorAt(0, g0)
+        glow.setColorAt(1, g1)
+        painter.setBrush(QBrush(glow))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(QPointF(cx, cy), core_r, core_r)
+        painter.drawEllipse(QPointF(cx, cy), 60, 60)
 
-        # ---- sparkle rays (sharp white / bright colour) ----
-        if is_unlocked or can_unlock:
-            w_rays = int(8 if hover else (6 if is_unlocked else 5))
-            primary = QColor(255, 255, 255, 220)
-            secondary = QColor(bright)
-            secondary.setAlpha(180)
-            _draw_star_rays(painter, cx, cy, node.color, w_rays)
+        # Star body: a dark orb held in a thin ring.
+        painter.setBrush(QColor(8, 10, 16, 190))
+        painter.setPen(QPen(ring_col, 3 if hover else 2))
+        painter.drawEllipse(cx - ring_r, cy - ring_r, ring_r * 2, ring_r * 2)
 
-        # ---- dim ring around inactive stars (needed for visiblity) ----
-        if not (is_unlocked or can_unlock):
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(ring_col, 1.5))
-            painter.drawEllipse(cx - 13, cy - 13, 26, 26)
+        # Rays around lit stars, longer on hover.
+        if is_unlocked or (hover and can_unlock):
+            ray_len = 13 if hover else 8
+            painter.setPen(QPen(QColor(node.color).lighter(130), 2))
+            for dx, dy in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+                r0 = ring_r + 3
+                r1 = ring_r + 3 + ray_len
+                painter.drawLine(cx + dx * r0, cy + dy * r0, cx + dx * r1, cy + dy * r1)
 
-        # ---- Rank label (offset slightly so it doesn't sit on the core) ----
+        # Rank inside the star.
         rank_str = f"{node.current_rank}/{node.max_rank}"
-        painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        font_r = QFont()
+        font_r.setPixelSize(11)
+        font_r.setBold(True)
+        painter.setFont(font_r)
         painter.setPen(QColor(node.color) if is_unlocked else QColor("#7a8194"))
-        painter.drawText(cx - 20, cy + 10, 40, 16, Qt.AlignmentFlag.AlignCenter, rank_str)
+        painter.drawText(cx - 20, cy - 8, 40, 16, Qt.AlignmentFlag.AlignCenter, rank_str)
 
-        # ---- Star / skill name ----
-        font = QFont("Arial", 10, QFont.Weight.Bold)
+        # Star name below.
+        font = QFont()
+        font.setPixelSize(10)
+        font.setBold(True)
         painter.setFont(font)
         painter.setPen(QColor("#e8ecf6"))
         painter.drawText(
-            cx - 80, cy + 22, 160, 18,
+            cx - 70, cy + ring_r + 8, 140, 18,
             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
             node.name,
         )
 
-
-
-def _draw_star_rays(painter, cx, cy, color, num_rays):
-    """Draw sharp multi-pointed rays like a bright star in the sky."""
-    ray_long = 22
-    ray_short = 8
-    for i in range(num_rays):
-        a = (math.tau * i) / num_rays
-        # long main ray (white)
-        x1 = cx + math.cos(a) * ray_long
-        y1 = cy + math.sin(a) * ray_long
-        x0 = cx - math.cos(a) * 3
-        y0 = cy - math.sin(a) * 3
-        painter.setPen(QPen(QColor(255, 255, 255, 180), 1.2))
-        painter.drawLine(int(x0), int(y0), int(x1), int(y1))
-        # short colour ray in between
-        a2 = a + (math.tau / (num_rays * 2))
-        x2 = cx + math.cos(a2) * ray_short
-        y2 = cy + math.sin(a2) * ray_short
-        painter.setPen(QPen(QColor(color), 0.8))
-        painter.drawLine(cx, cy, int(x2), int(y2))
 
 
 class AbilityTreePanel(QFrame):
