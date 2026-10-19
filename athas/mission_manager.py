@@ -4,34 +4,24 @@ and persists a cache of previously seen files to trigger notifications.
 
 A mission counts as completed when its JSON carries the hidden author mark
 ("completed": true — there is no UI toggle for players) or when its file sits
-in the completed folder. Completed files are moved out of the active folder
-and credited (notification + XP) to the player exactly once per file name.
+in the completed folder without an explicit false mark. Completed files are
+credited (notification + XP) once per file name; setting the mark to false in
+the completed folder restores the mission and revokes its recorded XP.
 """
 import hashlib
 import json
-import re
 import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Callable
 from dataclasses import dataclass
 
-# Matches "+50 EXP", "+1,000 XP", "Bronze Key, +200 EXP", "300 experience" ...
-_XP_PATTERN = re.compile(r"([+-]?\d[\d,]*)\s*(?:experience|exp|xp)s?\b", re.IGNORECASE)
 
-
-def _parse_xp(data: Dict[str, Any], reward: str) -> int:
-    """How much XP this mission grants: an explicit "xp" field wins,
-    otherwise the number attached to EXP/XP inside the reward text."""
+def _parse_xp(data: Dict[str, Any]) -> int:
+    """Read the XP amount from the mission's numeric xp field."""
     raw = data.get("xp")
-    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
-        return max(0, int(raw))
-    match = _XP_PATTERN.search(reward or "")
-    if match:
-        try:
-            return max(0, int(match.group(1).replace(",", "").lstrip("+")))
-        except ValueError:
-            return 0
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        return max(0, raw)
     return 0
 
 
@@ -44,6 +34,7 @@ class Mission:
     reward: str
     source_file: str
     completed: bool = False
+    completion_marked: bool = False
     completed_at: str = ""
     xp: int = 0
 
@@ -62,6 +53,7 @@ class Mission:
         difficulty = data.get("difficulty", "E")
         reward = data.get("reward", "")
         completed = bool(data.get("completed", False))
+        completion_marked = "completed" in data
 
         if not title or title == "Unknown":
             title = Path(source).stem.replace("_", " ").title()
@@ -78,7 +70,8 @@ class Mission:
             reward=reward,
             source_file=source,
             completed=completed,
-            xp=_parse_xp(data, reward),
+            completion_marked=completion_marked,
+            xp=_parse_xp(data),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -88,6 +81,7 @@ class Mission:
             "story": self.story,
             "difficulty": self.difficulty,
             "reward": self.reward,
+            "xp": self.xp,
             "completed": self.completed,
         }
 
@@ -97,9 +91,10 @@ class MissionManager:
     Handles scanning, caching, and change-detection for JSON mission files.
 
     A mission counts as completed when its JSON carries the hidden author
-    mark ("completed": true) or when its file sits in the completed folder.
-    Every completed file is credited to the player exactly once (per file
-    name), then moved out of the active folder.
+    mark ("completed": true) or when its file sits in the completed folder
+    without an explicit false mark. Completed files are credited exactly once
+    per file name; explicitly uncompleted files are restored to the active
+    folder and their recorded XP is revoked.
     """
 
     def __init__(
@@ -109,6 +104,7 @@ class MissionManager:
         completed_dir: str | None = None,
         on_new_mission: Callable[[Mission], None] | None = None,
         on_completed_mission: Callable[[Mission], None] | None = None,
+        on_uncompleted_mission: Callable[[Mission, int], None] | None = None,
     ):
         self.missions_dir = Path(missions_dir)
         self.completed_dir = (
@@ -119,6 +115,7 @@ class MissionManager:
         self.credited_path = self.cache_path.parent / "credited_missions.json"
         self.on_new_mission = on_new_mission
         self.on_completed_mission = on_completed_mission
+        self.on_uncompleted_mission = on_uncompleted_mission
 
         self.missions: Dict[str, Mission] = {}
         self._seen_hashes: Dict[str, str] = {}
@@ -203,11 +200,38 @@ class MissionManager:
             except Exception:
                 pass
 
+    def _restore_mission(self, mission: Mission, raw: str) -> bool:
+        """Return an explicitly uncompleted mission to the active folder."""
+        name = Path(mission.source_file).name
+        source = Path(mission.source_file)
+        target = self.missions_dir / name
+        try:
+            self.missions_dir.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                target.unlink()
+            shutil.move(str(source), str(target))
+        except Exception:
+            return False
+
+        mission.source_file = str(target)
+        credited = self._credited.pop(name, None)
+        if credited is not None:
+            self._save_credited()
+            if self.on_uncompleted_mission:
+                raw_xp = credited.get("xp", 0)
+                xp = raw_xp if isinstance(raw_xp, int) and not isinstance(raw_xp, bool) else 0
+                self.on_uncompleted_mission(mission, max(0, xp))
+
+        key = str(target.resolve())
+        self.missions[key] = mission
+        self._seen_hashes[key] = self._file_hash(raw)
+        return True
+
     def scan(self) -> List[Mission]:
         """Scan the mission folders and return the ACTIVE mission list.
 
-        Completed missions never appear in the list: they are credited the
-        first time they are seen and moved into the completed folder."""
+        Completed missions never appear in the list. Explicitly uncompleted
+        files found in the completed folder are restored during this scan."""
         self.missions_dir.mkdir(parents=True, exist_ok=True)
         self.completed_dir.mkdir(parents=True, exist_ok=True)
         current_keys: set = set()
@@ -235,13 +259,18 @@ class MissionManager:
                 if self.on_new_mission:
                     self.on_new_mission(mission)
 
-        # 2) Completed folder — files placed here directly count as completed.
+        # 2) Completed folder — files placed here directly count as completed,
+        # unless the author explicitly changed the completion mark to false.
         for file_path in self._iter_mission_files(self.completed_dir):
             try:
                 raw = file_path.read_text(encoding="utf-8")
             except Exception:
                 continue
             mission = Mission.from_json(raw, str(file_path))
+            if mission.completion_marked and not mission.completed:
+                if self._restore_mission(mission, raw):
+                    current_keys.add(str((self.missions_dir / file_path.name).resolve()))
+                continue
             mission.completed = True
             self._retire_mission(mission, raw, move_to=None)
 

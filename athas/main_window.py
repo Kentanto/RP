@@ -320,6 +320,7 @@ class MainWindow(QMainWindow):
             completed_dir=str(rp / "completed_missions"),
             on_new_mission=self._on_new_mission,
             on_completed_mission=self._on_mission_completed,
+            on_uncompleted_mission=self._on_mission_uncompleted,
         )
         self._inv_manager = InventoryManager(
             items_dir=str(items_dir),
@@ -688,6 +689,12 @@ class MainWindow(QMainWindow):
             header="MISSION COMPLETED",
         )
 
+    def _on_mission_uncompleted(self, mission: Mission, xp: int):
+        """Revoke the XP previously granted for a mission."""
+        if xp > 0:
+            self._stats_widget.remove_xp(xp)
+            self._refresh_sidebar_player()
+
     def _on_new_mission(self, mission: Mission):
         if not self.config.get("notifications", "enabled", True):
             return
@@ -757,4 +764,3 @@ class MainWindow(QMainWindow):
         if self._player is not None:
             self._player.stop()
         super().closeEvent(event)
-

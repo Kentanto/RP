@@ -636,6 +636,30 @@ class StatsWidget(QWidget):
         self.refresh()
         return levels_gained
 
+    def remove_xp(self, amount: int) -> int:
+        """Remove previously awarded XP, reversing level-ups as needed.
+        Returns the number of levels lost."""
+        amount = max(0, _as_int(amount))
+        if amount <= 0:
+            return 0
+
+        old_level = max(1, _as_int(self.config.get("player", "level", 1), 1))
+        level = old_level
+        xp = max(0, _as_int(self.config.get("player", "xp", 0), 0))
+        total_xp = xp + sum(xp_for_next_level(lvl) for lvl in range(1, level))
+        total_xp = max(0, total_xp - amount)
+
+        level = 1
+        while total_xp >= xp_for_next_level(level):
+            total_xp -= xp_for_next_level(level)
+            level += 1
+
+        self.config.set("player", "xp", total_xp, save=False)
+        self.config.set("player", "level", level, save=False)
+        self.config.save()
+        self.refresh()
+        return old_level - level
+
     def _refresh_xp_display(self):
         lvl = self.config.get("player", "level", 1)
         xp = self.config.get("player", "xp", 0)
@@ -658,4 +682,3 @@ class StatsWidget(QWidget):
             bar.temp = self.config.get_nested("player", "temp_allocations", key, default=0)
         self._pool = max(0, _as_int(self.config.get("player", "temp_points", 10), 10))
         self._refresh_pool_display()
-

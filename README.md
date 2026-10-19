@@ -11,7 +11,7 @@ python main.py
 | Folder | Purpose |
 |--------|---------|
 | `missions/` | Active missions tracked by git (shareable) |
-| `completed_missions/` | Missions retired after completion — the app reads XP rewards from here |
+| `completed_missions/` | Missions retired after completion; setting `"completed": false` restores one |
 | `draft_missions/` | Hidden WIP missions (gitignored) |
 | `cache/` | Cached seen files (gitignored) |
 | `icons/` | `background_menu.png` used as fullscreen background |
@@ -35,8 +35,9 @@ missions themselves. To complete one for your users:
    - adds the mission's XP to the player exactly once (tracked per player in `cache/credited_missions.json`),
    - handles level-ups and shows a "MISSION COMPLETED" notification.
 
-XP is read from the number in the reward text (`"Bronze Key, +200 EXP"` → 200 XP)
-or from an optional `"xp"` field in the JSON.
+To undo a completion, set `"completed": false` in its file under
+`completed_missions/`. The app moves it back into `missions/` and removes the
+XP recorded for that completion from the player's progress.
 
 ### Mission zoom
 The MISSIONS tab has `- / % / + / RESET` zoom controls (60%–200%). The chosen
@@ -50,13 +51,14 @@ JSON files (`*.json`) inside `missions/`:
   "description": "What needs to be done.",
   "story": "Longer flavour text shown in the mission detail view.",
   "difficulty": "C",
-  "reward": "Bronze Key, +100 EXP",
+  "reward": "Bronze Key",
   "xp": 100,
   "completed": false
 }
 ```
-- `"xp"` is optional — when missing, the app reads the XP amount from the
-  reward text (`"+100 EXP"` → 100).
+- `"xp"` is an integer XP amount; the `reward` value is display text only.
 - `"completed"` is the hidden author mark. Players never see or set it in the
   UI; flip it to `true` (or move the file into `completed_missions/`) to finish
-  the mission for everyone.
+  the mission for everyone. A file moved directly into `completed_missions/`
+  without a `"completed"` property still counts as completed. Setting the
+  property to `false` there restores the mission to `missions/`.
