@@ -46,6 +46,8 @@ class ConfigManager:
         self._data = {}
         self._save_lock = threading.RLock()
         self.load()
+        if not self._path.exists():
+            self.save()
 
     def _merge_defaults(self):
         for section, values in DEFAULTS.items():

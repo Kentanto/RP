@@ -39,7 +39,7 @@ LIBRA_CYAN = "#00e5ff"
 # right. Regulus, the Lion's Heart, is the branch's entry star.
 NODES = [
     SkillNode("A_Prevalence", "Ceaseless prevalence", "An existence hard to end. Gain a body that revives once a day upon death.",
-            449, 355, 1, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
+            449, 355, 1, 1, LEO_GOLD, [], "Regulus · the Lion's Heart"),
     SkillNode("A_temp0", "???", "???",
             347, 235, 1, 0, LEO_GOLD, ["A_Prevalence"], "Algieba · ???"),
     SkillNode("A_temp1", "???", "???",
@@ -58,7 +58,7 @@ NODES = [
     # Stars are placed on Libra's real figure: the beam held up by
     # Zubeneschamali with the two pans hanging from its arms.
     SkillNode("B_Scales", "Shifting Scales", "Tear open the scales of possibility, Once per day you can allocate temporary stat points between attributes.",
-              840, 310, 1, 0, LIBRA_CYAN, [], "Zubeneschamali · The Scales"),
+              840, 310, 1, 1, LIBRA_CYAN, [], "Zubeneschamali · The Scales"),
     SkillNode("B_Fortune", "Borrowed Fortune", "Access the weight of the scales. Multiply your base daily temporary stat points by (X+1), where X is the rank of this constellation.",
               900, 255, 5, 0, LIBRA_CYAN, ["B_Scales"], "Zubenelgenubi · The Weight"),
     SkillNode("B_temp1", "???", "???",
@@ -159,14 +159,19 @@ class SkillMapCanvas(QWidget):
 
     def _load_ranks(self):
         for node in self.nodes.values():
-            node.current_rank = min(
-                self.config.get_nested("skills", node.id, default=0),
-                node.max_rank,
+            saved_rank = self.config.get_nested(
+                "skills", node.id, default=node.current_rank,
             )
+            if not isinstance(saved_rank, int) or isinstance(saved_rank, bool):
+                saved_rank = node.current_rank
+            node.current_rank = max(0, min(saved_rank, node.max_rank))
+            self.config.set_nested("skills", node.id, node.current_rank, save=False)
+        self.config.save()
 
     def _save_ranks(self):
         for node in self.nodes.values():
-            self.config.set_nested("skills", node.id, node.current_rank)
+            self.config.set_nested("skills", node.id, node.current_rank, save=False)
+        self.config.save()
 
     def _can_unlock(self, node_id):
         node = self.nodes[node_id]
