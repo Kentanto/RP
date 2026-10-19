@@ -9,7 +9,7 @@ DEFAULTS = {
     "loading_screen": {"enabled": True},
     "audio": {"enabled": True, "volume": 0.1},
     "notifications": {"enabled": True, "duration_ms": 8000},
-    "git_sync": {"enabled": True, "interval_ms": 15000},
+    "git_sync": {"enabled": True, "interval_ms": 15000, "folders": "missions,items,icons"},
     "player": {
         "name": "Wanderer",
         "rank": "E",

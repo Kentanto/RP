@@ -357,10 +357,10 @@ class MainWindow(QMainWindow):
             self._inv_panel.inv_manager = self._inv_manager
             self._inv_panel.refresh()
         if self.config.get("git_sync", "enabled", True):
+            folders = self.config.get("git_sync", "folders", "missions,items,icons")
             self._git_sync = GitSyncWorker(
                 repo_path=str(rp),
-                missions_dir=str(missions_dir),
-                items_dir=str(items_dir),
+                sync_paths=[p.strip() for p in str(folders).split(",") if p.strip()],
                 interval_ms=int(self.config.get("git_sync", "interval_ms", 15000)),
             )
             self._git_sync.pull_complete.connect(self._on_git_pull)
