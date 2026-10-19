@@ -1,6 +1,6 @@
 """
 Git Sync — periodically updates only the content folders that matter
-(missions, items, icons) from the remote repo.
+(missions, completed_missions, items, icons) from the remote repo.
 
 Instead of pulling the whole repository, this fetches the remote and then
 copies ONLY the configured folders from it into the local working tree.
@@ -22,7 +22,7 @@ from typing import Any
 from PySide6.QtCore import QTimer, QObject, Signal
 
 # Folders synced from the remote, relative to the repo root.
-DEFAULT_SYNC_PATHS = ("missions", "items", "icons")
+DEFAULT_SYNC_PATHS = ("missions", "completed_missions", "items", "icons")
 
 # File types worth listing for the "new files" signal.
 TEXT_EXTS = {".txt", ".md", ".json"}

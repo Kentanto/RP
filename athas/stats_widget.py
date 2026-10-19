@@ -42,6 +42,12 @@ def _as_int(value, fallback=0):
     return fallback
 
 
+def xp_for_next_level(level) -> int:
+    """XP needed to advance from the given level to the next one."""
+    level = max(1, _as_int(level, 1))
+    return int(100 * (level ** 1.5))
+
+
 class TinyButton(QPushButton):
     """Square +/- pill button — neutral at rest, stat-coloured on hover."""
     def __init__(self, text, color, parent=None):
@@ -390,6 +396,7 @@ class StatsWidget(QWidget):
         top.setSpacing(32)
 
         self._badge = LevelBadge(config.get("player", "rank", "E"), config.get("player", "level", 1))
+        self._badge_layout = top
         top.addWidget(self._badge, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         right = QVBoxLayout()
@@ -609,13 +616,30 @@ class StatsWidget(QWidget):
         for bar in self._bars.values():
             bar.set_pool_state(self._pool)
 
-    def _xp_for_next_level(self, level):
-        return int(100 * (level ** 1.5))
+    def grant_xp(self, amount: int) -> int:
+        """Award XP to the player, rolling over as many level-ups as the
+        amount covers. Persists the result and refreshes the display.
+        Returns the number of levels gained."""
+        amount = _as_int(amount)
+        if amount <= 0:
+            return 0
+        level = max(1, _as_int(self.config.get("player", "level", 1), 1))
+        xp = max(0, _as_int(self.config.get("player", "xp", 0), 0)) + amount
+        levels_gained = 0
+        while xp >= xp_for_next_level(level):
+            xp -= xp_for_next_level(level)
+            level += 1
+            levels_gained += 1
+        self.config.set("player", "xp", xp, save=False)
+        self.config.set("player", "level", level, save=False)
+        self.config.save()
+        self.refresh()
+        return levels_gained
 
     def _refresh_xp_display(self):
         lvl = self.config.get("player", "level", 1)
         xp = self.config.get("player", "xp", 0)
-        need = self._xp_for_next_level(lvl)
+        need = xp_for_next_level(lvl)
         self._xp_bar.setRange(0, need)
         self._xp_bar.setValue(min(xp, need))
         self._xp_lbl.setText(f"EXP  {xp} / {need}")
@@ -625,7 +649,7 @@ class StatsWidget(QWidget):
         level = self.config.get("player", "level", 1)
         self._badge.deleteLater()
         self._badge = LevelBadge(rank, level)
-        self.layout().itemAt(1).layout().insertWidget(
+        self._badge_layout.insertWidget(
             0, self._badge, alignment=Qt.AlignmentFlag.AlignVCenter
         )
         self._name_lbl.setText(self.config.get("player", "name", "Wanderer"))

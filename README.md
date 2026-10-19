@@ -11,6 +11,7 @@ python main.py
 | Folder | Purpose |
 |--------|---------|
 | `missions/` | Active missions tracked by git (shareable) |
+| `completed_missions/` | Missions retired after completion — the app reads XP rewards from here |
 | `draft_missions/` | Hidden WIP missions (gitignored) |
 | `cache/` | Cached seen files (gitignored) |
 | `icons/` | `background_menu.png` used as fullscreen background |
@@ -24,6 +25,23 @@ python main.py
 4. The app auto-pulls on the configured interval — new files trigger a "New Mission Detected" notification.
 5. Other users running the app will pull and see the same missions.
 
+### Completing a mission (author only)
+There is no "complete" button or checkbox in the UI — players cannot finish
+missions themselves. To complete one for your users:
+1. Open its JSON and set `"completed": true` (the hidden author mark), or move
+   the file straight into `completed_missions/`.
+2. Commit + push. Every player's app then automatically:
+   - moves the file from `missions/` into `completed_missions/`,
+   - adds the mission's XP to the player exactly once (tracked per player in `cache/credited_missions.json`),
+   - handles level-ups and shows a "MISSION COMPLETED" notification.
+
+XP is read from the number in the reward text (`"Bronze Key, +200 EXP"` → 200 XP)
+or from an optional `"xp"` field in the JSON.
+
+### Mission zoom
+The MISSIONS tab has `- / % / + / RESET` zoom controls (60%–200%). The chosen
+size is saved in each player's config and also scales the mission detail view.
+
 ## Mission file format
 JSON files (`*.json`) inside `missions/`:
 ```json
@@ -33,6 +51,12 @@ JSON files (`*.json`) inside `missions/`:
   "story": "Longer flavour text shown in the mission detail view.",
   "difficulty": "C",
   "reward": "Bronze Key, +100 EXP",
+  "xp": 100,
   "completed": false
 }
 ```
+- `"xp"` is optional — when missing, the app reads the XP amount from the
+  reward text (`"+100 EXP"` → 100).
+- `"completed"` is the hidden author mark. Players never see or set it in the
+  UI; flip it to `true` (or move the file into `completed_missions/`) to finish
+  the mission for everyone.

@@ -100,8 +100,9 @@ class NotificationWidget(QFrame):
 
         self.hide()
 
-    def show_notification(self, title: str, description: str, difficulty: str = "E", duration_ms=6000):
+    def show_notification(self, title: str, description: str, difficulty: str = "E", duration_ms=6000, header: str = "NEW MISSION DETECTED"):
         """Slide in and type out the mission info."""
+        self.title_label.setText(header or "NEW MISSION DETECTED")
         col = DIFF_COLOURS.get(difficulty.upper(), CYAN)
         self.level_label.setText(difficulty.upper())
         self.level_label.setStyleSheet(f"""

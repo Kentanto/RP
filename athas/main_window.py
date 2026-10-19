@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QTimer, QPoint
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QFrame, QGraphicsDropShadowEffect,
-    QStackedWidget, QCheckBox,
+    QStackedWidget,
 )
 from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -30,14 +30,17 @@ class HoverButton(QPushButton):
 
 
 class MissionCard(QFrame):
-    def __init__(self, mission: Mission, on_click=None, parent=None):
+    def __init__(self, mission: Mission, on_click=None, parent=None, zoom: float = 1.0):
         super().__init__(parent)
         self.mission = mission
         self.on_click = on_click
         self.setObjectName("MissionCard")
         self.setStyleSheet(mission_card_style(mission.difficulty, mission.completed))
-        self.setMinimumHeight(100)
-        self.setMaximumHeight(140)
+        # zoom scales every element so the cards stay readable at any
+        # display scaling (1.0 = default size)
+        z = max(0.5, float(zoom))
+        self.setMinimumHeight(int(100 * z))
+        self.setMaximumHeight(int(140 * z))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(12)
@@ -46,48 +49,41 @@ class MissionCard(QFrame):
         self.setGraphicsEffect(shadow)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(16)
+        layout.setContentsMargins(int(16 * z), int(12 * z), int(16 * z), int(12 * z))
+        layout.setSpacing(int(16 * z))
 
         diff = mission.difficulty.upper() if mission.difficulty else "E"
         diff_col = DIFF_COLOURS.get(diff, CYAN)
         badge = QLabel(diff)
-        badge.setFixedSize(44, 44)
+        badge.setFixedSize(int(44 * z), int(44 * z))
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         badge.setStyleSheet(f"""
             QLabel {{
                 background-color: {diff_col}22;
                 border: 2px solid {diff_col};
-                border-radius: 22px;
+                border-radius: {int(22 * z)}px;
                 color: {diff_col};
-                font-size: 18px;
+                font-size: {max(8, int(18 * z))}px;
                 font-weight: bold;
             }}
         """)
         layout.addWidget(badge)
 
         text_layout = QVBoxLayout()
-        text_layout.setSpacing(4)
+        text_layout.setSpacing(int(4 * z))
         title = QLabel(mission.title)
-        title_color = "#888888" if mission.completed else "#ffffff"
-        title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {title_color};")
+        title.setStyleSheet(f"font-size: {max(8, int(16 * z))}px; font-weight: bold; color: #ffffff;")
         text_layout.addWidget(title)
 
         desc = QLabel(mission.description)
         desc.setWordWrap(True)
-        desc.setStyleSheet("font-size: 12px; color: #aaaaaa;")
+        desc.setStyleSheet(f"font-size: {max(7, int(12 * z))}px; color: #aaaaaa;")
         text_layout.addWidget(desc)
 
         reward = QLabel(f"Reward: {mission.reward}")
-        reward_col = "#555555" if mission.completed else diff_col
-        reward.setStyleSheet(f"font-size: 11px; color: {reward_col}; font-weight: bold;")
+        reward.setStyleSheet(f"font-size: {max(7, int(11 * z))}px; color: {diff_col}; font-weight: bold;")
         text_layout.addWidget(reward)
         layout.addLayout(text_layout, 1)
-
-        if mission.completed:
-            check = QLabel("✓")
-            check.setStyleSheet("font-size: 28px; color: #4caf50; font-weight: bold; margin-right: 8px;")
-            layout.addWidget(check)
 
     def mousePressEvent(self, event):
         if self.on_click:
@@ -120,29 +116,14 @@ class MissionDetailView(QFrame):
                 background-color: {CYAN};
                 color: {BLACK};
             }}
-            QCheckBox {{
-                background: transparent;
-                color: {WHITE};
-                font-size: 14px;
-            }}
-            QCheckBox::indicator {{
-                width: 20px;
-                height: 20px;
-                border: 2px solid {CYAN};
-                border-radius: 3px;
-            }}
-            QCheckBox::indicator:checked {{
-                background-color: {CYAN};
-                image: none;
-            }}
             QScrollArea {{
                 border: none;
                 background: transparent;
             }}
         """)
         self.mission = None
-        self._on_completed_changed = None
         self._on_close = None
+        self._zoom = 1.0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 30, 40, 30)
@@ -150,18 +131,14 @@ class MissionDetailView(QFrame):
 
         header = QHBoxLayout()
         self.diff_badge = QLabel("E")
-        self.diff_badge.setFixedSize(50, 50)
         self.diff_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.diff_badge.setStyleSheet("font-size: 20px; font-weight: bold; border-radius: 25px;")
         header.addWidget(self.diff_badge)
 
         title_layout = QVBoxLayout()
         self.title_label = QLabel("Title")
-        self.title_label.setStyleSheet("font-size: 26px; font-weight: bold; color: #ffffff;")
         title_layout.addWidget(self.title_label)
 
         self.reward_label = QLabel("Reward")
-        self.reward_label.setStyleSheet(f"font-size: 13px; color: {CYAN};")
         title_layout.addWidget(self.reward_label)
         header.addLayout(title_layout, 1)
 
@@ -184,7 +161,6 @@ class MissionDetailView(QFrame):
 
         self.desc_label = QLabel("")
         self.desc_label.setWordWrap(True)
-        self.desc_label.setStyleSheet("font-size: 14px; color: #cccccc; padding-top: 10px;")
         layout.addWidget(self.desc_label)
 
         story_scroll = QScrollArea()
@@ -196,31 +172,39 @@ class MissionDetailView(QFrame):
         self.story_label = QLabel("")
         self.story_label.setWordWrap(True)
         self.story_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.story_label.setStyleSheet("font-size: 15px; color: #bbbbbb; line-height: 1.6;")
         story_layout.addWidget(self.story_label)
         story_layout.addStretch()
         story_scroll.setWidget(story_container)
         layout.addWidget(story_scroll, 1)
 
-        self.completed_checkbox = QCheckBox("Mark as Completed")
-        self.completed_checkbox.setStyleSheet("font-size: 14px; color: #ffffff; margin-top: 10px;")
-        self.completed_checkbox.stateChanged.connect(self._on_checkbox_changed)
-        layout.addWidget(self.completed_checkbox)
-
         self.file_label = QLabel("")
-        self.file_label.setStyleSheet("font-size: 10px; color: #555555; margin-top: 4px;")
         layout.addWidget(self.file_label)
         self.hide()
 
-    def show_mission(self, mission, on_completed_changed, on_close):
+        self.set_zoom(1.0)
+
+    def set_zoom(self, zoom: float):
+        """Scale the detail view's fonts and elements so the text stays
+        readable at any display scaling (1.0 = default size)."""
+        z = max(0.5, float(zoom))
+        self._zoom = z
+        badge_px = int(50 * z)
+        self.diff_badge.setFixedSize(badge_px, badge_px)
+        self.title_label.setStyleSheet(f"font-size: {max(9, int(26 * z))}px; font-weight: bold; color: #ffffff;")
+        self.reward_label.setStyleSheet(f"font-size: {max(8, int(13 * z))}px; color: {CYAN};")
+        self.desc_label.setStyleSheet(f"font-size: {max(8, int(14 * z))}px; color: #cccccc; padding-top: 10px;")
+        self.story_label.setStyleSheet(f"font-size: {max(8, int(15 * z))}px; color: #bbbbbb; line-height: 1.6;")
+        self.file_label.setStyleSheet(f"font-size: {max(7, int(10 * z))}px; color: #555555; margin-top: 4px;")
+
+    def show_mission(self, mission, on_close):
         self.mission = mission
-        self._on_completed_changed = on_completed_changed
         self._on_close = on_close
         diff = mission.difficulty.upper() if mission.difficulty else "E"
         diff_col = DIFF_COLOURS.get(diff, CYAN)
+        z = self._zoom
         self.diff_badge.setText(diff)
         self.diff_badge.setStyleSheet(f"""
-            font-size: 20px; font-weight: bold; border-radius: 25px;
+            font-size: {max(8, int(20 * z))}px; font-weight: bold; border-radius: {int(25 * z)}px;
             background-color: {diff_col}22;
             border: 2px solid {diff_col};
             color: {diff_col};
@@ -230,20 +214,8 @@ class MissionDetailView(QFrame):
         self.desc_label.setText(mission.description)
         self.story_label.setText(mission.story if mission.story else "No additional story available.")
         self.file_label.setText(f"File: {mission.source_file}")
-        self.completed_checkbox.blockSignals(True)
-        self.completed_checkbox.setChecked(mission.completed)
-        self.completed_checkbox.blockSignals(False)
         self.show()
         self.raise_()
-
-    def _on_checkbox_changed(self, state):
-        if self.mission and self._on_completed_changed:
-            self.mission.completed = bool(state)
-            self._on_completed_changed(self.mission)
-        if self.mission.completed:
-            self.title_label.setText(self.mission.title + "   ✓")
-        else:
-            self.title_label.setText(self.mission.title)
 
     def _close(self):
         self.hide()
@@ -345,7 +317,9 @@ class MainWindow(QMainWindow):
         self._manager = MissionManager(
             missions_dir=str(missions_dir),
             cache_path=str(cache_dir / "seen_missions.json"),
+            completed_dir=str(rp / "completed_missions"),
             on_new_mission=self._on_new_mission,
+            on_completed_mission=self._on_mission_completed,
         )
         self._inv_manager = InventoryManager(
             items_dir=str(items_dir),
@@ -357,10 +331,15 @@ class MainWindow(QMainWindow):
             self._inv_panel.inv_manager = self._inv_manager
             self._inv_panel.refresh()
         if self.config.get("git_sync", "enabled", True):
-            folders = self.config.get("git_sync", "folders", "missions,items,icons")
+            folders = self.config.get("git_sync", "folders", "missions,completed_missions,items,icons")
+            sync_paths = [p.strip() for p in str(folders).split(",") if p.strip()]
+            # The completed-missions folder is part of the mission pipeline —
+            # always sync it alongside the active missions folder.
+            if "missions" in sync_paths and "completed_missions" not in sync_paths:
+                sync_paths.append("completed_missions")
             self._git_sync = GitSyncWorker(
                 repo_path=str(rp),
-                sync_paths=[p.strip() for p in str(folders).split(",") if p.strip()],
+                sync_paths=sync_paths,
                 interval_ms=int(self.config.get("git_sync", "interval_ms", 15000)),
             )
             self._git_sync.pull_complete.connect(self._on_git_pull)
@@ -457,6 +436,7 @@ class MainWindow(QMainWindow):
         m_layout.setContentsMargins(32, 32, 32, 32)
         m_layout.setSpacing(20)
 
+        header_row = QHBoxLayout()
         header = QLabel("AVAILABLE QUESTS")
         header.setStyleSheet(f"""
             color: {WHITE};
@@ -464,7 +444,10 @@ class MainWindow(QMainWindow):
             font-weight: bold;
             letter-spacing: 3px;
         """)
-        m_layout.addWidget(header)
+        header_row.addWidget(header)
+        header_row.addStretch()
+        header_row.addLayout(self._build_zoom_controls())
+        m_layout.addLayout(header_row)
 
         line = QFrame()
         line.setFixedHeight(2)
@@ -582,6 +565,82 @@ class MainWindow(QMainWindow):
             self._rebuild_missions(missions)
             self._last_missions_state = current_state
 
+    # ── Mission zoom ──
+
+    @staticmethod
+    def _clamp_zoom(value) -> float:
+        """Keep a zoom factor inside the supported range."""
+        try:
+            z = float(value)
+        except (TypeError, ValueError):
+            return 1.0
+        return max(0.6, min(2.0, round(z, 2)))
+
+    def _build_zoom_controls(self) -> QHBoxLayout:
+        """- / + / RESET buttons that scale the mission cards (saved in config)."""
+        self._missions_zoom = self._clamp_zoom(self.config.get("missions", "zoom", 1.0))
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+
+        zoom_lbl = QLabel("ZOOM")
+        zoom_lbl.setStyleSheet(f"color: {CYAN}; font-size: 11px; font-weight: bold; letter-spacing: 2px;")
+        row.addWidget(zoom_lbl)
+
+        btn_style = f"""
+            QPushButton {{
+                background-color: {CYAN}11;
+                border: 1px solid {CYAN}44;
+                color: {CYAN};
+                padding: 4px 12px;
+                border-radius: 2px;
+                font-size: 13px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {CYAN}33;
+            }}
+            QPushButton:pressed {{
+                background-color: {CYAN}55;
+            }}
+        """
+        self.zoom_out_btn = HoverButton("-")
+        self.zoom_out_btn.setStyleSheet(btn_style)
+        self.zoom_out_btn.clicked.connect(lambda: self._set_missions_zoom(self._missions_zoom - 0.1))
+        row.addWidget(self.zoom_out_btn)
+
+        self._zoom_percent_lbl = QLabel(f"{int(round(self._missions_zoom * 100))}%")
+        self._zoom_percent_lbl.setStyleSheet(f"color: {WHITE}; font-size: 12px; padding: 0 4px;")
+        self._zoom_percent_lbl.setMinimumWidth(44)
+        self._zoom_percent_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(self._zoom_percent_lbl)
+
+        self.zoom_in_btn = HoverButton("+")
+        self.zoom_in_btn.setStyleSheet(btn_style)
+        self.zoom_in_btn.clicked.connect(lambda: self._set_missions_zoom(self._missions_zoom + 0.1))
+        row.addWidget(self.zoom_in_btn)
+
+        reset_btn = HoverButton("RESET")
+        reset_btn.setStyleSheet(btn_style)
+        reset_btn.clicked.connect(lambda: self._set_missions_zoom(1.0))
+        row.addWidget(reset_btn)
+
+        return row
+
+    def _set_missions_zoom(self, zoom: float):
+        """Apply (and persist) a new zoom level for the missions tab."""
+        z = self._clamp_zoom(zoom)
+        if z == self._missions_zoom:
+            return
+        self._missions_zoom = z
+        self.config.set("missions", "zoom", z)
+        self._zoom_percent_lbl.setText(f"{int(round(z * 100))}%")
+        if self._detail_view.isVisible():
+            self._detail_view.set_zoom(z)
+        # force the mission cards to rebuild at the new size
+        self._last_missions_state = {}
+        self._scan_missions()
+
     def _rebuild_missions(self, missions):
         while self.missions_layout.count() > 1:
             item = self.missions_layout.takeAt(0)
@@ -597,23 +656,37 @@ class MainWindow(QMainWindow):
         missions.sort(key=lambda m: (m.completed, diff_order.get(m.difficulty.upper(), 99), m.title))
 
         for mission in missions:
-            card = MissionCard(mission, on_click=self._open_mission_detail)
+            card = MissionCard(mission, on_click=self._open_mission_detail, zoom=self._missions_zoom)
             self.missions_layout.insertWidget(self.missions_layout.count() - 1, card)
 
     def _open_mission_detail(self, mission: Mission):
+        self._detail_view.set_zoom(self._missions_zoom)
         self._detail_view.show_mission(
             mission,
-            on_completed_changed=self._on_mission_completed_changed,
             on_close=lambda: self._detail_view.hide(),
         )
         self._detail_view.setGeometry(self.root.rect())
         self._detail_view.show()
         self._detail_view.raise_()
 
-    def _on_mission_completed_changed(self, mission: Mission):
-        if self._manager is not None:
-            self._manager.save_mission(mission)
-        self._scan_missions()
+    def _on_mission_completed(self, mission: Mission):
+        """The author marked a mission as done — grant its XP reward once."""
+        levels_gained = 0
+        if mission.xp > 0:
+            levels_gained = self._stats_widget.grant_xp(mission.xp)
+            self._refresh_sidebar_player()
+        if not self.config.get("notifications", "enabled", True):
+            return
+        description = f"Reward: {mission.reward}" if mission.reward else "The System acknowledges your success."
+        if levels_gained > 0:
+            description += f"  LEVEL UP — Level {self.config.get('player', 'level', 1)}!"
+        self.notif.show_notification(
+            title=mission.title,
+            description=description,
+            difficulty=mission.difficulty,
+            duration_ms=int(self.config.get("notifications", "duration_ms", 8000)),
+            header="MISSION COMPLETED",
+        )
 
     def _on_new_mission(self, mission: Mission):
         if not self.config.get("notifications", "enabled", True):
