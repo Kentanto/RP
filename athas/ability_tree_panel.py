@@ -39,21 +39,21 @@ LIBRA_CYAN = "#00e5ff"
 # right. Regulus, the Lion's Heart, is the branch's entry star.
 NODES = [
     SkillNode("c_root", "Combat Focus", "Foundation of martial prowess.",
-            522, 285, 5, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
+            449, 355, 5, 0, LEO_GOLD, [], "Regulus · the Lion's Heart"),
     SkillNode("c_pow", "Power Strike", "A devastating heavy blow.",
-            420, 165, 5, 0, LEO_GOLD, ["c_ber", "c_root"], "Algieba · the Mane"),
+            347, 235, 5, 0, LEO_GOLD, ["c_ber", "c_root"], "Algieba · the Mane"),
     SkillNode("c_crit", "Critical Blow", "Increased critical hit chance.",
-            400, -40, 3, 0, LEO_GOLD, ["c_agi"], "Adhafera · the Sickle"),
+            327, 30, 3, 0, LEO_GOLD, ["c_agi"], "Adhafera · the Sickle"),
     SkillNode("c_agi", "Agility", "Move faster and dodge attacks.",
-            330, 70, 5, 0, LEO_GOLD, ["c_for"], "Zosma · the Back"),
+            257, 140, 5, 0, LEO_GOLD, ["c_for"], "Zosma · the Back"),
     SkillNode("c_ber", "Berserker", "Trade defense for raw damage.",
-            465, 55, 3, 0, LEO_GOLD, ["c_crit"], "Algenubi · the Mane"),
+            392, 125, 3, 0, LEO_GOLD, ["c_crit"], "Algenubi · the Mane"),
     SkillNode("c_def", "Iron Skin", "Harden your body against blows.",
-            275, 265, 5, 0, LEO_GOLD, ["c_shd"], "Chertan · the Hip"),
+            202, 335, 5, 0, LEO_GOLD, ["c_shd"], "Chertan · the Hip"),
     SkillNode("c_for", "Fortress", "Massively increase damage reduction.",
-            260, 160, 3, 0, LEO_GOLD, ["c_def"], "Zosma · the Back"),
+            187, 230, 3, 0, LEO_GOLD, ["c_def"], "Zosma · the Back"),
     SkillNode("c_shd", "Shield Slam", "Stun enemies with a bash.",
-            145, 270, 3, 0, LEO_GOLD, ["c_def"], "Denebola · the Tail"),
+            72, 340, 3, 0, LEO_GOLD, ["c_def"], "Denebola · the Tail"),
     # --- LIBRA · The Scales -------------------------------------------------
     # Stars are placed on Libra's real figure: the beam held up by
     # Zubeneschamali with the two pans hanging from its arms.
@@ -78,8 +78,8 @@ NODES = [
 # Faint extra stars that fill out the real constellations (non-interactive).
 DECOR_STARS = {
     "leo": [
-        (440, 90),    # Extra point along the Sickle
-        (485, 170),   # Curvature of the mane
+        (367, 160),   # Extra point along the Sickle
+        (412, 240),   # Curvature of the mane
     ],        # Eta & Mu Leonis (the mane)
     "libra": [
         (965, 300), (1225, 260)
@@ -89,7 +89,7 @@ DECOR_STARS = {
 # Extra lines that complete each figure without being unlock paths.
 DECOR_LINES = {
     "leo": [
-        ((145, 270), (260, 160)),
+        ((72, 340), (187, 230)),
     ],
     "libra": [
         ((810, 380), (1230, 380)), # Brachium - Zuben Elakrab (closes the Scales)
@@ -98,13 +98,13 @@ DECOR_LINES = {
 
 # Soft nebulas behind each figure.
 GLOWS = [
-    (327, 180, 420, LEO_GOLD),
+    (254, 250, 420, LEO_GOLD),
     (1030, 275, 420, LIBRA_CYAN),
 ]
 
 # Watermark labels: icon key, spaced name, center x, top y.
 CONSTELLATION_LABELS = [
-    ("leo", "L  E  O", 327, -95),
+    ("leo", "L  E  O", 327, -110),
     ("libra", "L  I  B  R  A", 1030, -110),
 ]
 
