@@ -2,7 +2,11 @@
 Athas — JSON config manager with auto-save.
 """
 import json
+import os
 from pathlib import Path
+import tempfile
+import threading
+import time
 
 
 DEFAULTS = {
@@ -40,6 +44,7 @@ class ConfigManager:
     def __init__(self, path: Path):
         self._path = path
         self._data = {}
+        self._save_lock = threading.RLock()
         self.load()
 
     def _merge_defaults(self):
@@ -63,12 +68,29 @@ class ConfigManager:
         self._merge_defaults()
 
     def save(self):
-        """Atomic save: write to a temp file first, then swap it in, so a
-        crash mid-write can never leave a truncated/corrupt config."""
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(self._data, indent=2), encoding="utf-8")
-        tmp.replace(self._path)
+        """Atomically save through a unique temp file, retrying transient Windows locks."""
+        with self._save_lock:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            payload = json.dumps(self._data, indent=2)
+            fd, tmp_name = tempfile.mkstemp(
+                dir=self._path.parent,
+                prefix=f".{self._path.name}.",
+                suffix=".tmp",
+            )
+            tmp = Path(tmp_name)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
+                    temp_file.write(payload)
+                for attempt in range(5):
+                    try:
+                        os.replace(tmp, self._path)
+                        break
+                    except PermissionError:
+                        if attempt == 4:
+                            raise
+                        time.sleep(0.05 * (2 ** attempt))
+            finally:
+                tmp.unlink(missing_ok=True)
 
     def get(self, section: str, key: str, default=None):
         try:
@@ -77,11 +99,12 @@ class ConfigManager:
             return default
 
     def set(self, section: str, key: str, value, save=True):
-        if section not in self._data:
-            self._data[section] = {}
-        self._data[section][key] = value
-        if save:
-            self.save()
+        with self._save_lock:
+            if section not in self._data:
+                self._data[section] = {}
+            self._data[section][key] = value
+            if save:
+                self.save()
 
     def get_nested(self, section: str, *keys, default=None):
         """Deep-get inside dicts, e.g. get_nested('player','temp_allocations','health')."""
@@ -95,17 +118,18 @@ class ConfigManager:
 
     def set_nested(self, section: str, *keys_and_value, save=True):
         """Deep-set: set_nested('player','temp_allocations','health', 3)."""
-        *keys, value = keys_and_value
-        if section not in self._data:
-            self._data[section] = {}
-        node = self._data[section]
-        for key in keys[:-1]:
-            if key not in node or not isinstance(node[key], dict):
-                node[key] = {}
-            node = node[key]
-        node[keys[-1]] = value
-        if save:
-            self.save()
+        with self._save_lock:
+            *keys, value = keys_and_value
+            if section not in self._data:
+                self._data[section] = {}
+            node = self._data[section]
+            for key in keys[:-1]:
+                if key not in node or not isinstance(node[key], dict):
+                    node[key] = {}
+                node = node[key]
+            node[keys[-1]] = value
+            if save:
+                self.save()
 
     @property
     def data(self):
