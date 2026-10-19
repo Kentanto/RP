@@ -2,13 +2,16 @@
 import math
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List
 
 from PySide6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, Signal, QTimer
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QToolTip,
 )
-from PySide6.QtGui import QCursor, QPainter, QColor, QPen, QBrush, QFont, QRadialGradient
+from PySide6.QtGui import (
+    QCursor, QPainter, QColor, QPen, QBrush, QFont, QRadialGradient, QPixmap,
+)
 
 from athas.styles import CYAN, WHITE
 
@@ -99,10 +102,10 @@ GLOWS = [
     (1030, 275, 420, LIBRA_CYAN),
 ]
 
-# Watermark labels: key, zodiac glyph, spaced name, color, center x, top y.
+# Watermark labels: icon key, spaced name, center x, top y.
 CONSTELLATION_LABELS = [
-    (LEO_GOLD, "♌", "L  E  O", 327, -95),
-    (LIBRA_CYAN, "♎", "L  I  B  R  A", 1030, -110),
+    ("leo", "L  E  O", 327, -95),
+    ("libra", "L  I  B  R  A", 1030, -110),
 ]
 
 
@@ -113,6 +116,16 @@ class SkillMapCanvas(QWidget):
         super().__init__(parent)
         self.nodes = {n.id: n for n in nodes}
         self.config = config
+        icon_dir = Path(__file__).resolve().parent.parent / "icons"
+        self._constellation_icons = {
+            key: QPixmap(str(icon_dir / f"{key}.png"))
+            for key in ("leo", "libra")
+        }
+        for key, icon in self._constellation_icons.items():
+            if icon.isNull():
+                raise FileNotFoundError(
+                    f"Could not load constellation icon: {icon_dir / f'{key}.png'}"
+                )
         self._load_ranks()
         self.scale = 1.0
         self.offset = QPointF(0, 0)
@@ -378,18 +391,17 @@ class SkillMapCanvas(QWidget):
                 painter.drawLine(int(p.x), int(p.y), int(node.x), int(node.y))
 
     def _draw_constellation_labels(self, painter):
-        """Large faint zodiac glyphs and names behind each figure."""
-        for color, glyph, name, cx, cy in CONSTELLATION_LABELS:
-            glyph_c = QColor(color)
-            glyph_c.setAlpha(70)
-            font = QFont("Segoe UI Symbol")
-            font.setPixelSize(40)
-            painter.setFont(font)
-            painter.setPen(glyph_c)
-            painter.drawText(
-                QRectF(cx - 200, cy, 400, 50),
-                Qt.AlignmentFlag.AlignCenter, glyph,
+        """Large faint zodiac icons and names behind each figure."""
+        for icon_key, name, cx, cy in CONSTELLATION_LABELS:
+            painter.save()
+            painter.setOpacity(0.2)
+            painter.drawPixmap(
+                QRectF(cx - 24, cy, 48, 48),
+                self._constellation_icons[icon_key],
+                QRectF(self._constellation_icons[icon_key].rect()),
             )
+            painter.restore()
+
             name_c = QColor("#ffffff")
             name_c.setAlpha(36)
             font2 = QFont()
