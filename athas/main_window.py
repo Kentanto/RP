@@ -21,6 +21,7 @@ from athas.notification_widget import NotificationWidget
 from athas.settings_panel import SettingsPanel
 from athas.stats_widget import StatsWidget
 from athas.ability_tree_panel import AbilityTreePanel
+from athas.skills_manager import SkillManager
 
 
 class HoverButton(QPushButton):
@@ -237,6 +238,7 @@ class MainWindow(QMainWindow):
         # otherwise _build_content()'s inventory panel gets clobbered.
         self._manager: MissionManager | None = None
         self._inv_manager: InventoryManager | None = None
+        self._skills_manager: SkillManager | None = None
         self._inv_panel: InventoryPanel | None = None
         self._git_sync: GitSyncWorker | None = None
         self._scan_timer: QTimer | None = None
@@ -328,17 +330,22 @@ class MainWindow(QMainWindow):
             cache_dir=str(cache_dir),
             rp_root=str(rp),
         )
+        self._skills_manager = SkillManager(rp / "skills" / "skills.json")
+        self._skills = self._skills_manager.load_skills()
         if self._inv_panel is not None:
             self._inv_panel.inv_manager = self._inv_manager
             self._inv_panel.refresh()
         if self.config.get("git_sync", "enabled", True):
-            folders = self.config.get("git_sync", "folders", "missions,completed_missions,items,icons")
+            folders = self.config.get(
+                "git_sync", "folders",
+                "missions,completed_missions,items,icons,cache,skills",
+            )
             sync_paths = [p.strip() for p in str(folders).split(",") if p.strip()]
             # The completed-missions folder is part of the mission pipeline —
             # always sync it alongside the active missions folder.
             if "missions" in sync_paths and "completed_missions" not in sync_paths:
                 sync_paths.append("completed_missions")
-            for required_path in ("missions", "completed_missions", "cache"):
+            for required_path in ("missions", "completed_missions", "cache", "skills"):
                 if required_path not in sync_paths:
                     sync_paths.append(required_path)
             self._git_sync = GitSyncWorker(
@@ -498,7 +505,26 @@ class MainWindow(QMainWindow):
         # ── Page 3 : ABILITY TREE ──
         self._ability_panel = AbilityTreePanel(self.config, on_back=lambda: self._show_page(0))
         self._content_pages.addWidget(self._ability_panel)
+        skills_page = QFrame()
+        skills_page.setStyleSheet("background: transparent; border: none;")
+        skills_layout = QVBoxLayout(skills_page)
+        skills_layout.setContentsMargins(32, 32, 32, 32)
+        skills_title = QLabel("SKILLS")
+        skills_title.setStyleSheet(
+            f"color: {WHITE}; font-size: 28px; font-weight: bold; letter-spacing: 3px;"
+        )
+        skills_layout.addWidget(skills_title)
+        skills_line = QFrame()
+        skills_line.setFixedHeight(2)
+        skills_line.setStyleSheet(f"background-color: {CYAN}44;")
+        skills_layout.addWidget(skills_line)
+        skills_empty = QLabel("You have no skills, loser.")
+        skills_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        skills_empty.setStyleSheet("color: #888; font-size: 16px;")
+        skills_layout.addWidget(skills_empty, 1)
+        self._content_pages.addWidget(skills_page)
         self._stats_widget.abilities_clicked.connect(lambda: self._show_page(3))
+        self._stats_widget.skills_clicked.connect(lambda: self._show_page(4))
 
         return self._content_pages
 

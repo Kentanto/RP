@@ -22,8 +22,8 @@ from typing import Any
 from PySide6.QtCore import QTimer, QObject, Signal
 
 # Folders synced from the remote, relative to the repo root.
-DEFAULT_SYNC_PATHS = ("missions", "completed_missions", "items", "icons", "cache")
-AUTOSAVE_PATHS = ("cache", "completed_missions", "missions")
+DEFAULT_SYNC_PATHS = ("missions", "completed_missions", "items", "icons", "cache", "skills")
+AUTOSAVE_PATHS = ("cache", "completed_missions", "missions", "skills")
 AUTOSAVE_EXTS = {".json", ".db"}
 AUTOSAVE_DELAY_MS = 30000
 

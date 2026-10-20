@@ -14,6 +14,7 @@ python main.py
 | `completed_missions/` | Missions retired after completion; setting `"completed": false` restores one |
 | `draft_missions/` | Hidden WIP missions (gitignored) |
 | `cache/` | Player cache and inventory database (synced by git) |
+| `skills/` | Authored skill definitions stored as JSON |
 | `icons/` | `background_menu.png` used as fullscreen background |
 | `sounds/` | SFX files reserved for future use |
 | `library/` | Word/name libraries used to generate artifacts |
@@ -47,6 +48,28 @@ recorded XP and unspent point rewards from the player's balances.
 ### Mission zoom
 The MISSIONS tab has `- / % / + / RESET` zoom controls (60%–200%). The chosen
 size is saved in each player's config and also scales the mission detail view.
+
+### Skills
+The dashboard's SKILLS button opens a separate empty page; it does not replace
+the constellation ability tree. Skill definitions are stored in
+`skills/skills.json`. Add definitions to its `skills` array; for example:
+```json
+{
+  "skills": [
+    {
+      "id": "quick-strike",
+      "name": "Quick Strike",
+      "description": "A swift attack."
+    }
+  ]
+}
+```
+The app reads these definitions through `SkillManager.load_skills()`; create,
+edit, and remove skills by changing the JSON file. The constellation tree
+stores its ranks separately under the `constellations` key in player config.
+Existing constellation ranks saved under the old `skills` key are migrated
+automatically. The skills folder is included in git sync and autosave when sync
+is enabled.
 
 ## Mission file format
 JSON files (`*.json`) inside `missions/`:

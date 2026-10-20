@@ -158,19 +158,32 @@ class SkillMapCanvas(QWidget):
             self.update()
 
     def _load_ranks(self):
+        legacy_skills = self.config.data.get("skills")
+        constellation_ranks = self.config.data.get("constellations")
+        if not isinstance(constellation_ranks, dict):
+            constellation_ranks = {}
+            self.config.data["constellations"] = constellation_ranks
+
+        if isinstance(legacy_skills, dict):
+            for node_id in self.nodes:
+                if node_id in legacy_skills:
+                    constellation_ranks.setdefault(node_id, legacy_skills.pop(node_id))
+            if not legacy_skills:
+                self.config.data.pop("skills", None)
+
         for node in self.nodes.values():
             saved_rank = self.config.get_nested(
-                "skills", node.id, default=node.current_rank,
+                "constellations", node.id, default=node.current_rank,
             )
             if not isinstance(saved_rank, int) or isinstance(saved_rank, bool):
                 saved_rank = node.current_rank
             node.current_rank = max(0, min(saved_rank, node.max_rank))
-            self.config.set_nested("skills", node.id, node.current_rank, save=False)
+            self.config.set_nested("constellations", node.id, node.current_rank, save=False)
         self.config.save()
 
     def _save_ranks(self):
         for node in self.nodes.values():
-            self.config.set_nested("skills", node.id, node.current_rank, save=False)
+            self.config.set_nested("constellations", node.id, node.current_rank, save=False)
         self.config.save()
 
     def _can_unlock(self, node_id):
