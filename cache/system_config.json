@@ -1,0 +1,59 @@
+{
+  "loading_screen": {
+    "enabled": false
+  },
+  "audio": {
+    "enabled": true,
+    "volume": 0.1
+  },
+  "notifications": {
+    "enabled": true,
+    "duration_ms": 8000
+  },
+  "git_sync": {
+    "enabled": false,
+    "interval_ms": 15000,
+    "folders": "missions,items,icons"
+  },
+  "player": {
+    "name": "Wanderer",
+    "rank": "E",
+    "level": 2,
+    "xp": 150,
+    "health": 100,
+    "magic": 50,
+    "attack": 10,
+    "defense": 5,
+    "speed": 8,
+    "temp_points": 10,
+    "temp_allocations": {
+      "health": 0,
+      "magic": 0,
+      "attack": 0,
+      "defense": 0,
+      "speed": 0
+    },
+    "constellation_points": 0
+  },
+  "missions": {
+    "zoom": 1.0
+  },
+  "skills": {
+    "A_Prevalence": 1,
+    "A_temp0": 0,
+    "A_temp1": 0,
+    "A_temp2": 0,
+    "A_temp3": 0,
+    "A_temp4": 0,
+    "A_temp5": 0,
+    "A_temp6": 0,
+    "B_Scales": 1,
+    "B_Fortune": 0,
+    "B_temp1": 0,
+    "B_temp2": 0,
+    "B_temp3": 0,
+    "B_temp4": 0,
+    "B_temp5": 0,
+    "B_temp6": 0
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "credited": {
+    "01_complete_your_first_task.json": {
+      "title": "Complete Your First Task",
+      "hash": "291d6d0d8af4eee9",
+      "xp": 50,
+      "credited_at": "2026-10-19T13:27:24"
+    },
+    "02_explore_the_unknown.json": {
+      "title": "Explore the Unknown Dungeon",
+      "hash": "09a307f944fae31e",
+      "xp": 200,
+      "credited_at": "2026-10-19T13:33:39"
+    }
+  }
+}
