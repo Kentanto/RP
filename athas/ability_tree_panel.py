@@ -569,6 +569,9 @@ class AbilityTreePanel(QFrame):
     def _on_cp_changed(self, value):
         self._cp_label.setText(f"✦ {value}")
 
+    def refresh_points(self):
+        self._cp_label.setText(f"✦ {self._config.get('player', 'constellation_points', 0)}")
+
     def _zoom_in(self):
         self._canvas.scale = min(3.0, self._canvas.scale * 1.2)
         self._canvas.update()

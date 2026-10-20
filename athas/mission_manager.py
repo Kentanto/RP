@@ -5,8 +5,7 @@ and persists a cache of previously seen files to trigger notifications.
 A mission counts as completed when its JSON carries the hidden author mark
 ("completed": true — there is no UI toggle for players) or when its file sits
 in the completed folder without an explicit false mark. Completed files are
-credited (notification + XP) once per file name; setting the mark to false in
-the completed folder restores the mission and revokes its recorded XP.
+credited once per file name; setting the mark to false restores recorded rewards.
 """
 import hashlib
 import json
@@ -25,6 +24,13 @@ def _parse_xp(data: Dict[str, Any]) -> int:
     return 0
 
 
+def _parse_points(data: Dict[str, Any], field: str) -> int:
+    raw = data.get(field)
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        return max(0, raw)
+    return 0
+
+
 @dataclass
 class Mission:
     title: str
@@ -37,6 +43,8 @@ class Mission:
     completion_marked: bool = False
     completed_at: str = ""
     xp: int = 0
+    constellation_points: int = 0
+    skill_points: int = 0
 
     @classmethod
     def from_json(cls, raw: str, source: str) -> "Mission":
@@ -72,6 +80,8 @@ class Mission:
             completed=completed,
             completion_marked=completion_marked,
             xp=_parse_xp(data),
+            constellation_points=_parse_points(data, "constellation_points"),
+            skill_points=_parse_points(data, "skill_points"),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -82,6 +92,8 @@ class Mission:
             "difficulty": self.difficulty,
             "reward": self.reward,
             "xp": self.xp,
+            "constellation_points": self.constellation_points,
+            "skill_points": self.skill_points,
             "completed": self.completed,
         }
 
@@ -94,7 +106,7 @@ class MissionManager:
     mark ("completed": true) or when its file sits in the completed folder
     without an explicit false mark. Completed files are credited exactly once
     per file name; explicitly uncompleted files are restored to the active
-    folder and their recorded XP is revoked.
+    folder and their recorded rewards are revoked.
     """
 
     def __init__(
@@ -105,6 +117,7 @@ class MissionManager:
         on_new_mission: Callable[[Mission], None] | None = None,
         on_completed_mission: Callable[[Mission], None] | None = None,
         on_uncompleted_mission: Callable[[Mission, int], None] | None = None,
+        on_uncompleted_rewards: Callable[[Mission, Dict[str, int]], None] | None = None,
     ):
         self.missions_dir = Path(missions_dir)
         self.completed_dir = (
@@ -116,6 +129,7 @@ class MissionManager:
         self.on_new_mission = on_new_mission
         self.on_completed_mission = on_completed_mission
         self.on_uncompleted_mission = on_uncompleted_mission
+        self.on_uncompleted_rewards = on_uncompleted_rewards
 
         self.missions: Dict[str, Mission] = {}
         self._seen_hashes: Dict[str, str] = {}
@@ -184,6 +198,8 @@ class MissionManager:
                 "title": mission.title,
                 "hash": self._file_hash(raw),
                 "xp": mission.xp,
+                "constellation_points": mission.constellation_points,
+                "skill_points": mission.skill_points,
                 "credited_at": mission.completed_at,
             }
             self._save_credited()
@@ -217,10 +233,15 @@ class MissionManager:
         credited = self._credited.pop(name, None)
         if credited is not None:
             self._save_credited()
+            rewards = {
+                field: max(0, value) if isinstance(value, int) and not isinstance(value, bool) else 0
+                for field in ("xp", "constellation_points", "skill_points")
+                for value in (credited.get(field, 0),)
+            }
             if self.on_uncompleted_mission:
-                raw_xp = credited.get("xp", 0)
-                xp = raw_xp if isinstance(raw_xp, int) and not isinstance(raw_xp, bool) else 0
-                self.on_uncompleted_mission(mission, max(0, xp))
+                self.on_uncompleted_mission(mission, rewards["xp"])
+            if self.on_uncompleted_rewards:
+                self.on_uncompleted_rewards(mission, rewards)
 
         key = str(target.resolve())
         self.missions[key] = mission

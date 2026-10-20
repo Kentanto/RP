@@ -22,7 +22,10 @@ from typing import Any
 from PySide6.QtCore import QTimer, QObject, Signal
 
 # Folders synced from the remote, relative to the repo root.
-DEFAULT_SYNC_PATHS = ("missions", "completed_missions", "items", "icons")
+DEFAULT_SYNC_PATHS = ("missions", "completed_missions", "items", "icons", "cache")
+AUTOSAVE_PATHS = ("cache", "completed_missions", "missions")
+AUTOSAVE_EXTS = {".json", ".db"}
+AUTOSAVE_DELAY_MS = 30000
 
 # File types worth listing for the "new files" signal.
 TEXT_EXTS = {".txt", ".md", ".json"}
@@ -72,17 +75,38 @@ class GitSyncWorker(QObject):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._do_sync)
         self._last_known_files: set = set()
+        self._autosave_snapshot: dict[str, tuple[int, int]] = {}
+        self._pending_autosave_paths: set[str] = set()
+        self._push_pending = False
+
+        self._autosave_watch = QTimer(self)
+        self._autosave_watch.timeout.connect(self._poll_autosave_changes)
+        self._autosave_debounce = QTimer(self)
+        self._autosave_debounce.setSingleShot(True)
+        self._autosave_debounce.timeout.connect(self._commit_local_changes)
 
     # ── lifecycle ──────────────────────────────────────────────
     def start(self):
         # Initial scan
         self._last_known_files = self._scan_sync_files()
-        # First sync
-        self._do_sync()
+        if not (self.repo_path / ".git").exists() or self._resolve_remote_ref() is None:
+            self._do_sync()
+            self._timer.start(self.interval_ms)
+            return
+        self._autosave_snapshot = self._scan_autosave_files()
+        self._pending_autosave_paths.update(self._git_changed_autosave_paths())
+        if self._pending_autosave_paths:
+            self._autosave_debounce.start(AUTOSAVE_DELAY_MS)
+        else:
+            self._do_sync()
+            self._autosave_snapshot = self._scan_autosave_files()
         self._timer.start(self.interval_ms)
+        self._autosave_watch.start(1000)
 
     def stop(self):
         self._timer.stop()
+        self._autosave_watch.stop()
+        self._autosave_debounce.stop()
 
     def force_pull(self):
         self._do_sync()
@@ -99,9 +123,126 @@ class GitSyncWorker(QObject):
                     files.add(str(p.resolve()))
         return files
 
+    def _scan_autosave_files(self) -> dict[str, tuple[int, int]]:
+        files = {}
+        for name in AUTOSAVE_PATHS:
+            folder = self.repo_path / name
+            if not folder.is_dir():
+                continue
+            for path in folder.rglob("*"):
+                if not path.is_file() or path.suffix.lower() not in AUTOSAVE_EXTS:
+                    continue
+                try:
+                    stat = path.stat()
+                    files[path.relative_to(self.repo_path).as_posix()] = (stat.st_mtime_ns, stat.st_size)
+                except OSError:
+                    continue
+        return files
+
+    def _poll_autosave_changes(self):
+        current = self._scan_autosave_files()
+        changed = {
+            path for path in self._autosave_snapshot.keys() | current.keys()
+            if self._autosave_snapshot.get(path) != current.get(path)
+        }
+        self._autosave_snapshot = current
+        if changed:
+            self._pending_autosave_paths.update(changed)
+            self._autosave_debounce.start(AUTOSAVE_DELAY_MS)
+
+    def _git_changed_autosave_paths(self) -> set[str]:
+        result = self._run_git([
+            "status", "--porcelain=v1", "-z", "--untracked-files=all", "--",
+            *AUTOSAVE_PATHS,
+        ])
+        changed = set()
+        remote_ref = self._resolve_remote_ref()
+        for record in (result.stdout or "").split("\0"):
+            if len(record) < 4:
+                continue
+            index_status, worktree_status = record[0], record[1]
+            path = record[3:]
+            if Path(path).suffix.lower() not in AUTOSAVE_EXTS:
+                continue
+            if record.startswith("??") or worktree_status != " ":
+                changed.add(path)
+            elif index_status != " ":
+                remote_diff = self._run_git(["diff", "--quiet", remote_ref or "HEAD", "--", path])
+                if remote_diff.returncode != 0:
+                    changed.add(path)
+        return changed
+
+    def _commit_local_changes(self):
+        paths = sorted(self._pending_autosave_paths)
+        if not paths:
+            return
+
+        changed = self._git_changed_autosave_paths()
+        paths = [path for path in paths if path in changed]
+        if not paths:
+            self._pending_autosave_paths.clear()
+            self._autosave_snapshot = self._scan_autosave_files()
+            return
+
+        added = self._run_git(["add", "-A", "--", *paths])
+        if added.returncode != 0:
+            self._autosave_failed("Could not stage local changes")
+            return
+        staged = self._run_git(["diff", "--cached", "--quiet", "--", *paths])
+        if staged.returncode == 0:
+            self._pending_autosave_paths.clear()
+            self._autosave_snapshot = self._scan_autosave_files()
+            return
+
+        commit = self._run_git(["commit", "--only", "-m", "save file", "--", *paths])
+        if commit.returncode != 0:
+            message = (commit.stderr or commit.stdout or "Git commit failed").strip().splitlines()
+            self._autosave_failed(message[-1] if message else "Git commit failed")
+            return
+
+        self._pending_autosave_paths.clear()
+        self._autosave_snapshot = self._scan_autosave_files()
+        self._push_pending = True
+        if self._push_local_changes():
+            self.pull_complete.emit(True, "Local changes saved and pushed")
+
+    def _push_local_changes(self) -> bool:
+        result = self._run_git(["push"])
+        if result.returncode == 0:
+            self._push_pending = False
+            return True
+
+        fetch = self._run_git(["fetch", "--quiet", "origin"])
+        remote_ref = self._resolve_remote_ref() if fetch.returncode == 0 else None
+        if remote_ref is not None:
+            rebase = self._run_git(["rebase", "--autostash", remote_ref])
+            if rebase.returncode == 0:
+                result = self._run_git(["push"])
+                if result.returncode == 0:
+                    self._push_pending = False
+                    return True
+            else:
+                self._run_git(["rebase", "--abort"])
+                result = rebase
+
+        message = (result.stderr or result.stdout or "Git push failed").strip().splitlines()
+        self.pull_complete.emit(False, message[-1] if message else "Git push failed")
+        return False
+
+    def _autosave_failed(self, message: str):
+        self.pull_complete.emit(False, message)
+        self._autosave_debounce.start(AUTOSAVE_DELAY_MS)
+
     # ── sync ───────────────────────────────────────────────────
     def _do_sync(self):
         """Fetch the remote and copy only the sync folders from it."""
+        self._poll_autosave_changes()
+        if self._push_pending and not self._push_local_changes():
+            return
+        if self._pending_autosave_paths:
+            self.pull_complete.emit(False, "Local changes waiting to be saved")
+            return
+
         success = False
         msg = ""
         new_files: list = []
@@ -157,6 +298,7 @@ class GitSyncWorker(QObject):
                 msg = "Content up to date"
             if conflicts:
                 msg += f" — {conflicts} file(s) merged with conflicts"
+            self._autosave_snapshot = self._scan_autosave_files()
 
         except Exception as e:
             msg = str(e)

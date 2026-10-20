@@ -320,7 +320,7 @@ class MainWindow(QMainWindow):
             completed_dir=str(rp / "completed_missions"),
             on_new_mission=self._on_new_mission,
             on_completed_mission=self._on_mission_completed,
-            on_uncompleted_mission=self._on_mission_uncompleted,
+            on_uncompleted_rewards=self._on_mission_uncompleted,
         )
         self._inv_manager = InventoryManager(
             items_dir=str(items_dir),
@@ -338,6 +338,9 @@ class MainWindow(QMainWindow):
             # always sync it alongside the active missions folder.
             if "missions" in sync_paths and "completed_missions" not in sync_paths:
                 sync_paths.append("completed_missions")
+            for required_path in ("missions", "completed_missions", "cache"):
+                if required_path not in sync_paths:
+                    sync_paths.append(required_path)
             self._git_sync = GitSyncWorker(
                 repo_path=str(rp),
                 sync_paths=sync_paths,
@@ -671,11 +674,17 @@ class MainWindow(QMainWindow):
         self._detail_view.raise_()
 
     def _on_mission_completed(self, mission: Mission):
-        """The author marked a mission as done — grant its XP reward once."""
+        """The author marked a mission as done — grant its numeric rewards once."""
         levels_gained = 0
         if mission.xp > 0:
             levels_gained = self._stats_widget.grant_xp(mission.xp)
             self._refresh_sidebar_player()
+        if mission.skill_points > 0:
+            self._stats_widget.grant_skill_points(mission.skill_points)
+        if mission.constellation_points > 0:
+            points = self.config.get("player", "constellation_points", 0)
+            self.config.set("player", "constellation_points", max(0, points) + mission.constellation_points)
+            self._ability_panel.refresh_points()
         if not self.config.get("notifications", "enabled", True):
             return
         description = f"Reward: {mission.reward}" if mission.reward else "The System acknowledges your success."
@@ -689,11 +698,20 @@ class MainWindow(QMainWindow):
             header="MISSION COMPLETED",
         )
 
-    def _on_mission_uncompleted(self, mission: Mission, xp: int):
-        """Revoke the XP previously granted for a mission."""
+    def _on_mission_uncompleted(self, mission: Mission, rewards: dict):
+        """Revoke the numeric rewards previously granted for a mission."""
+        xp = rewards.get("xp", 0)
+        skill_points = rewards.get("skill_points", 0)
+        constellation_points = rewards.get("constellation_points", 0)
         if xp > 0:
             self._stats_widget.remove_xp(xp)
             self._refresh_sidebar_player()
+        if skill_points > 0:
+            self._stats_widget.remove_skill_points(skill_points)
+        if constellation_points > 0:
+            points = self.config.get("player", "constellation_points", 0)
+            self.config.set("player", "constellation_points", max(0, points - constellation_points))
+            self._ability_panel.refresh_points()
 
     def _on_new_mission(self, mission: Mission):
         if not self.config.get("notifications", "enabled", True):

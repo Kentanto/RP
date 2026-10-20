@@ -5,5 +5,7 @@
   "difficulty": "C",
   "reward": "Bronze Key, +200 EXP",
   "xp": 200,
+  "constellation_points": 0,
+  "skill_points": 0,
   "completed": false
 }

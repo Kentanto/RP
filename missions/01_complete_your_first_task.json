@@ -5,5 +5,7 @@
   "difficulty": "E",
   "reward": "+50 EXP",
   "xp": 50,
+  "constellation_points": 0,
+  "skill_points": 0,
   "completed": false
 }
