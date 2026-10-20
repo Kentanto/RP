@@ -2,10 +2,11 @@
 from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QFileSystemWatcher, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
+    QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from athas.skills_manager import SkillManager
@@ -29,15 +30,20 @@ class SkillCard(QFrame):
         parent=None,
     ):
         super().__init__(parent)
+        # The upgrade callback runs through a bound method below: connecting
+        # the button straight to a Python lambda crashes PySide6 on teardown
+        # (stale global-receiver objects when cards are destroyed).
+        self._on_upgrade_cb: Callable[[], None] | None = on_upgrade
         self.setStyleSheet(
             f"QFrame {{ background-color: rgba(10,10,16,220); border: 1px solid {CYAN}55; }}"
         )
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(18)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(12)
 
         image = QLabel()
-        image.setFixedSize(144, 144)
+        image.setFixedSize(88, 88)
         image.setAlignment(Qt.AlignmentFlag.AlignCenter)
         image.setStyleSheet("background-color: #101016; border: 1px solid #30303a; color: #777;")
         pixmap = self._load_image(image_path)
@@ -54,13 +60,14 @@ class SkillCard(QFrame):
         layout.addWidget(image)
 
         details = QVBoxLayout()
+        details.setSpacing(5)
         title = QLabel(skill["title"])
-        title.setStyleSheet(f"color: {WHITE}; font-size: 22px; font-weight: bold;")
+        title.setStyleSheet(f"color: {WHITE}; font-size: 18px; font-weight: bold;")
         details.addWidget(title)
 
         description = QLabel(skill["description"])
         description.setWordWrap(True)
-        description.setStyleSheet("color: #aaa; font-size: 13px;")
+        description.setStyleSheet("color: #aaa; font-size: 12px;")
         details.addWidget(description)
 
         max_level = skill["max_level"]
@@ -69,12 +76,9 @@ class SkillCard(QFrame):
             if level == 0
             else skill["base_damage"] + (level - 1) * skill["damage_per_level"]
         )
-        stats = QLabel(
-            f"Mana cost: {skill['mana_cost']}    "
-            f"Damage: {damage}    "
-            f"Level: {level}/{max_level}"
-        )
-        stats.setStyleSheet(f"color: {CYAN}; font-size: 12px; font-weight: bold;")
+        stats = QLabel(f"MANA {skill['mana_cost']} · DMG {damage} · LV {level}/{max_level}")
+        stats.setWordWrap(True)
+        stats.setStyleSheet(f"color: {CYAN}; font-size: 10px; font-weight: bold;")
         details.addWidget(stats)
         details.addStretch()
 
@@ -83,7 +87,7 @@ class SkillCard(QFrame):
         upgrade.setStyleSheet(f"""
             QPushButton {{
                 background-color: {CYAN}11; border: 1px solid {CYAN};
-                color: {CYAN}; padding: 8px 16px;
+                color: {CYAN}; padding: 5px 8px; font-size: 10px;
             }}
             QPushButton:hover {{ background-color: {CYAN}; color: #0a0a0a; }}
             QPushButton:disabled {{ color: #666; border-color: #444; background: transparent; }}
@@ -94,11 +98,15 @@ class SkillCard(QFrame):
         else:
             cost = skill["upgrade_cost"]
             action = "UNLOCK" if level == 0 else "UPGRADE"
-            upgrade.setText(f"{action} · {cost} SKILL POINT" + ("S" if cost != 1 else ""))
+            upgrade.setText(f"{action} · {cost} SP")
             upgrade.setEnabled(skill_points >= cost)
-            upgrade.clicked.connect(on_upgrade)
+            upgrade.clicked.connect(self._handle_upgrade_click)
         details.addWidget(upgrade, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addLayout(details, 1)
+
+    def _handle_upgrade_click(self):
+        if self._on_upgrade_cb is not None:
+            self._on_upgrade_cb()
 
     @staticmethod
     def _load_image(path: Path) -> QPixmap | None:
@@ -134,18 +142,79 @@ class SkillsPanel(QWidget):
         line.setStyleSheet(f"background-color: {CYAN}44;")
         layout.addWidget(line)
 
+        self._error_label = QLabel()
+        self._error_label.setWordWrap(True)
+        self._error_label.setStyleSheet("color: #ff9800; font-size: 11px;")
+        self._error_label.hide()
+        layout.addWidget(self._error_label)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setStyleSheet("background: transparent;")
         self._list = QWidget()
         self._list.setStyleSheet("background: transparent;")
-        self._list_layout = QVBoxLayout(self._list)
+        self._list_layout = QGridLayout(self._list)
         self._list_layout.setContentsMargins(0, 0, 8, 0)
         self._list_layout.setSpacing(12)
+        self._list_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._cards: list[SkillCard] = []
+        self._empty_state: QLabel | None = None
         scroll.setWidget(self._list)
         layout.addWidget(scroll, 1)
+
+        # Reload automatically when skill files are added, removed, or edited.
+        # The short debounce batches bursts of events (e.g. a git pull).
+        self._reload_debounce = QTimer(self)
+        self._reload_debounce.setSingleShot(True)
+        self._reload_debounce.setInterval(300)
+        self._reload_debounce.timeout.connect(self.refresh)
+        self._watcher = QFileSystemWatcher(self)
+        self._watcher.directoryChanged.connect(self._on_skills_folder_changed)
+        self._watcher.fileChanged.connect(self._on_skills_folder_changed)
+        self._watched_paths: set[str] = set()
         self.refresh()
+
+    def _watch_skills_folder(self):
+        """Track the skills folder and its files so any change reloads it."""
+        paths = {str(self.skills_manager.skills_dir)}
+        paths.update(str(file_path) for file_path in self.skills_manager.skill_files())
+        # Re-register on every call: Qt silently drops a file's watch when the
+        # file is deleted or replaced, so stale bookkeeping must never block
+        # a fresh addPath for a path that exists again.
+        for path in self._watched_paths - paths:
+            self._watcher.removePath(path)
+        self._watched_paths.clear()
+        for path in paths:
+            if self._watcher.addPath(path):
+                self._watched_paths.add(path)
+
+    def _on_skills_folder_changed(self):
+        # A watched file may have been replaced or deleted, so re-register
+        # the current paths before reloading.
+        self._watch_skills_folder()
+        self._reload_debounce.start()
+
+    @staticmethod
+    def _columns_for_width(width: int) -> int:
+        return max(1, (width + 12) // 312)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._arrange_cards()
+
+    def _arrange_cards(self):
+        columns = self._columns_for_width(self._list.width())
+        for column in range(self._list_layout.columnCount()):
+            self._list_layout.setColumnStretch(column, 0)
+        for column in range(columns):
+            self._list_layout.setColumnStretch(column, 1)
+        for index, card in enumerate(self._cards):
+            self._list_layout.removeWidget(card)
+            self._list_layout.addWidget(card, index // columns, index % columns)
+        if self._empty_state is not None:
+            self._list_layout.removeWidget(self._empty_state)
+            self._list_layout.addWidget(self._empty_state, 0, 0)
 
     def refresh(self):
         skill_points = _nonnegative_int(self.config.get("player", "skill_points", 0))
@@ -154,31 +223,46 @@ class SkillsPanel(QWidget):
         while self._list_layout.count():
             item = self._list_layout.takeAt(0)
             widget = item.widget()
+            del item  # the caller owns taken layout items; release them now
             if widget is not None:
-                widget.deleteLater()
+                # Detach instead of deleteLater(): these widgets are Python-
+                # owned, so dropping their references destroys them safely
+                # without deferred C++ deletes.
+                widget.setParent(None)
+        self._cards.clear()
+        self._empty_state = None
 
         skills = self.skills_manager.load_skills()
+        load_errors = self.skills_manager.load_errors
+        if load_errors:
+            self._error_label.setText("\n".join(load_errors))
+            self._error_label.show()
+        else:
+            self._error_label.clear()
+            self._error_label.hide()
+
         if not skills:
-            empty = QLabel("You have no skills, loser.")
-            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty.setStyleSheet("color: #888; font-size: 16px;")
-            self._list_layout.addWidget(empty)
+            self._empty_state = QLabel("You have no skills, loser.")
+            self._empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._empty_state.setStyleSheet("color: #888; font-size: 16px;")
         else:
             for skill in skills:
                 skill_id = skill["id"]
                 level = _nonnegative_int(
                     self.config.get_nested("player", "skill_levels", skill_id, default=0)
                 )
-                image_path = self.skills_manager.skills_file.parent / skill["image"]
+                image_path = self.skills_manager.skills_dir / skill["image"]
                 card = SkillCard(
                     skill,
                     level,
                     skill_points,
                     image_path,
-                    lambda _, current_skill=skill: self._upgrade(current_skill),
+                    lambda current_skill=skill: self._upgrade(current_skill),
                 )
-                self._list_layout.addWidget(card)
-        self._list_layout.addStretch()
+                self._cards.append(card)
+        self._arrange_cards()
+        # Watch any files that appeared so later edits also reload.
+        self._watch_skills_folder()
 
     def _upgrade(self, skill: dict[str, Any]):
         points = _nonnegative_int(self.config.get("player", "skill_points", 0))

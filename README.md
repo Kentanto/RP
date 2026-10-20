@@ -51,29 +51,31 @@ size is saved in each player's config and also scales the mission detail view.
 
 ### Skills
 The dashboard's SKILLS button opens a skill catalogue separate from the
-constellation ability tree. Skill definitions are stored in
-`skills/skills.json`. Add definitions to its `skills` array; for example:
+constellation ability tree. Every `*.json` file inside `skills/` is loaded —
+one skill per file is the simplest format:
 ```json
 {
-  "skills": [
-    {
-      "id": "quick-strike",
-      "title": "Quick Strike",
-      "description": "A swift attack.",
-      "image": "images/quick-strike.svg",
-      "mana_cost": 8,
-      "max_level": 5,
-      "upgrade_cost": 1,
-      "base_damage": 20,
-      "damage_per_level": 10
-    }
-  ]
+  "id": "quick-strike",
+  "title": "Quick Strike",
+  "description": "A swift attack.",
+  "image": "images/quick-strike.svg",
+  "mana_cost": 8,
+  "max_level": 5,
+  "upgrade_cost": 1,
+  "base_damage": 20,
+  "damage_per_level": 10
 }
 ```
-The app reads these definitions through `SkillManager.load_skills()`; create,
-edit, and remove skills by changing the JSON file. Image paths are relative to
-`skills/skills.json`. Skill upgrades cost the configured `upgrade_cost` each
-level; the resulting damage is calculated from `base_damage` and
+A file may also hold a plain list of skills or the wrapped
+`{"skills": [...]}` format (like `skills/skills.json`). Files are read in
+alphabetical order, and image paths are relative to the `skills/` folder.
+The app reads these definitions through `SkillManager.load_skills()`; the
+catalogue reloads automatically whenever a skill file is added, removed, or
+edited — including changes arriving through git sync. Files that fail
+validation, or repeat a skill id that an earlier file already defined, are
+skipped with an orange warning shown on the skills page, so one bad file
+never breaks the rest. Skill upgrades cost the configured `upgrade_cost`
+each level; the resulting damage is calculated from `base_damage` and
 `damage_per_level`. Player skill points are a separate balance awarded by
 mission `skill_points` rewards. The constellation tree stores its ranks
 separately under the `constellations` key in player config.

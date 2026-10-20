@@ -6,90 +6,113 @@ from pathlib import Path
 from athas.skills_manager import SkillManager
 
 
+def _skill(**overrides) -> dict:
+    skill = {
+        "id": "quick-strike",
+        "title": "Quick Strike",
+        "description": "A swift attack.",
+        "image": "images/quick-strike.svg",
+        "mana_cost": 8,
+        "max_level": 5,
+        "upgrade_cost": 1,
+        "base_damage": 20,
+        "damage_per_level": 10,
+    }
+    skill.update(overrides)
+    return skill
+
+
 class SkillManagerTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
-        self.skills_file = Path(self.temp_dir.name) / "skills.json"
-        self.manager = SkillManager(self.skills_file)
+        self.skills_dir = Path(self.temp_dir.name)
+        self.manager = SkillManager(self.skills_dir)
 
-    def test_missing_file_has_no_skills(self):
-        self.assertEqual(self.manager.load_skills(), [])
+    def write(self, name: str, payload) -> Path:
+        path = self.skills_dir / name
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
 
-    def test_project_json_defines_fireball(self):
-        project_file = Path(__file__).parent.parent / "skills" / "skills.json"
-        fireball = SkillManager(project_file).load_skills()[0]
+    def test_missing_folder_has_no_skills(self):
+        self.assertEqual(SkillManager(self.skills_dir / "missing").load_skills(), [])
+
+    def test_accepts_a_single_file_path(self):
+        self.write("skills.json", {"skills": [_skill()]})
+
+        manager = SkillManager(self.skills_dir / "skills.json")
+
+        self.assertEqual(manager.skills_dir, self.skills_dir)
+        self.assertEqual(len(manager.load_skills()), 1)
+
+    def test_project_folder_defines_fireball(self):
+        project_folder = Path(__file__).parent.parent / "skills"
+        fireball = SkillManager(project_folder).load_skills()[0]
 
         self.assertEqual(fireball["id"], "fireball")
         self.assertEqual(fireball["title"], "Fireball")
         self.assertEqual(fireball["mana_cost"], 10)
-        self.assertTrue((project_file.parent / fireball["image"]).is_file())
+        self.assertTrue((project_folder / fireball["image"]).is_file())
+
+    def test_loads_every_json_file_in_the_folder(self):
+        self.write("skills.json", {"skills": [_skill()]})
+        self.write("fireball.json", _skill(id="fireball", title="Fireball"))
+        self.write("bundle.json", [_skill(id="third", title="Third")])
+
+        skills = self.manager.load_skills()
+
+        # Files are read in alphabetical order: bundle, fireball, skills.
+        self.assertEqual([skill["id"] for skill in skills], ["third", "fireball", "quick-strike"])
+        self.assertEqual(self.manager.load_errors, [])
+
+    def test_ignores_non_json_files_and_subfolders(self):
+        (self.skills_dir / "images").mkdir()
+        (self.skills_dir / "images" / "fireball.svg").write_text("<svg/>", encoding="utf-8")
+        (self.skills_dir / "notes.txt").write_text("not a skill", encoding="utf-8")
+
+        self.assertEqual(self.manager.load_skills(), [])
+        self.assertEqual(self.manager.load_errors, [])
 
     def test_loads_authored_json_and_preserves_extra_fields(self):
-        authored = {
-            "skills": [
-                {
-                    "id": "quick-strike",
-                    "title": "Quick Strike",
-                    "description": "A swift attack.",
-                    "image": "images/quick-strike.svg",
-                    "mana_cost": 8,
-                    "max_level": 5,
-                    "upgrade_cost": 1,
-                    "base_damage": 20,
-                    "damage_per_level": 10,
-                }
-            ]
-        }
-        self.skills_file.write_text(json.dumps(authored), encoding="utf-8")
+        authored_skill = _skill()
+        authored_skill["author_note"] = "hidden"
+        self.write("skills.json", {"skills": [authored_skill]})
 
-        self.assertEqual(self.manager.load_skills(), authored["skills"])
+        self.assertEqual(self.manager.load_skills(), [authored_skill])
 
-    def test_rejects_malformed_json_structure(self):
-        self.skills_file.write_text('{"wrong": []}', encoding="utf-8")
+    def test_skips_malformed_json_structure(self):
+        self.write("skills.json", {"wrong": []})
 
-        with self.assertRaisesRegex(ValueError, "must contain a 'skills' list"):
-            self.manager.load_skills()
+        self.assertEqual(self.manager.load_skills(), [])
+        self.assertTrue(self.manager.load_errors)
 
-    def test_rejects_duplicate_ids(self):
-        self.skills_file.write_text(
-            json.dumps(
-                {
-                    "skills": [
-                        {
-                            "id": "same", "title": "One", "description": "", "image": "",
-                            "mana_cost": 0, "max_level": 1, "upgrade_cost": 1,
-                            "base_damage": 0, "damage_per_level": 0,
-                        },
-                        {
-                            "id": "same", "title": "Two", "description": "", "image": "",
-                            "mana_cost": 0, "max_level": 1, "upgrade_cost": 1,
-                            "base_damage": 0, "damage_per_level": 0,
-                        },
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
+    def test_skips_unreadable_json_file_but_loads_others(self):
+        (self.skills_dir / "a-broken.json").write_text("{not json", encoding="utf-8")
+        self.write("b-valid.json", {"skills": [_skill()]})
 
-        with self.assertRaisesRegex(ValueError, "Duplicate skill id"):
-            self.manager.load_skills()
+        self.assertEqual(len(self.manager.load_skills()), 1)
+        self.assertTrue(any("a-broken.json" in error for error in self.manager.load_errors))
 
-    def test_rejects_invalid_mana_cost(self):
-        self.skills_file.write_text(
-            json.dumps(
-                {
-                    "skills": [
-                        {
-                            "id": "fireball", "title": "Fireball", "description": "A spell.",
-                            "image": "", "mana_cost": -1, "max_level": 5, "upgrade_cost": 1,
-                            "base_damage": 25, "damage_per_level": 10,
-                        }
-                    ]
-                }
-            ),
-            encoding="utf-8",
-        )
+    def test_skips_duplicate_ids_across_files(self):
+        self.write("a-first.json", {"skills": [_skill(title="First")]})
+        self.write("b-second.json", {"skills": [_skill(title="Second")]})
 
-        with self.assertRaisesRegex(ValueError, "mana_cost"):
-            self.manager.load_skills()
+        skills = self.manager.load_skills()
+
+        self.assertEqual(len(skills), 1)
+        self.assertEqual(skills[0]["title"], "First")
+        self.assertTrue(any("duplicate" in error for error in self.manager.load_errors))
+
+    def test_skips_invalid_mana_cost(self):
+        self.write("skills.json", {"skills": [_skill(mana_cost=-1)]})
+
+        self.assertEqual(self.manager.load_skills(), [])
+        self.assertTrue(any("mana_cost" in error for error in self.manager.load_errors))
+
+    def test_removed_file_drops_its_skills(self):
+        path = self.write("skills.json", {"skills": [_skill()]})
+        self.assertEqual(len(self.manager.load_skills()), 1)
+
+        path.unlink()
+
+        self.assertEqual(self.manager.load_skills(), [])

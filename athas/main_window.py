@@ -504,7 +504,7 @@ class MainWindow(QMainWindow):
         # ── Page 3 : ABILITY TREE ──
         self._ability_panel = AbilityTreePanel(self.config, on_back=lambda: self._show_page(0))
         self._content_pages.addWidget(self._ability_panel)
-        self._skills_manager = SkillManager(Path(__file__).parent.parent / "skills" / "skills.json")
+        self._skills_manager = SkillManager(Path(__file__).parent.parent / "skills")
         self._skills_panel = SkillsPanel(self.config, self._skills_manager)
         self._content_pages.addWidget(self._skills_panel)
         self._stats_widget.abilities_clicked.connect(lambda: self._show_page(3))
