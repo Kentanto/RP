@@ -620,15 +620,15 @@ class StatsWidget(QWidget):
         amount = max(0, _as_int(amount))
         if amount <= 0:
             return
-        self._pool += amount
-        self._commit_state()
+        points = max(0, _as_int(self.config.get("player", "skill_points", 0)))
+        self.config.set("player", "skill_points", points + amount)
 
     def remove_skill_points(self, amount: int):
         amount = max(0, _as_int(amount))
         if amount <= 0:
             return
-        self._pool = max(0, self._pool - amount)
-        self._commit_state()
+        points = max(0, _as_int(self.config.get("player", "skill_points", 0)))
+        self.config.set("player", "skill_points", max(0, points - amount))
 
     def grant_xp(self, amount: int) -> int:
         """Award XP to the player, rolling over as many level-ups as the

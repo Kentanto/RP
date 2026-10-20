@@ -26,6 +26,7 @@ DEFAULTS = {
         "defense": 5,
         "speed": 8,
         "temp_points": 10,
+        "skill_points": 0,
         "temp_allocations": {
             "health": 0,
             "magic": 0,
@@ -36,6 +37,22 @@ DEFAULTS = {
         "constellation_points": 0,
     },
 }
+
+
+def migrate_constellation_ranks(config, node_ids):
+    """Move legacy constellation ranks from the old skills config section."""
+    legacy_skills = config.data.get("skills")
+    constellation_ranks = config.data.get("constellations")
+    if not isinstance(constellation_ranks, dict):
+        constellation_ranks = {}
+        config.data["constellations"] = constellation_ranks
+
+    if isinstance(legacy_skills, dict):
+        for node_id in node_ids:
+            if node_id in legacy_skills:
+                constellation_ranks.setdefault(node_id, legacy_skills.pop(node_id))
+        if not legacy_skills:
+            config.data.pop("skills", None)
 
 
 class ConfigManager:

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="core" cx="50%" cy="46%" r="55%">
+      <stop offset="0" stop-color="#fffbd1"/>
+      <stop offset=".32" stop-color="#ffd34f"/>
+      <stop offset=".68" stop-color="#ff6b18"/>
+      <stop offset="1" stop-color="#b91d28" stop-opacity=".1"/>
+    </radialGradient>
+    <linearGradient id="flame" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#9d1737"/>
+      <stop offset=".55" stop-color="#ff4b13"/>
+      <stop offset="1" stop-color="#ffe58a"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="9" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <circle cx="128" cy="132" r="92" fill="#ff4c18" opacity=".24" filter="url(#glow)"/>
+  <path d="M122 18c9 35-15 48-2 78 7-22 31-32 37-63 29 32 45 64 36 99 18-12 25-26 28-42 30 52 17 113-19 145-36 33-104 30-137-5-34-35-29-95 4-126-2 28 10 40 23 45-1-49 40-75 30-131z" fill="url(#flame)" filter="url(#glow)"/>
+  <circle cx="128" cy="137" r="58" fill="url(#core)"/>
+  <path d="M104 171c-12-17 3-34 18-46 1 18 17 23 17 40 0 13-9 22-21 22-8 0-14-5-14-16z" fill="#fff6b3" opacity=".92"/>
+</svg>

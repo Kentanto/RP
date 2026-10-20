@@ -50,23 +50,33 @@ The MISSIONS tab has `- / % / + / RESET` zoom controls (60%–200%). The chosen
 size is saved in each player's config and also scales the mission detail view.
 
 ### Skills
-The dashboard's SKILLS button opens a separate empty page; it does not replace
-the constellation ability tree. Skill definitions are stored in
+The dashboard's SKILLS button opens a skill catalogue separate from the
+constellation ability tree. Skill definitions are stored in
 `skills/skills.json`. Add definitions to its `skills` array; for example:
 ```json
 {
   "skills": [
     {
       "id": "quick-strike",
-      "name": "Quick Strike",
-      "description": "A swift attack."
+      "title": "Quick Strike",
+      "description": "A swift attack.",
+      "image": "images/quick-strike.svg",
+      "mana_cost": 8,
+      "max_level": 5,
+      "upgrade_cost": 1,
+      "base_damage": 20,
+      "damage_per_level": 10
     }
   ]
 }
 ```
 The app reads these definitions through `SkillManager.load_skills()`; create,
-edit, and remove skills by changing the JSON file. The constellation tree
-stores its ranks separately under the `constellations` key in player config.
+edit, and remove skills by changing the JSON file. Image paths are relative to
+`skills/skills.json`. Skill upgrades cost the configured `upgrade_cost` each
+level; the resulting damage is calculated from `base_damage` and
+`damage_per_level`. Player skill points are a separate balance awarded by
+mission `skill_points` rewards. The constellation tree stores its ranks
+separately under the `constellations` key in player config.
 Existing constellation ranks saved under the old `skills` key are migrated
 automatically. The skills folder is included in git sync and autosave when sync
 is enabled.
@@ -88,7 +98,7 @@ JSON files (`*.json`) inside `missions/`:
 ```
 - `"xp"`, `"constellation_points"`, and `"skill_points"` are hidden integer
    amounts granted when the mission completes. They may be omitted or set to
-   `0`. Skill points are added to the existing stat-allocation pool.
+   `0`. Skill points add to the skill-upgrade balance.
 - `"reward"` is display text only; it is shown to the player without revealing
    the numeric reward fields.
 - `"completed"` is the hidden author mark. Players never see or set it in the

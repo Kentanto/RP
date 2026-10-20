@@ -13,6 +13,7 @@ from PySide6.QtGui import (
     QCursor, QPainter, QColor, QPen, QBrush, QFont, QRadialGradient, QPixmap,
 )
 
+from athas.config import migrate_constellation_ranks
 from athas.styles import CYAN, WHITE
 
 
@@ -158,19 +159,7 @@ class SkillMapCanvas(QWidget):
             self.update()
 
     def _load_ranks(self):
-        legacy_skills = self.config.data.get("skills")
-        constellation_ranks = self.config.data.get("constellations")
-        if not isinstance(constellation_ranks, dict):
-            constellation_ranks = {}
-            self.config.data["constellations"] = constellation_ranks
-
-        if isinstance(legacy_skills, dict):
-            for node_id in self.nodes:
-                if node_id in legacy_skills:
-                    constellation_ranks.setdefault(node_id, legacy_skills.pop(node_id))
-            if not legacy_skills:
-                self.config.data.pop("skills", None)
-
+        migrate_constellation_ranks(self.config, self.nodes)
         for node in self.nodes.values():
             saved_rank = self.config.get_nested(
                 "constellations", node.id, default=node.current_rank,

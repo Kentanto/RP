@@ -22,6 +22,7 @@ from athas.settings_panel import SettingsPanel
 from athas.stats_widget import StatsWidget
 from athas.ability_tree_panel import AbilityTreePanel
 from athas.skills_manager import SkillManager
+from athas.skills_panel import SkillsPanel
 
 
 class HoverButton(QPushButton):
@@ -330,8 +331,6 @@ class MainWindow(QMainWindow):
             cache_dir=str(cache_dir),
             rp_root=str(rp),
         )
-        self._skills_manager = SkillManager(rp / "skills" / "skills.json")
-        self._skills = self._skills_manager.load_skills()
         if self._inv_panel is not None:
             self._inv_panel.inv_manager = self._inv_manager
             self._inv_panel.refresh()
@@ -505,28 +504,17 @@ class MainWindow(QMainWindow):
         # ── Page 3 : ABILITY TREE ──
         self._ability_panel = AbilityTreePanel(self.config, on_back=lambda: self._show_page(0))
         self._content_pages.addWidget(self._ability_panel)
-        skills_page = QFrame()
-        skills_page.setStyleSheet("background: transparent; border: none;")
-        skills_layout = QVBoxLayout(skills_page)
-        skills_layout.setContentsMargins(32, 32, 32, 32)
-        skills_title = QLabel("SKILLS")
-        skills_title.setStyleSheet(
-            f"color: {WHITE}; font-size: 28px; font-weight: bold; letter-spacing: 3px;"
-        )
-        skills_layout.addWidget(skills_title)
-        skills_line = QFrame()
-        skills_line.setFixedHeight(2)
-        skills_line.setStyleSheet(f"background-color: {CYAN}44;")
-        skills_layout.addWidget(skills_line)
-        skills_empty = QLabel("You have no skills, loser.")
-        skills_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        skills_empty.setStyleSheet("color: #888; font-size: 16px;")
-        skills_layout.addWidget(skills_empty, 1)
-        self._content_pages.addWidget(skills_page)
+        self._skills_manager = SkillManager(Path(__file__).parent.parent / "skills" / "skills.json")
+        self._skills_panel = SkillsPanel(self.config, self._skills_manager)
+        self._content_pages.addWidget(self._skills_panel)
         self._stats_widget.abilities_clicked.connect(lambda: self._show_page(3))
-        self._stats_widget.skills_clicked.connect(lambda: self._show_page(4))
+        self._stats_widget.skills_clicked.connect(self._show_skills)
 
         return self._content_pages
+
+    def _show_skills(self):
+        self._skills_panel.refresh()
+        self._show_page(4)
 
     def _show_page(self, index: int):
         """Switch the content area between pages."""
@@ -707,6 +695,7 @@ class MainWindow(QMainWindow):
             self._refresh_sidebar_player()
         if mission.skill_points > 0:
             self._stats_widget.grant_skill_points(mission.skill_points)
+            self._skills_panel.refresh()
         if mission.constellation_points > 0:
             points = self.config.get("player", "constellation_points", 0)
             self.config.set("player", "constellation_points", max(0, points) + mission.constellation_points)
@@ -734,6 +723,7 @@ class MainWindow(QMainWindow):
             self._refresh_sidebar_player()
         if skill_points > 0:
             self._stats_widget.remove_skill_points(skill_points)
+            self._skills_panel.refresh()
         if constellation_points > 0:
             points = self.config.get("player", "constellation_points", 0)
             self.config.set("player", "constellation_points", max(0, points - constellation_points))

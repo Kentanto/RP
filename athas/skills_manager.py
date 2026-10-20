@@ -32,16 +32,31 @@ class SkillManager:
                 not isinstance(skill, dict)
                 or not isinstance(skill.get("id"), str)
                 or not skill["id"].strip()
-                or not isinstance(skill.get("name"), str)
-                or not skill["name"].strip()
-                or not isinstance(skill.get("description", ""), str)
+                or not isinstance(skill.get("title"), str)
+                or not skill["title"].strip()
+                or not isinstance(skill.get("description"), str)
+                or not isinstance(skill.get("image"), str)
+                or not self._is_nonnegative_int(skill.get("mana_cost"))
+                or not self._is_positive_int(skill.get("max_level"))
+                or not self._is_positive_int(skill.get("upgrade_cost"))
+                or not self._is_nonnegative_int(skill.get("base_damage"))
+                or not self._is_nonnegative_int(skill.get("damage_per_level"))
             ):
                 raise ValueError(
                     f"Skill entry {index + 1} in '{self.skills_file}' "
-                    "must have a non-empty id and name, and a text description."
+                    "must have id, title, description, image, mana_cost, max_level, "
+                    "upgrade_cost, base_damage, and damage_per_level fields with valid values."
                 )
             if skill["id"] in seen_ids:
                 raise ValueError(f"Duplicate skill id '{skill['id']}' in '{self.skills_file}'.")
             seen_ids.add(skill["id"])
 
         return skills
+
+    @staticmethod
+    def _is_nonnegative_int(value: Any) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+    @classmethod
+    def _is_positive_int(cls, value: Any) -> bool:
+        return cls._is_nonnegative_int(value) and value > 0
