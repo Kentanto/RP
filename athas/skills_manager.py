@@ -94,15 +94,11 @@ class SkillManager:
             return "image must be a string"
         if not cls._is_nonnegative_int(skill.get("mana_cost")):
             return "mana_cost must be a non-negative integer"
-        if not cls._is_positive_int(skill.get("max_level")):
-            return "max_level must be a positive integer"
         if not cls._is_positive_int(skill.get("upgrade_cost")):
             return "upgrade_cost must be a positive integer"
         if not cls._is_nonnegative_int(skill.get("base_damage")):
             return "base_damage must be a non-negative integer"
-        if not cls._is_nonnegative_int(skill.get("damage_per_level")):
-            return "damage_per_level must be a non-negative integer"
-        return None
+        return cls._upgrades_error(skill.get("upgrades"))
 
     @staticmethod
     def _is_nonnegative_int(value: Any) -> bool:
@@ -111,3 +107,86 @@ class SkillManager:
     @classmethod
     def _is_positive_int(cls, value: Any) -> bool:
         return cls._is_nonnegative_int(value) and value > 0
+
+    @staticmethod
+    def _is_number(value: Any) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+    @classmethod
+    def _upgrades_error(cls, upgrades: Any) -> str | None:
+        """Validate a skill's upgrade tree as a whole."""
+        if not isinstance(upgrades, list) or not upgrades:
+            return "upgrades must be a non-empty list of upgrade nodes"
+        known_ids: set[str] = set()
+        for index, upgrade in enumerate(upgrades):
+            error = cls._upgrade_error(upgrade)
+            if error is not None:
+                return f"upgrade {index + 1}: {error}"
+            if upgrade["id"] in known_ids:
+                return f"upgrade {index + 1}: duplicate id '{upgrade['id']}'"
+            known_ids.add(upgrade["id"])
+        for upgrade in upgrades:
+            for parent_id in upgrade.get("parents", []):
+                if parent_id == upgrade["id"]:
+                    return f"upgrade '{upgrade['id']}': cannot be its own parent"
+                if parent_id not in known_ids:
+                    return f"upgrade '{upgrade['id']}': unknown parent '{parent_id}'"
+        if cls._has_parent_cycle(upgrades):
+            return "upgrade parents form a cycle"
+        return None
+
+    @classmethod
+    def _upgrade_error(cls, upgrade: Any) -> str | None:
+        """Return why the entry is not a valid upgrade node, or None when it is."""
+        if not isinstance(upgrade, dict):
+            return "entry must be an upgrade object"
+        if not isinstance(upgrade.get("id"), str) or not upgrade["id"].strip():
+            return "id must be a non-empty string"
+        if not isinstance(upgrade.get("title"), str) or not upgrade["title"].strip():
+            return "title must be a non-empty string"
+        if not isinstance(upgrade.get("description"), str):
+            return "description must be a string"
+        if not cls._is_number(upgrade.get("x")) or not cls._is_number(upgrade.get("y")):
+            return "x and y must be numbers"
+        if not cls._is_positive_int(upgrade.get("max_rank")):
+            return "max_rank must be a positive integer"
+        parents = upgrade.get("parents", [])
+        if not isinstance(parents, list) or any(
+            not isinstance(parent, str) or not parent.strip() for parent in parents
+        ):
+            return "parents must be a list of upgrade ids"
+        if len(set(parents)) != len(parents):
+            return "parents must not repeat the same id"
+        color = upgrade.get("color")
+        if color is not None and (not isinstance(color, str) or not color.strip()):
+            return "color must be a non-empty string"
+        return None
+
+    @classmethod
+    def _has_parent_cycle(cls, upgrades: list) -> bool:
+        """True when following parent links loops forever."""
+        parents_of = {
+            upgrade["id"]: [
+                parent for parent in upgrade.get("parents", [])
+                if parent != upgrade["id"]
+            ]
+            for upgrade in upgrades
+        }
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def has_cycle(node_id: str) -> bool:
+            visiting.add(node_id)
+            for parent_id in parents_of[node_id]:
+                if parent_id in visiting:
+                    return True
+                if parent_id not in visited and has_cycle(parent_id):
+                    return True
+            visiting.discard(node_id)
+            visited.add(node_id)
+            return False
+
+        return any(
+            node_id not in visited and has_cycle(node_id)
+            for node_id in parents_of
+        )

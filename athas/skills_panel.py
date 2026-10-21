@@ -1,14 +1,15 @@
-"""Read-only skill catalogue with player skill upgrades."""
+"""Skill catalogue — clicking a card opens that skill's upgrade tree."""
 from pathlib import Path
 from typing import Any, Callable
 
 from PySide6.QtCore import Qt, QFileSystemWatcher, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea,
     QSizePolicy, QVBoxLayout, QWidget,
 )
 
+from athas.skill_tree_dialog import SkillTreeDialog
 from athas.skills_manager import SkillManager
 from athas.styles import CYAN, WHITE
 
@@ -23,19 +24,21 @@ class SkillCard(QFrame):
     def __init__(
         self,
         skill: dict[str, Any],
-        level: int,
-        skill_points: int,
         image_path: Path,
-        on_upgrade: Callable[[], None],
+        on_click: Callable[[], None],
         parent=None,
     ):
         super().__init__(parent)
-        # The upgrade callback runs through a bound method below: connecting
-        # the button straight to a Python lambda crashes PySide6 on teardown
+        # The click callback runs through a bound method below: connecting
+        # widgets straight to a Python lambda crashes PySide6 on teardown
         # (stale global-receiver objects when cards are destroyed).
-        self._on_upgrade_cb: Callable[[], None] | None = on_upgrade
+        self._on_click_cb: Callable[[], None] | None = on_click
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet(
-            f"QFrame {{ background-color: rgba(10,10,16,220); border: 1px solid {CYAN}55; }}"
+            f"""
+            QFrame {{ background-color: rgba(10,10,16,220); border: 1px solid {CYAN}55; }}
+            QFrame:hover {{ background-color: rgba(16,28,38,235); border: 1px solid {CYAN}; }}
+            """
         )
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout = QHBoxLayout(self)
@@ -70,43 +73,27 @@ class SkillCard(QFrame):
         description.setStyleSheet("color: #aaa; font-size: 12px;")
         details.addWidget(description)
 
-        max_level = skill["max_level"]
-        damage = (
-            0
-            if level == 0
-            else skill["base_damage"] + (level - 1) * skill["damage_per_level"]
-        )
-        stats = QLabel(f"MANA {skill['mana_cost']} · DMG {damage} · LV {level}/{max_level}")
+        stats = QLabel(f"MANA {skill['mana_cost']} · DMG {skill['base_damage']}")
         stats.setWordWrap(True)
         stats.setStyleSheet(f"color: {CYAN}; font-size: 10px; font-weight: bold;")
         details.addWidget(stats)
         details.addStretch()
 
-        upgrade = QPushButton()
-        upgrade.setCursor(Qt.CursorShape.PointingHandCursor)
-        upgrade.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {CYAN}11; border: 1px solid {CYAN};
-                color: {CYAN}; padding: 5px 8px; font-size: 10px;
-            }}
-            QPushButton:hover {{ background-color: {CYAN}; color: #0a0a0a; }}
-            QPushButton:disabled {{ color: #666; border-color: #444; background: transparent; }}
-        """)
-        if level >= max_level:
-            upgrade.setText("MAX LEVEL")
-            upgrade.setEnabled(False)
-        else:
-            cost = skill["upgrade_cost"]
-            action = "UNLOCK" if level == 0 else "UPGRADE"
-            upgrade.setText(f"{action} · {cost} SP")
-            upgrade.setEnabled(skill_points >= cost)
-            upgrade.clicked.connect(self._handle_upgrade_click)
-        details.addWidget(upgrade, alignment=Qt.AlignmentFlag.AlignLeft)
+        tip = QLabel("▸ CLICK TO VIEW UPGRADES")
+        tip.setStyleSheet(
+            "color: rgba(0,240,255,170); font-size: 10px; font-weight: bold; letter-spacing: 1px;"
+        )
+        details.addWidget(tip, alignment=Qt.AlignmentFlag.AlignLeft)
         layout.addLayout(details, 1)
 
-    def _handle_upgrade_click(self):
-        if self._on_upgrade_cb is not None:
-            self._on_upgrade_cb()
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._handle_card_click()
+        super().mouseReleaseEvent(event)
+
+    def _handle_card_click(self):
+        if self._on_click_cb is not None:
+            self._on_click_cb()
 
     @staticmethod
     def _load_image(path: Path) -> QPixmap | None:
@@ -247,33 +234,19 @@ class SkillsPanel(QWidget):
             self._empty_state.setStyleSheet("color: #888; font-size: 16px;")
         else:
             for skill in skills:
-                skill_id = skill["id"]
-                level = _nonnegative_int(
-                    self.config.get_nested("player", "skill_levels", skill_id, default=0)
-                )
                 image_path = self.skills_manager.skills_dir / skill["image"]
                 card = SkillCard(
                     skill,
-                    level,
-                    skill_points,
                     image_path,
-                    lambda current_skill=skill: self._upgrade(current_skill),
+                    lambda current_skill=skill: self._open_skill_tree(current_skill),
                 )
                 self._cards.append(card)
         self._arrange_cards()
         # Watch any files that appeared so later edits also reload.
         self._watch_skills_folder()
 
-    def _upgrade(self, skill: dict[str, Any]):
-        points = _nonnegative_int(self.config.get("player", "skill_points", 0))
-        level = _nonnegative_int(
-            self.config.get_nested("player", "skill_levels", skill["id"], default=0)
-        )
-        cost = skill["upgrade_cost"]
-        if level >= skill["max_level"] or points < cost:
-            return
-
-        self.config.set_nested("player", "skill_levels", skill["id"], level + 1, save=False)
-        self.config.set("player", "skill_points", points - cost, save=False)
-        self.config.save()
+    def _open_skill_tree(self, skill: dict[str, Any]):
+        """Open the skill's upgrade tree in its own window, then refresh."""
+        dialog = SkillTreeDialog(skill, self.config, self)
+        dialog.exec()
         self.refresh()

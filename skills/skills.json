@@ -6,10 +6,51 @@
       "description": "Hurl a blazing orb at your target, dealing fire damage.",
       "image": "images/fireball.svg",
       "mana_cost": 10,
-      "max_level": 5,
-      "upgrade_cost": 1,
       "base_damage": 25,
-      "damage_per_level": 10
+      "upgrade_cost": 1,
+      "upgrades": [
+        {
+          "id": "mastery",
+          "title": "Fireball Mastery",
+          "description": "Hone the blazing orb. Each rank makes the fireball hit harder (+10 damage).",
+          "x": 230, "y": 330,
+          "max_rank": 5,
+          "parents": []
+        },
+        {
+          "id": "intense-heat",
+          "title": "Intense Heat",
+          "description": "Feed more mana into the flame. +5 damage per rank.",
+          "x": 440, "y": 190,
+          "max_rank": 3,
+          "parents": ["mastery"]
+        },
+        {
+          "id": "ember-trail",
+          "title": "Ember Trail",
+          "description": "The orb leaves a trail of burning embers that scorch everything it passes.",
+          "x": 440, "y": 470,
+          "max_rank": 1,
+          "parents": ["mastery"]
+        },
+        {
+          "id": "flashpoint",
+          "title": "Flashpoint",
+          "description": "The fireball detonates on impact in a searing burst.",
+          "x": 660, "y": 130,
+          "max_rank": 2,
+          "parents": ["intense-heat"]
+        },
+        {
+          "id": "twin-flames",
+          "title": "Twin Flames",
+          "description": "Split the orb into two smaller fireballs that strike together.",
+          "x": 670, "y": 330,
+          "max_rank": 1,
+          "parents": ["intense-heat", "ember-trail"]
+        }
+      ]
     }
   ]
 }
+

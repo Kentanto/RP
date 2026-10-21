@@ -60,10 +60,26 @@ one skill per file is the simplest format:
   "description": "A swift attack.",
   "image": "images/quick-strike.svg",
   "mana_cost": 8,
-  "max_level": 5,
   "upgrade_cost": 1,
   "base_damage": 20,
-  "damage_per_level": 10
+  "upgrades": [
+    {
+      "id": "mastery",
+      "title": "Quick Strike Mastery",
+      "description": "Each rank makes the strike faster and sharper.",
+      "x": 120, "y": 300,
+      "max_rank": 5
+    },
+    {
+      "id": "flowing-blade",
+      "title": "Flowing Blade",
+      "description": "Chain the strike into a second cut.",
+      "x": 340, "y": 180,
+      "max_rank": 2,
+      "parents": ["mastery"],
+      "color": "#ff9800"
+    }
+  ]
 }
 ```
 A file may also hold a plain list of skills or the wrapped
@@ -74,14 +90,26 @@ catalogue reloads automatically whenever a skill file is added, removed, or
 edited — including changes arriving through git sync. Files that fail
 validation, or repeat a skill id that an earlier file already defined, are
 skipped with an orange warning shown on the skills page, so one bad file
-never breaks the rest. Skill upgrades cost the configured `upgrade_cost`
-each level; the resulting damage is calculated from `base_damage` and
-`damage_per_level`. Player skill points are a separate balance awarded by
-mission `skill_points` rewards. The constellation tree stores its ranks
-separately under the `constellations` key in player config.
-Existing constellation ranks saved under the old `skills` key are migrated
-automatically. The skills folder is included in git sync and autosave when sync
-is enabled.
+never breaks the rest.
+
+Each skill defines its own upgrade tree in `upgrades`. Every node has an
+`id`, `title`, `description`, `x`/`y` position on the map, and `max_rank`;
+optionally `parents` (a list of node ids that must be unlocked first — a
+node without parents is a tree root) and a `color`. Node ids must be unique
+within the skill, parents must exist in the same tree, and parent chains may
+not form a cycle.
+
+Skill cards show only the title, description, mana cost, and base damage.
+Clicking a card opens that skill's upgrade tree in its own window, which
+works exactly like the constellation map: drag to pan, scroll to zoom, and
+click a node to spend `upgrade_cost` skill points and raise its rank. A node
+can only be unlocked once at least one of its parents has a rank. Ranks are
+saved per player under the `player.skill_upgrades` key in the config.
+Player skill points are a separate balance awarded by mission
+`skill_points` rewards. The constellation tree stores its ranks separately
+under the `constellations` key in player config. Existing constellation
+ranks saved under the old `skills` key are migrated automatically. The
+skills folder is included in git sync and autosave when sync is enabled.
 
 ## Mission file format
 JSON files (`*.json`) inside `missions/`:

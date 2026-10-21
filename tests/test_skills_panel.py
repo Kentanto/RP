@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from athas.config import ConfigManager
+from athas.skill_tree_dialog import SkillTreeDialog
 from athas.skills_manager import SkillManager
 from athas.skills_panel import SkillCard, SkillsPanel
 from athas.stats_widget import StatsWidget
@@ -30,32 +31,92 @@ class SkillsPanelTests(unittest.TestCase):
         self.skills_dir.mkdir()
         self.skills_file = self.skills_dir / "skills.json"
         self.skills_file.write_text(
-            """{"skills":[{"id":"fireball","title":"Fireball","description":"Burns.",
-            "image":"fireball.svg","mana_cost":10,"max_level":5,"upgrade_cost":1,
-            "base_damage":25,"damage_per_level":10}]}""",
+            json.dumps({"skills": [{
+                "id": "fireball", "title": "Fireball", "description": "Burns.",
+                "image": "fireball.svg", "mana_cost": 10, "upgrade_cost": 1,
+                "base_damage": 25,
+                "upgrades": [
+                    {"id": "core", "title": "Fireball Mastery",
+                     "description": "A stronger orb.", "x": 100, "y": 200,
+                     "max_rank": 5},
+                    {"id": "nova", "title": "Nova", "description": "Burst finish.",
+                     "x": 300, "y": 200, "max_rank": 2, "parents": ["core"]},
+                ],
+            }]}),
             encoding="utf-8",
         )
         self.panel = SkillsPanel(self.config, SkillManager(self.skills_file))
         self.addCleanup(self.panel.close)
 
-    def test_upgrade_spends_skill_points_and_improves_level(self):
-        self.config.set("player", "skill_points", 2)
-        self.panel.refresh()
+    def test_card_click_invokes_its_callback(self):
+        clicked = []
 
-        buttons = self.panel.findChildren(QPushButton)
-        enabled_buttons = [button for button in buttons if button.isEnabled()]
-        self.assertEqual(len(enabled_buttons), 1)
-        enabled_buttons[0].click()
+        def record_click():
+            clicked.append(True)
+
+        skill = SkillManager(self.skills_file).load_skills()[0]
+        card = SkillCard(skill, self.skills_dir / skill["image"], record_click)
+        self.addCleanup(card.deleteLater)
+
+        card._handle_card_click()
+
+        self.assertEqual(clicked, [True])
+
+    def test_cards_have_no_upgrade_button_and_show_the_tip(self):
+        self.assertIsNone(self.panel.findChild(QPushButton))
+
+        texts = [label.text() for label in self.panel._cards[0].findChildren(QLabel)]
+        self.assertTrue(any("CLICK TO VIEW UPGRADES" in text for text in texts))
+
+    def test_unlock_spends_skill_points_and_saves_rank(self):
+        self.config.set("player", "skill_points", 2)
+        skill = SkillManager(self.skills_file).load_skills()[0]
+        dialog = SkillTreeDialog(skill, self.config)
+        self.addCleanup(dialog.close)
+
+        self.assertTrue(dialog._canvas.try_unlock_node("core"))
 
         self.assertEqual(self.config.get("player", "skill_points"), 1)
-        self.assertEqual(self.config.get_nested("player", "skill_levels", "fireball"), 1)
+        self.assertEqual(
+            self.config.get_nested("player", "skill_upgrades", "fireball", "core"), 1
+        )
+        self.assertIn("✦ 1 SP", dialog._sp_label.text())
+
+        self.panel.refresh()
         self.assertIn("SKILL POINTS: 1", self.panel._points_label.text())
 
-    def test_upgrade_disabled_without_points(self):
-        button = self.panel.findChild(QPushButton)
+    def test_unlock_refused_without_points(self):
+        skill = SkillManager(self.skills_file).load_skills()[0]
+        dialog = SkillTreeDialog(skill, self.config)
+        self.addCleanup(dialog.close)
 
-        self.assertIsNotNone(button)
-        self.assertFalse(button.isEnabled())
+        self.assertFalse(dialog._canvas.try_unlock_node("core"))
+        self.assertEqual(
+            self.config.get_nested("player", "skill_upgrades", "fireball", "core"), 0
+        )
+
+    def test_unlock_child_requires_unlocked_parent(self):
+        self.config.set("player", "skill_points", 3)
+        skill = SkillManager(self.skills_file).load_skills()[0]
+        dialog = SkillTreeDialog(skill, self.config)
+        self.addCleanup(dialog.close)
+
+        self.assertFalse(dialog._canvas.try_unlock_node("nova"))
+        self.assertTrue(dialog._canvas.try_unlock_node("core"))
+        self.assertTrue(dialog._canvas.try_unlock_node("nova"))
+        self.assertEqual(
+            self.config.get_nested("player", "skill_upgrades", "fireball", "nova"), 1
+        )
+        self.assertEqual(self.config.get("player", "skill_points"), 1)
+
+    def test_unlock_refused_at_max_rank(self):
+        self.config.set("player", "skill_points", 3)
+        self.config.set_nested("player", "skill_upgrades", "fireball", "nova", 2)
+        skill = SkillManager(self.skills_file).load_skills()[0]
+        dialog = SkillTreeDialog(skill, self.config)
+        self.addCleanup(dialog.close)
+
+        self.assertFalse(dialog._canvas.try_unlock_node("nova"))
 
     def test_fireball_svg_is_loaded(self):
         image_file = Path(__file__).parent.parent / "skills" / "images" / "fireball.svg"
@@ -97,8 +158,12 @@ class SkillsPanelTests(unittest.TestCase):
         new_file.write_text(
             json.dumps({
                 "id": "ice-lance", "title": "Ice Lance", "description": "Freezes.",
-                "image": "", "mana_cost": 6, "max_level": 3, "upgrade_cost": 1,
-                "base_damage": 15, "damage_per_level": 5,
+                "image": "", "mana_cost": 6, "upgrade_cost": 1, "base_damage": 15,
+                "upgrades": [
+                    {"id": "core", "title": "Ice Lance Mastery",
+                     "description": "A colder lance.", "x": 50, "y": 60,
+                     "max_rank": 3},
+                ],
             }),
             encoding="utf-8",
         )

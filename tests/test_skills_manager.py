@@ -13,10 +13,14 @@ def _skill(**overrides) -> dict:
         "description": "A swift attack.",
         "image": "images/quick-strike.svg",
         "mana_cost": 8,
-        "max_level": 5,
         "upgrade_cost": 1,
         "base_damage": 20,
-        "damage_per_level": 10,
+        "upgrades": [
+            {"id": "core", "title": "Quick Strike Mastery",
+             "description": "Faster.", "x": 100, "y": 100, "max_rank": 5},
+            {"id": "flow", "title": "Flowing Blade", "description": "Smoother.",
+             "x": 300, "y": 100, "max_rank": 2, "parents": ["core"]},
+        ],
     }
     skill.update(overrides)
     return skill
@@ -116,3 +120,61 @@ class SkillManagerTests(unittest.TestCase):
         path.unlink()
 
         self.assertEqual(self.manager.load_skills(), [])
+
+    def test_skill_without_upgrades_is_skipped(self):
+        skill = _skill()
+        skill.pop("upgrades")
+        self.write("skills.json", {"skills": [skill]})
+
+        self.assertEqual(self.manager.load_skills(), [])
+        self.assertTrue(any("upgrades" in error for error in self.manager.load_errors))
+
+    def test_skips_invalid_upgrade_entries(self):
+        skill = _skill(upgrades=[{"id": "", "title": "Broken", "description": "?",
+                                  "x": 0, "y": 0, "max_rank": 1}])
+        self.write("skills.json", {"skills": [skill]})
+
+        self.assertEqual(self.manager.load_skills(), [])
+        self.assertTrue(any("upgrade 1" in error for error in self.manager.load_errors))
+
+    def test_skips_duplicate_upgrade_ids(self):
+        skill = _skill(upgrades=[
+            {"id": "core", "title": "A", "description": "a", "x": 0, "y": 0, "max_rank": 1},
+            {"id": "core", "title": "B", "description": "b", "x": 10, "y": 0, "max_rank": 1},
+        ])
+        self.write("skills.json", {"skills": [skill]})
+
+        self.assertEqual(self.manager.load_skills(), [])
+        self.assertTrue(any("duplicate" in error for error in self.manager.load_errors))
+
+    def test_skips_unknown_parent(self):
+        skill = _skill(upgrades=[
+            {"id": "core", "title": "A", "description": "a", "x": 0, "y": 0,
+             "max_rank": 1, "parents": ["ghost"]},
+        ])
+        self.write("skills.json", {"skills": [skill]})
+
+        self.assertEqual(self.manager.load_skills(), [])
+        self.assertTrue(any("unknown parent" in error for error in self.manager.load_errors))
+
+    def test_skips_parent_cycles(self):
+        skill = _skill(upgrades=[
+            {"id": "a", "title": "A", "description": "a", "x": 0, "y": 0,
+             "max_rank": 1, "parents": ["b"]},
+            {"id": "b", "title": "B", "description": "b", "x": 10, "y": 0,
+             "max_rank": 1, "parents": ["a"]},
+        ])
+        self.write("skills.json", {"skills": [skill]})
+
+        self.assertEqual(self.manager.load_skills(), [])
+        self.assertTrue(any("cycle" in error for error in self.manager.load_errors))
+
+    def test_accepts_root_without_parents_and_optional_color(self):
+        skill = _skill(upgrades=[
+            {"id": "core", "title": "A", "description": "a", "x": 0, "y": 0,
+             "max_rank": 2, "color": "#ff9800"},
+        ])
+        self.write("skills.json", {"skills": [skill]})
+
+        self.assertEqual(len(self.manager.load_skills()), 1)
+        self.assertEqual(self.manager.load_errors, [])
