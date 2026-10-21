@@ -122,8 +122,11 @@ class SettingsPanel(QFrame):
         self._tabs = tabs
         self._widget_map = {}
 
+        # Sections that hold player progress, not settings — skip them.
+        skip_sections = {"player", "constellations"}
+
         for section, values in config.data.items():
-            if section == "player":
+            if section in skip_sections:
                 continue
 
             tab_w = QWidget()
