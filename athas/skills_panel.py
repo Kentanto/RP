@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from athas.skill_tree_dialog import SkillTreeDialog
-from athas.skills_manager import SkillManager
+from athas.skills_manager import SkillManager, migrate_skill_ranks
 from athas.styles import CYAN, WHITE
 
 
@@ -34,10 +34,15 @@ class SkillCard(QFrame):
         # (stale global-receiver objects when cards are destroyed).
         self._on_click_cb: Callable[[], None] | None = on_click
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Scope the rules to the card itself: a plain ``QFrame`` selector would
+        # also match every QLabel inside (QLabel is a QFrame subclass), making
+        # each element light up individually on hover instead of the whole box.
+        self.setObjectName("SkillCard")
         self.setStyleSheet(
             f"""
-            QFrame {{ background-color: rgba(10,10,16,220); border: 1px solid {CYAN}55; }}
-            QFrame:hover {{ background-color: rgba(16,28,38,235); border: 1px solid {CYAN}; }}
+            QFrame#SkillCard {{ background-color: rgba(10,10,16,220); border: 1px solid {CYAN}55; }}
+            QFrame#SkillCard:hover {{ background-color: rgba(16,28,38,235); border: 1px solid {CYAN}; }}
+            QLabel {{ background: transparent; border: none; }}
             """
         )
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -160,6 +165,9 @@ class SkillsPanel(QWidget):
         self._watcher.directoryChanged.connect(self._on_skills_folder_changed)
         self._watcher.fileChanged.connect(self._on_skills_folder_changed)
         self._watched_paths: set[str] = set()
+        # Upgrade ranks live in the skill files now; fold any legacy
+        # config-saved ranks into them before the first load.
+        migrate_skill_ranks(self.config, self.skills_manager)
         self.refresh()
 
     def _watch_skills_folder(self):
@@ -247,6 +255,6 @@ class SkillsPanel(QWidget):
 
     def _open_skill_tree(self, skill: dict[str, Any]):
         """Open the skill's upgrade tree in its own window, then refresh."""
-        dialog = SkillTreeDialog(skill, self.config, self)
+        dialog = SkillTreeDialog(skill, self.config, self.skills_manager, self)
         dialog.exec()
         self.refresh()

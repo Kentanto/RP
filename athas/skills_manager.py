@@ -1,7 +1,17 @@
 """Load backend-authored skill definitions from the skills folder."""
 import json
+import os
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
+
+
+def _nonnegative_int(value: Any) -> int:
+    """Coerce saved rank values to a safe non-negative int."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(0, value)
+    return 0
 
 
 class SkillManager:
@@ -41,6 +51,76 @@ class SkillManager:
                 skills.append(skill)
         return skills
 
+    def save_ranks(self, skill_id: str, ranks: dict[str, int]) -> None:
+        """Store upgrade ranks inside the skill's own JSON file.
+
+        Only the matching skill's upgrade nodes get a ``rank`` field; the rest
+        of the file is preserved as-is and written back atomically.
+        """
+        clean_ranks = {
+            node_id: _nonnegative_int(rank) for node_id, rank in ranks.items()
+        }
+        if not clean_ranks:
+            return
+        for file_path in self._iter_skill_files(self.skills_dir):
+            try:
+                data = json.loads(file_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            entries = self._entries_in_data(data)
+            if entries is None:
+                continue
+            changed = False
+            for entry in entries:
+                if not isinstance(entry, dict) or entry.get("id") != skill_id:
+                    continue
+                for node in entry.get("upgrades", []):
+                    if not isinstance(node, dict) or node.get("id") not in clean_ranks:
+                        continue
+                    rank = clean_ranks[node["id"]]
+                    if node.get("rank", 0) == rank:
+                        continue
+                    if rank > 0:
+                        node["rank"] = rank
+                    else:
+                        node.pop("rank", None)
+                    changed = True
+            if changed:
+                self._write_json(file_path, data)
+
+    @staticmethod
+    def _write_json(path: Path, data: Any) -> None:
+        """Atomically save through a unique temp file, retrying transient locks."""
+        payload = json.dumps(data, indent=2)
+        fd, tmp_name = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp",
+        )
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
+                temp_file.write(payload)
+            for attempt in range(5):
+                try:
+                    os.replace(tmp, path)
+                    break
+                except PermissionError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.05 * (2 ** attempt))
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    @staticmethod
+    def _entries_in_data(data: Any):
+        """Return the skill entries container inside parsed file data, or None."""
+        if isinstance(data, dict) and isinstance(data.get("skills"), list):
+            return data["skills"]
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return [data]
+        return None
+
     @staticmethod
     def _iter_skill_files(folder: Path):
         """Yield the JSON skill files inside a folder, in a stable order."""
@@ -58,13 +138,8 @@ class SkillManager:
             self.load_errors.append(f"{file_path.name}: not readable JSON")
             return []
 
-        if isinstance(data, dict) and isinstance(data.get("skills"), list):
-            entries = data["skills"]
-        elif isinstance(data, list):
-            entries = data
-        elif isinstance(data, dict):
-            entries = [data]
-        else:
+        entries = self._entries_in_data(data)
+        if entries is None:
             self.load_errors.append(
                 f"{file_path.name}: must contain a skill object, a list of skills, or a 'skills' list"
             )
@@ -190,3 +265,46 @@ class SkillManager:
             node_id not in visited and has_cycle(node_id)
             for node_id in parents_of
         )
+
+
+def migrate_skill_ranks(config, skill_manager: SkillManager) -> None:
+    """Move legacy per-skill ranks from the config into the skill files.
+
+    Ranks already saved in a skill file win over config copies, mirroring how
+    constellation ranks are migrated. Consumed entries leave the config; the
+    ``player.skill_upgrades`` section disappears once fully drained.
+    """
+    legacy = config.get_nested("player", "skill_upgrades")
+    if not isinstance(legacy, dict) or not legacy:
+        return
+
+    skills_by_id = {skill["id"]: skill for skill in skill_manager.load_skills()}
+    changed_config = False
+    for skill_id in list(legacy.keys()):
+        node_ranks = legacy[skill_id]
+        skill = skills_by_id.get(skill_id)
+        if not isinstance(node_ranks, dict) or skill is None:
+            continue  # unknown skill or bad shape — keep until it reappears
+        nodes_by_id = {node["id"]: node for node in skill.get("upgrades", [])}
+        pending: dict[str, int] = {}
+        for node_id in list(node_ranks.keys()):
+            node = nodes_by_id.get(node_id)
+            if node is None:
+                continue  # unknown node — keep until it reappears
+            if _nonnegative_int(node.get("rank")) <= 0:
+                config_rank = _nonnegative_int(node_ranks[node_id])
+                if config_rank > 0:
+                    pending[node_id] = config_rank
+            del node_ranks[node_id]
+            changed_config = True
+        if pending:
+            skill_manager.save_ranks(skill_id, pending)
+        if not node_ranks:
+            del legacy[skill_id]
+    if not legacy:
+        player = config.data.get("player")
+        if isinstance(player, dict) and "skill_upgrades" in player:
+            del player["skill_upgrades"]
+            changed_config = True
+    if changed_config:
+        config.save()

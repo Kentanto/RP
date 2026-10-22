@@ -71,15 +71,14 @@ class SkillsPanelTests(unittest.TestCase):
     def test_unlock_spends_skill_points_and_saves_rank(self):
         self.config.set("player", "skill_points", 2)
         skill = SkillManager(self.skills_file).load_skills()[0]
-        dialog = SkillTreeDialog(skill, self.config)
+        dialog = SkillTreeDialog(skill, self.config, SkillManager(self.skills_file))
         self.addCleanup(dialog.close)
 
         self.assertTrue(dialog._canvas.try_unlock_node("core"))
 
         self.assertEqual(self.config.get("player", "skill_points"), 1)
-        self.assertEqual(
-            self.config.get_nested("player", "skill_upgrades", "fireball", "core"), 1
-        )
+        saved = json.loads(self.skills_file.read_text(encoding="utf-8"))
+        self.assertEqual(saved["skills"][0]["upgrades"][0].get("rank"), 1)
         self.assertIn("✦ 1 SP", dialog._sp_label.text())
 
         self.panel.refresh()
@@ -87,36 +86,69 @@ class SkillsPanelTests(unittest.TestCase):
 
     def test_unlock_refused_without_points(self):
         skill = SkillManager(self.skills_file).load_skills()[0]
-        dialog = SkillTreeDialog(skill, self.config)
+        dialog = SkillTreeDialog(skill, self.config, SkillManager(self.skills_file))
         self.addCleanup(dialog.close)
 
         self.assertFalse(dialog._canvas.try_unlock_node("core"))
-        self.assertEqual(
-            self.config.get_nested("player", "skill_upgrades", "fireball", "core"), 0
-        )
+        saved = json.loads(self.skills_file.read_text(encoding="utf-8"))
+        self.assertNotIn("rank", saved["skills"][0]["upgrades"][0])
 
     def test_unlock_child_requires_unlocked_parent(self):
         self.config.set("player", "skill_points", 3)
         skill = SkillManager(self.skills_file).load_skills()[0]
-        dialog = SkillTreeDialog(skill, self.config)
+        dialog = SkillTreeDialog(skill, self.config, SkillManager(self.skills_file))
         self.addCleanup(dialog.close)
 
         self.assertFalse(dialog._canvas.try_unlock_node("nova"))
         self.assertTrue(dialog._canvas.try_unlock_node("core"))
         self.assertTrue(dialog._canvas.try_unlock_node("nova"))
-        self.assertEqual(
-            self.config.get_nested("player", "skill_upgrades", "fireball", "nova"), 1
-        )
+        saved = json.loads(self.skills_file.read_text(encoding="utf-8"))
+        upgrades = {node["id"]: node for node in saved["skills"][0]["upgrades"]}
+        self.assertEqual(upgrades["nova"].get("rank"), 1)
         self.assertEqual(self.config.get("player", "skill_points"), 1)
 
     def test_unlock_refused_at_max_rank(self):
         self.config.set("player", "skill_points", 3)
-        self.config.set_nested("player", "skill_upgrades", "fireball", "nova", 2)
         skill = SkillManager(self.skills_file).load_skills()[0]
-        dialog = SkillTreeDialog(skill, self.config)
+        for node in skill["upgrades"]:
+            if node["id"] == "nova":
+                node["rank"] = 2
+        self.skills_file.write_text(json.dumps({"skills": [skill]}), encoding="utf-8")
+        skill = SkillManager(self.skills_file).load_skills()[0]
+        dialog = SkillTreeDialog(skill, self.config, SkillManager(self.skills_file))
         self.addCleanup(dialog.close)
 
         self.assertFalse(dialog._canvas.try_unlock_node("nova"))
+        self.assertEqual(self.config.get("player", "skill_points"), 3)
+
+    def test_ranks_persist_in_the_skill_file(self):
+        self.config.set("player", "skill_points", 1)
+        skill = SkillManager(self.skills_file).load_skills()[0]
+        dialog = SkillTreeDialog(skill, self.config, SkillManager(self.skills_file))
+        self.addCleanup(dialog.close)
+        self.assertTrue(dialog._canvas.try_unlock_node("core"))
+
+        reopened = SkillTreeDialog(
+            SkillManager(self.skills_file).load_skills()[0],
+            self.config,
+            SkillManager(self.skills_file),
+        )
+        self.addCleanup(reopened.close)
+
+        self.assertEqual(reopened._canvas.nodes["core"].current_rank, 1)
+        self.assertEqual(reopened._canvas.nodes["nova"].current_rank, 0)
+
+    def test_config_ranks_migrate_into_skill_files_on_startup(self):
+        self.config.set_nested("player", "skill_upgrades", "fireball", "core", 2)
+        self.config.save()
+
+        panel = SkillsPanel(self.config, SkillManager(self.skills_file))
+        self.addCleanup(panel.close)
+
+        saved = json.loads(self.skills_file.read_text(encoding="utf-8"))
+        upgrades = {node["id"]: node for node in saved["skills"][0]["upgrades"]}
+        self.assertEqual(upgrades["core"].get("rank"), 2)
+        self.assertIsNone(self.config.get_nested("player", "skill_upgrades"))
 
     def test_fireball_svg_is_loaded(self):
         image_file = Path(__file__).parent.parent / "skills" / "images" / "fireball.svg"

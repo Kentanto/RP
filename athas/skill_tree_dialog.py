@@ -29,14 +29,17 @@ def _nodes_from_skill(skill: dict[str, Any]) -> dict[str, SkillNode]:
         color = entry.get("color") or CYAN
         if not QColor(color).isValid():
             color = CYAN
+        max_rank = entry["max_rank"]
+        # Upgrade ranks live in the skill's own JSON file ('rank' per node).
+        saved_rank = max(0, min(_nonnegative_int(entry.get("rank")), max_rank))
         nodes[entry["id"]] = SkillNode(
             id=entry["id"],
             name=entry["title"],
             description=entry["description"],
             x=float(entry["x"]),
             y=float(entry["y"]),
-            max_rank=entry["max_rank"],
-            current_rank=0,
+            max_rank=max_rank,
+            current_rank=saved_rank,
             color=color,
             parent_ids=list(entry.get("parents", [])),
         )
@@ -48,14 +51,14 @@ class SkillTreeCanvas(QWidget):
 
     points_changed = Signal(int)
 
-    def __init__(self, skill: dict[str, Any], config, parent=None):
+    def __init__(self, skill: dict[str, Any], config, skills_manager, parent=None):
         super().__init__(parent)
         self._skill_id = skill["id"]
         # SkillManager validates upgrade_cost as a positive integer.
         self._cost_per_rank = max(1, _nonnegative_int(skill.get("upgrade_cost"), default=1))
         self.nodes = _nodes_from_skill(skill)
         self.config = config
-        self._load_ranks()
+        self.skills_manager = skills_manager
         self.scale = 1.0
         self.offset = QPointF(0, 0)
         self._dragging = False
@@ -94,25 +97,11 @@ class SkillTreeCanvas(QWidget):
             self._twinkle += 1
             self.update()
 
-    def _load_ranks(self):
-        for node in self.nodes.values():
-            saved_rank = self.config.get_nested(
-                "player", "skill_upgrades", self._skill_id, node.id, default=0,
-            )
-            node.current_rank = max(0, min(_nonnegative_int(saved_rank), node.max_rank))
-            self.config.set_nested(
-                "player", "skill_upgrades", self._skill_id, node.id,
-                node.current_rank, save=False,
-            )
-        self.config.save()
-
     def _save_ranks(self):
-        for node in self.nodes.values():
-            self.config.set_nested(
-                "player", "skill_upgrades", self._skill_id, node.id,
-                node.current_rank, save=False,
-            )
-        self.config.save()
+        self.skills_manager.save_ranks(
+            self._skill_id,
+            {node.id: node.current_rank for node in self.nodes.values()},
+        )
 
     def _skill_points(self):
         return _nonnegative_int(self.config.get("player", "skill_points", 0))
@@ -397,7 +386,7 @@ class SkillTreeCanvas(QWidget):
 class SkillTreeDialog(QDialog):
     """A skill's upgrade tree in its own window."""
 
-    def __init__(self, skill: dict[str, Any], config, parent=None):
+    def __init__(self, skill: dict[str, Any], config, skills_manager, parent=None):
         super().__init__(parent)
         self._config = config
         self.setWindowTitle(f"{skill['title']} — UPGRADES")
@@ -470,7 +459,7 @@ class SkillTreeDialog(QDialog):
         top_bar.setStyleSheet("background-color: #0d0d0d; border-bottom: 1px solid #1a1a1a;")
         layout.addWidget(top_bar)
 
-        self._canvas = SkillTreeCanvas(skill, config, parent=self)
+        self._canvas = SkillTreeCanvas(skill, config, skills_manager, parent=self)
         self._canvas.points_changed.connect(self._on_points_changed)
         layout.addWidget(self._canvas, 1)
 

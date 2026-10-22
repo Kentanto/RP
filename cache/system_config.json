@@ -34,16 +34,7 @@
       "speed": 0
     },
     "constellation_points": 0,
-    "skill_points": 0,
-    "skill_upgrades": {
-      "fireball": {
-        "mastery": 0,
-        "intense-heat": 0,
-        "ember-trail": 0,
-        "flashpoint": 0,
-        "twin-flames": 0
-      }
-    }
+    "skill_points": 5000
   },
   "missions": {
     "zoom": 1.0
