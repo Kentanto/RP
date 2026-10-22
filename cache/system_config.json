@@ -18,8 +18,8 @@
   "player": {
     "name": "Kenji Izumi",
     "rank": "E",
-    "level": 1,
-    "xp": 0,
+    "level": 2,
+    "xp": 100,
     "health": 20,
     "magic": 3,
     "attack": 4,
@@ -35,7 +35,7 @@
     },
     "constellation_points": 0,
     "skill_points": 0,
-    "perm_points": 0
+    "perm_points": 1
   },
   "missions": {
     "zoom": 1.0
