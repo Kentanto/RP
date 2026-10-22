@@ -20,7 +20,7 @@
     "rank": "E",
     "level": 2,
     "xp": 100,
-    "health": 20,
+    "health": 21,
     "magic": 3,
     "attack": 4,
     "defense": 5,
@@ -35,7 +35,7 @@
     },
     "constellation_points": 0,
     "skill_points": 0,
-    "perm_points": 1
+    "perm_points": 0
   },
   "missions": {
     "zoom": 1.0
