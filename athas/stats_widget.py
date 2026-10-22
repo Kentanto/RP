@@ -27,12 +27,15 @@ STAT_COLORS = {
     "speed":   "#6fe07f",
 }
 
-# Base amount of temporary stat points. The Borrowed Fortune
-# constellation multiplies this by (rank + 1).
+# Base amount of temporary stat points; every level past the first adds
+# LEVEL_TEMP_BONUS more base points. The Borrowed Fortune constellation
+# multiplies the whole base by (rank + 1). The pool is never stored as a
+# lump sum — it is always derived as base points × (rank + 1) minus
+# whatever is currently allocated onto stats.
 BASE_TEMP_POINTS = 10
 FORTUNE_CONSTELLATION_ID = "B_Fortune"
 
-# Every level-up grants bonus temp points plus one permanent point that
+# Every level-up grows the base temp pool plus one permanent point that
 # can be locked into any stat's base value.
 LEVEL_TEMP_BONUS = 2
 LEVEL_PERM_BONUS = 1
@@ -453,7 +456,7 @@ class StatsWidget(QWidget):
     def __init__(self, config, parent=None):
         super().__init__(parent)
         self.config = config
-        self._pool = self._apply_fortune_multiplier()
+        self._pool = self._sync_pool()
         self._perm_pool = max(0, _as_int(self.config.get("player", "perm_points", 0)))
 
         main_layout = QVBoxLayout(self)
@@ -720,28 +723,36 @@ class StatsWidget(QWidget):
             self.config.get_nested("constellations", FORTUNE_CONSTELLATION_ID, default=0)
         ))
 
+    def _base_temp_points(self) -> int:
+        """Un-multiplied base pool: BASE_TEMP_POINTS plus LEVEL_TEMP_BONUS
+        for every level past the first. The level is the single source of
+        truth, so the base can never drift out of sync with level-ups."""
+        level = max(1, _as_int(self.config.get("player", "level", 1), 1))
+        return BASE_TEMP_POINTS + LEVEL_TEMP_BONUS * (level - 1)
+
     def _temp_points_total(self) -> int:
-        """Total temporary stat points: base × (Fortune rank + 1)."""
-        return BASE_TEMP_POINTS * (self._fortune_rank() + 1)
+        """Total temporary stat points: base points × (Fortune rank + 1)."""
+        return self._base_temp_points() * (self._fortune_rank() + 1)
 
-    def _apply_fortune_multiplier(self) -> int:
-        """Scale the point pool by Fortune's multiplier; returns the pool.
+    def _available_temp_points(self) -> int:
+        """Points still free to allocate: the multiplied total minus
+        whatever is already sitting on stats."""
+        return max(0, self._temp_points_total() - self._allocated_total())
 
-        The pool is topped up to base × (rank + 1) minus whatever is already
-        allocated, so ranking Fortune up immediately grants the extra points.
-        Spent points stay spent — no reset, no limit.
+    def _sync_pool(self) -> int:
+        """Recompute the pool from scratch and return it.
+
+        Pool = base points × (Fortune rank + 1) − allocated. The base points
+        are derived from the level, so level-ups, Fortune rank-ups and
+        un-completions all apply their full multiplied effect immediately
+        and nothing can drift out of sync. The config's temp_points key is
+        kept as a readable mirror of the pool, never as the source of truth.
         """
-        total = self._temp_points_total()
-        allocated = self._allocated_total()
-        pool = max(0, _as_int(
-            self.config.get("player", "temp_points", BASE_TEMP_POINTS),
-            BASE_TEMP_POINTS,
-        ))
-        topped = max(pool, total - allocated)
-        if topped != pool:
-            self.config.set("player", "temp_points", topped, save=False)
+        self._pool = self._available_temp_points()
+        if self.config.get("player", "temp_points") != self._pool:
+            self.config.set("player", "temp_points", self._pool, save=False)
             self.config.save()
-        return topped
+        return self._pool
 
     def _allocated_total(self) -> int:
         """How many temporary points are currently allocated to stats."""
@@ -804,15 +815,8 @@ class StatsWidget(QWidget):
         self.config.set("player", "xp", xp, save=False)
         self.config.set("player", "level", level, save=False)
         if levels_gained > 0:
-            # Each level grants bonus temp points plus a permanent point.
-            temp = max(0, _as_int(
-                self.config.get("player", "temp_points", BASE_TEMP_POINTS),
-                BASE_TEMP_POINTS,
-            ))
-            self.config.set(
-                "player", "temp_points",
-                temp + LEVEL_TEMP_BONUS * levels_gained, save=False,
-            )
+            # Each level grows the base temp pool (the refresh below
+            # multiplies it by Fortune) and grants one permanent point.
             perm = max(0, _as_int(self.config.get("player", "perm_points", 0)))
             self.config.set(
                 "player", "perm_points",
@@ -844,15 +848,8 @@ class StatsWidget(QWidget):
         self.config.set("player", "level", level, save=False)
         levels_lost = old_level - level
         if levels_lost > 0:
-            # Refund only what is still unspent; placed permanent points stay.
-            temp = max(0, _as_int(
-                self.config.get("player", "temp_points", BASE_TEMP_POINTS),
-                BASE_TEMP_POINTS,
-            ))
-            self.config.set(
-                "player", "temp_points",
-                max(0, temp - LEVEL_TEMP_BONUS * levels_lost), save=False,
-            )
+            # The base pool shrinks with the level (refresh re-derives it);
+            # placed permanent points stay put.
             perm = max(0, _as_int(self.config.get("player", "perm_points", 0)))
             self.config.set(
                 "player", "perm_points",
@@ -880,13 +877,9 @@ class StatsWidget(QWidget):
         )
         self._name_lbl.setText(self.config.get("player", "name", "Wanderer"))
         self._refresh_xp_display()
-        self._apply_fortune_multiplier()
         for key, bar in self._bars.items():
             bar.temp = self.config.get_nested("player", "temp_allocations", key, default=0)
             bar.base = self.config.get("player", key, 0)
-        self._pool = max(0, _as_int(
-            self.config.get("player", "temp_points", BASE_TEMP_POINTS),
-            BASE_TEMP_POINTS,
-        ))
+        self._sync_pool()
         self._perm_pool = max(0, _as_int(self.config.get("player", "perm_points", 0)))
         self._refresh_pool_display()

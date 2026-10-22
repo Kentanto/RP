@@ -5,7 +5,9 @@ and persists a cache of previously seen files to trigger notifications.
 A mission counts as completed when its JSON carries the hidden author mark
 ("completed": true — there is no UI toggle for players) or when its file sits
 in the completed folder without an explicit false mark. Completed files are
-credited once per file name; setting the mark to false restores recorded rewards.
+credited once per completion; a credit ends when the file leaves the completed
+state (or its content changed since it was credited), which restores the
+recorded rewards and lets a later completion credit again.
 """
 import hashlib
 import json
@@ -105,7 +107,7 @@ class MissionManager:
     A mission counts as completed when its JSON carries the hidden author
     mark ("completed": true) or when its file sits in the completed folder
     without an explicit false mark. Completed files are credited exactly once
-    per file name; explicitly uncompleted files are restored to the active
+    per completion; explicitly uncompleted files are restored to the active
     folder and their recorded rewards are revoked.
     """
 
@@ -156,21 +158,27 @@ class MissionManager:
 
     def _save_cache(self):
         try:
+            payload = json.dumps({"seen_hashes": self._seen_hashes}, indent=2)
+            try:
+                if self.cache_path.read_text(encoding="utf-8") == payload:
+                    return  # identical — skip the write so file watchers stay quiet
+            except OSError:
+                pass  # missing or unreadable — write it fresh below
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            self.cache_path.write_text(
-                json.dumps({"seen_hashes": self._seen_hashes}, indent=2),
-                encoding="utf-8",
-            )
+            self.cache_path.write_text(payload, encoding="utf-8")
         except Exception:
             pass
 
     def _save_credited(self):
         try:
+            payload = json.dumps({"credited": self._credited}, indent=2)
+            try:
+                if self.credited_path.read_text(encoding="utf-8") == payload:
+                    return  # identical — skip the write so file watchers stay quiet
+            except OSError:
+                pass  # missing or unreadable — write it fresh below
             self.credited_path.parent.mkdir(parents=True, exist_ok=True)
-            self.credited_path.write_text(
-                json.dumps({"credited": self._credited}, indent=2),
-                encoding="utf-8",
-            )
+            self.credited_path.write_text(payload, encoding="utf-8")
         except Exception:
             pass
 
@@ -188,15 +196,22 @@ class MissionManager:
                 yield file_path
 
     def _retire_mission(self, mission: Mission, raw: str, move_to: Path | None):
-        """Credit a completed mission to the player once (per file name),
-        then move its file into the completed folder so it leaves the
-        active rotation."""
+        """Credit a completed mission to the player, then move its file into
+        the completed folder so it leaves the active rotation.
+
+        A file counts as a fresh completion when it was never credited or
+        when its content changed since the last credit — the old reward is
+        revoked before the new one is granted."""
         name = Path(mission.source_file).name
-        if name not in self._credited:
+        h = self._file_hash(raw)
+        credited = self._credited.get(name)
+        if credited is None or credited.get("hash") != h:
+            if credited is not None:
+                self._revoke_credit(name, mission)
             mission.completed_at = datetime.now().isoformat(timespec="seconds")
             self._credited[name] = {
                 "title": mission.title,
-                "hash": self._file_hash(raw),
+                "hash": h,
                 "xp": mission.xp,
                 "constellation_points": mission.constellation_points,
                 "skill_points": mission.skill_points,
@@ -230,23 +245,37 @@ class MissionManager:
             return False
 
         mission.source_file = str(target)
-        credited = self._credited.pop(name, None)
-        if credited is not None:
-            self._save_credited()
-            rewards = {
-                field: max(0, value) if isinstance(value, int) and not isinstance(value, bool) else 0
-                for field in ("xp", "constellation_points", "skill_points")
-                for value in (credited.get(field, 0),)
-            }
-            if self.on_uncompleted_mission:
-                self.on_uncompleted_mission(mission, rewards["xp"])
-            if self.on_uncompleted_rewards:
-                self.on_uncompleted_rewards(mission, rewards)
+        self._revoke_credit(name, mission)
 
         key = str(target.resolve())
         self.missions[key] = mission
         self._seen_hashes[key] = self._file_hash(raw)
         return True
+
+    def _revoke_credit(self, name: str, mission: Mission | None = None):
+        """Drop a mission's credit record and revoke the rewards it granted.
+
+        Fires for every completion that ends: an explicit uncomplete, a file
+        that left the completed state, or a re-credit after a content change."""
+        credited = self._credited.pop(name, None)
+        if credited is None:
+            return
+        self._save_credited()
+        rewards = {
+            field: max(0, value) if isinstance(value, int) and not isinstance(value, bool) else 0
+            for field in ("xp", "constellation_points", "skill_points")
+            for value in (credited.get(field, 0),)
+        }
+        if mission is None:
+            mission = Mission(
+                title=str(credited.get("title") or name),
+                description="", story="", difficulty="E", reward="",
+                source_file=name,
+            )
+        if self.on_uncompleted_mission:
+            self.on_uncompleted_mission(mission, rewards["xp"])
+        if self.on_uncompleted_rewards:
+            self.on_uncompleted_rewards(mission, rewards)
 
     def scan(self) -> List[Mission]:
         """Scan the mission folders and return the ACTIVE mission list.
@@ -256,6 +285,7 @@ class MissionManager:
         self.missions_dir.mkdir(parents=True, exist_ok=True)
         self.completed_dir.mkdir(parents=True, exist_ok=True)
         current_keys: set = set()
+        completed_names: set = set()
 
         # 1) Active folder — retire anything carrying the completed mark.
         for file_path in self._iter_mission_files(self.missions_dir):
@@ -267,6 +297,7 @@ class MissionManager:
             mission = Mission.from_json(raw, str(file_path))
 
             if mission.completed:
+                completed_names.add(Path(mission.source_file).name)
                 self._retire_mission(mission, raw, move_to=self.completed_dir)
                 continue
 
@@ -293,6 +324,7 @@ class MissionManager:
                     current_keys.add(str((self.missions_dir / file_path.name).resolve()))
                 continue
             mission.completed = True
+            completed_names.add(file_path.name)
             self._retire_mission(mission, raw, move_to=None)
 
         # remove entries for deleted files
@@ -300,6 +332,14 @@ class MissionManager:
             if stale not in current_keys:
                 del self._seen_hashes[stale]
                 self.missions.pop(stale, None)
+
+        # Revoke credits whose mission left the completed state (moved back
+        # to the active folder, reworked, or deleted) so completing the
+        # mission again grants fresh rewards instead of being blocked by a
+        # stale record.
+        for name in list(self._credited):
+            if name not in completed_names:
+                self._revoke_credit(name)
 
         self._save_cache()
         return list(self.missions.values())

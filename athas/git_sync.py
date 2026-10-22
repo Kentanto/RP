@@ -77,6 +77,7 @@ class GitSyncWorker(QObject):
         self._last_known_files: set = set()
         self._autosave_snapshot: dict[str, tuple[int, int]] = {}
         self._pending_autosave_paths: set[str] = set()
+        self._ignored_paths: dict[str, bool] = {}  # repo-relative path -> git-ignored?
         self._push_pending = False
 
         self._autosave_watch = QTimer(self)
@@ -132,12 +133,27 @@ class GitSyncWorker(QObject):
             for path in folder.rglob("*"):
                 if not path.is_file() or path.suffix.lower() not in AUTOSAVE_EXTS:
                     continue
+                rel = path.relative_to(self.repo_path).as_posix()
+                if self._git_ignored(rel):
+                    continue  # deliberately unsynced files never block the autosave
                 try:
                     stat = path.stat()
-                    files[path.relative_to(self.repo_path).as_posix()] = (stat.st_mtime_ns, stat.st_size)
+                    files[rel] = (stat.st_mtime_ns, stat.st_size)
                 except OSError:
                     continue
         return files
+
+    def _git_ignored(self, rel_path: str) -> bool:
+        """True when git deliberately ignores the file (e.g. the local
+        seen-missions cache). Results are cached — .gitignore rarely changes."""
+        if rel_path not in self._ignored_paths:
+            try:
+                r = self._run_git(["check-ignore", "--", rel_path])
+                ignored = r.returncode == 0
+            except OSError:
+                ignored = False  # git unavailable — watch everything as before
+            self._ignored_paths[rel_path] = ignored
+        return self._ignored_paths[rel_path]
 
     def _poll_autosave_changes(self):
         current = self._scan_autosave_files()

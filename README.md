@@ -43,7 +43,14 @@ missions themselves. To complete one for your users:
 
 To undo a completion, set `"completed": false` in its file under
 `completed_missions/`. The app moves it back into `missions/` and removes the
-recorded XP and unspent point rewards from the player's balances.
+recorded XP and unspent point rewards from the player's balances. The same
+revocation happens when a credited mission file leaves the completed state any
+other way (moved back into `missions/`, reworked, or deleted), and a completed
+file whose content changed since it was credited counts as a fresh completion —
+the old reward is revoked and the new one granted.
+
+Git-ignored files (such as `cache/seen_missions.json`) are never committed or
+pushed, and their changes never delay the autosave.
 
 ### Mission zoom
 The MISSIONS tab has `- / % / + / RESET` zoom controls (60%–200%). The chosen
