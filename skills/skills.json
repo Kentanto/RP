@@ -13,44 +13,62 @@
           "id": "mastery",
           "title": "Fireball Mastery",
           "description": "Hone the blazing orb. Each rank makes the fireball hit harder (+10 damage).",
-          "x": 230, "y": 330,
+          "x": 230,
+          "y": 330,
           "max_rank": 5,
-          "parents": []
+          "parents": [],
+          "rank": 5
         },
         {
           "id": "intense-heat",
           "title": "Intense Heat",
           "description": "Feed more mana into the flame. +5 damage per rank.",
-          "x": 440, "y": 190,
+          "x": 440,
+          "y": 190,
           "max_rank": 3,
-          "parents": ["mastery"]
+          "parents": [
+            "mastery"
+          ],
+          "rank": 3
         },
         {
           "id": "ember-trail",
           "title": "Ember Trail",
           "description": "The orb leaves a trail of burning embers that scorch everything it passes.",
-          "x": 440, "y": 470,
+          "x": 440,
+          "y": 470,
           "max_rank": 1,
-          "parents": ["mastery"]
+          "parents": [
+            "mastery"
+          ],
+          "rank": 1
         },
         {
           "id": "flashpoint",
           "title": "Flashpoint",
           "description": "The fireball detonates on impact in a searing burst.",
-          "x": 660, "y": 130,
+          "x": 660,
+          "y": 130,
           "max_rank": 2,
-          "parents": ["intense-heat"]
+          "parents": [
+            "intense-heat"
+          ],
+          "rank": 2
         },
         {
           "id": "twin-flames",
           "title": "Twin Flames",
           "description": "Split the orb into two smaller fireballs that strike together.",
-          "x": 670, "y": 330,
+          "x": 670,
+          "y": 330,
           "max_rank": 1,
-          "parents": ["intense-heat", "ember-trail"]
+          "parents": [
+            "intense-heat",
+            "ember-trail"
+          ],
+          "rank": 1
         }
       ]
     }
   ]
 }
-
