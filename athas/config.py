@@ -27,6 +27,7 @@ DEFAULTS = {
         "defense": 5,
         "speed": 8,
         "temp_points": 10,
+        "perm_points": 0,
         "skill_points": 0,
         "temp_allocations": {
             "health": 0,

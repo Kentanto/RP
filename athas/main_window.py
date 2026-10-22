@@ -19,7 +19,7 @@ from athas.inventory_panel import InventoryPanel
 from athas.git_sync import GitSyncWorker
 from athas.notification_widget import NotificationWidget
 from athas.settings_panel import SettingsPanel
-from athas.stats_widget import StatsWidget
+from athas.stats_widget import LEVEL_PERM_BONUS, LEVEL_TEMP_BONUS, StatsWidget
 from athas.ability_tree_panel import AbilityTreePanel
 from athas.skills_manager import SkillManager
 from athas.skills_panel import SkillsPanel
@@ -704,7 +704,13 @@ class MainWindow(QMainWindow):
             return
         description = f"Reward: {mission.reward}" if mission.reward else "The System acknowledges your success."
         if levels_gained > 0:
-            description += f"  LEVEL UP — Level {self.config.get('player', 'level', 1)}!"
+            temp_gain = LEVEL_TEMP_BONUS * levels_gained
+            perm_gain = LEVEL_PERM_BONUS * levels_gained
+            description += (
+                f"  LEVEL UP — Level {self.config.get('player', 'level', 1)}!"
+                f"  +{temp_gain} temp point{'s' if temp_gain != 1 else ''},"
+                f" +{perm_gain} permanent point{'s' if perm_gain != 1 else ''}."
+            )
         self.notif.show_notification(
             title=mission.title,
             description=description,

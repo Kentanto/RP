@@ -1,5 +1,5 @@
 """
-Athas — Player stats dashboard with temporary point allocation.
+Athas — Player stats dashboard with temporary and permanent point allocation.
 """
 from PySide6.QtCore import Qt, Signal, QRectF, QPointF
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QBrush, QLinearGradient, QPen
@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QApplication, QInputDialog,
 )
 
-from athas.styles import CYAN, WHITE, GRAY, DANGER
+from athas.styles import CYAN, WHITE, GRAY, DANGER, GOLD
 
 
 # ── Dashboard surfaces (shared by everything on this page) ──
@@ -31,6 +31,11 @@ STAT_COLORS = {
 # constellation multiplies this by (rank + 1).
 BASE_TEMP_POINTS = 10
 FORTUNE_CONSTELLATION_ID = "B_Fortune"
+
+# Every level-up grants bonus temp points plus one permanent point that
+# can be locked into any stat's base value.
+LEVEL_TEMP_BONUS = 2
+LEVEL_PERM_BONUS = 1
 
 
 def _as_int(value, fallback=0):
@@ -185,9 +190,10 @@ class StatBar(QWidget):
 
 
 class AllocatedStatBar(QFrame):
-    """A stat row: label, −/+ steppers, custom bar, MAX button and readout."""
+    """A stat row: label, −/+ steppers, custom bar, MAX/PERM buttons and readout."""
 
-    def __init__(self, label, base, temp, max_total, color, on_change, on_commit, parent=None):
+    def __init__(self, label, base, temp, max_total, color, on_change, on_commit,
+                 on_perm=None, parent=None):
         super().__init__(parent)
         self._base = _as_int(base)
         self._temp = max(0, _as_int(temp))
@@ -195,7 +201,9 @@ class AllocatedStatBar(QFrame):
         self._color = color
         self._on_change = on_change     # (±amount) -> points actually applied
         self._on_commit = on_commit
+        self._on_perm = on_perm         # () -> permanent points actually applied
         self._pool_left = 0
+        self._perm_left = 0
 
         self.setStyleSheet("background: transparent; border: none;")
         layout = QHBoxLayout(self)
@@ -248,6 +256,35 @@ class AllocatedStatBar(QFrame):
         self._max_btn.clicked.connect(self._allocate_room)
         layout.addWidget(self._max_btn)
 
+        self._perm_btn = QPushButton("PERM")
+        self._perm_btn.setFixedSize(46, 30)
+        self._perm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._perm_btn.setToolTip("Spend 1 permanent point — raises this stat's base forever.")
+        self._perm_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: 1px solid {EDGE_HI};
+                color: {TEXT_DIM};
+                font-size: 10px;
+                font-weight: bold;
+                letter-spacing: 1px;
+                border-radius: 5px;
+                padding: 0;
+            }}
+            QPushButton:hover {{
+                background-color: {GOLD}26;
+                border: 1px solid {GOLD};
+                color: {GOLD};
+            }}
+            QPushButton:disabled {{
+                background-color: {SURFACE};
+                border: 1px solid {EDGE};
+                color: #3a3a44;
+            }}
+        """)
+        self._perm_btn.clicked.connect(self._perm_allocate)
+        layout.addWidget(self._perm_btn)
+
         self._val = QLabel()
         self._val.setFixedWidth(96)
         self._val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -263,6 +300,21 @@ class AllocatedStatBar(QFrame):
     def temp(self, value):
         self._temp = max(0, _as_int(value))
         self._update_display()
+
+    @property
+    def base(self):
+        return self._base
+
+    @base.setter
+    def base(self, value):
+        self._base = max(0, _as_int(value))
+        self._update_display()
+
+    def set_perm_state(self, perm_left):
+        """Mirror of set_pool_state for the permanent point balance, so the
+        PERM buttons reflect what is available to place."""
+        self._perm_left = max(0, _as_int(perm_left))
+        self._sync_controls()
 
     def set_pool_state(self, pool_left):
         """Called by the dashboard whenever the pool changes, so the
@@ -322,6 +374,15 @@ class AllocatedStatBar(QFrame):
         """MAX: dump as many points as the pool and the cap allow."""
         self._allocate(self._room())
 
+    def _perm_allocate(self):
+        """PERM: lock one permanent point into this stat's base value."""
+        if self._on_perm is None:
+            return
+        applied = self._on_perm()
+        if applied > 0:
+            self._base += applied
+            self._update_display()
+
     def _custom_amount(self):
         amount, ok = QInputDialog.getInt(
             self, "Allocate Points",
@@ -348,6 +409,7 @@ class AllocatedStatBar(QFrame):
         self._plus.setEnabled(can_add)
         self._max_btn.setEnabled(can_add)
         self._minus.setEnabled(self._temp > 0)
+        self._perm_btn.setEnabled(self._room() > 0 and self._perm_left > 0)
 
 
 class LevelBadge(QFrame):
@@ -392,6 +454,7 @@ class StatsWidget(QWidget):
         super().__init__(parent)
         self.config = config
         self._pool = self._apply_fortune_multiplier()
+        self._perm_pool = max(0, _as_int(self.config.get("player", "perm_points", 0)))
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(32, 32, 32, 32)
@@ -479,6 +542,31 @@ class StatsWidget(QWidget):
 
         right.addWidget(pool_frame)
 
+        perm_frame = QFrame()
+        perm_frame.setObjectName("PermPanel")
+        perm_frame.setStyleSheet(f"""
+            QFrame#PermPanel {{ background-color: #14110a; border: 1px solid {GOLD}44; border-radius: 6px; }}
+        """)
+        perm_layout = QHBoxLayout(perm_frame)
+        perm_layout.setContentsMargins(16, 10, 16, 10)
+        perm_layout.setSpacing(10)
+
+        self._perm_icon = QLabel("PERM POINTS")
+        self._perm_icon.setStyleSheet(f"color: {GOLD}; font-size: 11px; font-weight: bold; letter-spacing: 2px;")
+        perm_layout.addWidget(self._perm_icon)
+
+        self._perm_lbl = QLabel()
+        self._perm_lbl.setStyleSheet(f"color: {WHITE}; font-size: 20px; font-weight: bold;")
+        perm_layout.addWidget(self._perm_lbl)
+
+        perm_layout.addStretch()
+
+        self._perm_hint = QLabel()
+        self._perm_hint.setStyleSheet(f"color: {TEXT_DIM}; font-size: 10px;")
+        perm_layout.addWidget(self._perm_hint)
+
+        right.addWidget(perm_frame)
+
         right.addStretch()
         top.addLayout(right, 1)
 
@@ -524,6 +612,7 @@ class StatsWidget(QWidget):
                 STAT_COLORS[key],
                 on_change=self._try_spend,
                 on_commit=self._commit_state,
+                on_perm=lambda stat_key=key: self._spend_perm(stat_key),
             )
             panel_layout.addWidget(bar)
             self._bars[key] = bar
@@ -588,6 +677,22 @@ class StatsWidget(QWidget):
             return applied
         self._pool -= delta   # negative delta refunds points
         return -delta
+
+    def _spend_perm(self, key):
+        """Spend one permanent point: the stat's base value rises for good.
+        Returns how many points were applied (0 when refused)."""
+        bar = self._bars.get(key)
+        if bar is None or self._perm_pool <= 0:
+            return 0
+        if bar.base + bar.temp >= self.MAX_STAT:
+            return 0
+        self._perm_pool -= 1
+        base = _as_int(self.config.get("player", key, 0)) + 1
+        self.config.set("player", key, base, save=False)
+        self.config.set("player", "perm_points", self._perm_pool, save=False)
+        self.config.save()
+        self._refresh_pool_display()
+        return 1
 
     def _commit_state(self):
         """Called after a bar's temp value changed: refresh UI, then save
@@ -655,8 +760,18 @@ class StatsWidget(QWidget):
             "Available to allocate." if self._pool else "All points spent."
         )
         self._reset_btn.setEnabled(any(bar.temp for bar in self._bars.values()))
+
+        self._perm_lbl.setText(f"{self._perm_pool:,}")
+        perm_colour = GOLD if self._perm_pool else GRAY
+        self._perm_icon.setStyleSheet(f"color: {perm_colour}; font-size: 11px; font-weight: bold; letter-spacing: 2px;")
+        self._perm_lbl.setStyleSheet(f"color: {perm_colour}; font-size: 20px; font-weight: bold;")
+        self._perm_hint.setText(
+            "Place on a stat with its PERM button." if self._perm_pool
+            else "Earned on level up."
+        )
         for bar in self._bars.values():
             bar.set_pool_state(self._pool)
+            bar.set_perm_state(self._perm_pool)
 
     def grant_skill_points(self, amount: int):
         amount = max(0, _as_int(amount))
@@ -688,6 +803,21 @@ class StatsWidget(QWidget):
             levels_gained += 1
         self.config.set("player", "xp", xp, save=False)
         self.config.set("player", "level", level, save=False)
+        if levels_gained > 0:
+            # Each level grants bonus temp points plus a permanent point.
+            temp = max(0, _as_int(
+                self.config.get("player", "temp_points", BASE_TEMP_POINTS),
+                BASE_TEMP_POINTS,
+            ))
+            self.config.set(
+                "player", "temp_points",
+                temp + LEVEL_TEMP_BONUS * levels_gained, save=False,
+            )
+            perm = max(0, _as_int(self.config.get("player", "perm_points", 0)))
+            self.config.set(
+                "player", "perm_points",
+                perm + LEVEL_PERM_BONUS * levels_gained, save=False,
+            )
         self.config.save()
         self.refresh()
         return levels_gained
@@ -712,9 +842,25 @@ class StatsWidget(QWidget):
 
         self.config.set("player", "xp", total_xp, save=False)
         self.config.set("player", "level", level, save=False)
+        levels_lost = old_level - level
+        if levels_lost > 0:
+            # Refund only what is still unspent; placed permanent points stay.
+            temp = max(0, _as_int(
+                self.config.get("player", "temp_points", BASE_TEMP_POINTS),
+                BASE_TEMP_POINTS,
+            ))
+            self.config.set(
+                "player", "temp_points",
+                max(0, temp - LEVEL_TEMP_BONUS * levels_lost), save=False,
+            )
+            perm = max(0, _as_int(self.config.get("player", "perm_points", 0)))
+            self.config.set(
+                "player", "perm_points",
+                max(0, perm - LEVEL_PERM_BONUS * levels_lost), save=False,
+            )
         self.config.save()
         self.refresh()
-        return old_level - level
+        return levels_lost
 
     def _refresh_xp_display(self):
         lvl = self.config.get("player", "level", 1)
@@ -737,8 +883,10 @@ class StatsWidget(QWidget):
         self._apply_fortune_multiplier()
         for key, bar in self._bars.items():
             bar.temp = self.config.get_nested("player", "temp_allocations", key, default=0)
+            bar.base = self.config.get("player", key, 0)
         self._pool = max(0, _as_int(
             self.config.get("player", "temp_points", BASE_TEMP_POINTS),
             BASE_TEMP_POINTS,
         ))
+        self._perm_pool = max(0, _as_int(self.config.get("player", "perm_points", 0)))
         self._refresh_pool_display()

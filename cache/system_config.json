@@ -34,7 +34,8 @@
       "speed": 0
     },
     "constellation_points": 5,
-    "skill_points": 4988
+    "skill_points": 4988,
+    "perm_points": 0
   },
   "missions": {
     "zoom": 1.0
