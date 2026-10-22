@@ -27,6 +27,11 @@ STAT_COLORS = {
     "speed":   "#6fe07f",
 }
 
+# Base amount of temporary stat points. The Borrowed Fortune
+# constellation multiplies this by (rank + 1).
+BASE_TEMP_POINTS = 10
+FORTUNE_CONSTELLATION_ID = "B_Fortune"
+
 
 def _as_int(value, fallback=0):
     """Coerce a config value to a non-negative int; fall back if missing/corrupt."""
@@ -386,7 +391,7 @@ class StatsWidget(QWidget):
     def __init__(self, config, parent=None):
         super().__init__(parent)
         self.config = config
-        self._pool = max(0, _as_int(config.get("player", "temp_points", 10), 10))
+        self._pool = self._apply_fortune_multiplier()
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(32, 32, 32, 32)
@@ -604,6 +609,43 @@ class StatsWidget(QWidget):
             bar.release_all(commit=False)
         self._commit_state()
 
+    def _fortune_rank(self) -> int:
+        """Rank of the Borrowed Fortune constellation (0 while unranked)."""
+        return max(0, _as_int(
+            self.config.get_nested("constellations", FORTUNE_CONSTELLATION_ID, default=0)
+        ))
+
+    def _temp_points_total(self) -> int:
+        """Total temporary stat points: base × (Fortune rank + 1)."""
+        return BASE_TEMP_POINTS * (self._fortune_rank() + 1)
+
+    def _apply_fortune_multiplier(self) -> int:
+        """Scale the point pool by Fortune's multiplier; returns the pool.
+
+        The pool is topped up to base × (rank + 1) minus whatever is already
+        allocated, so ranking Fortune up immediately grants the extra points.
+        Spent points stay spent — no reset, no limit.
+        """
+        total = self._temp_points_total()
+        allocated = self._allocated_total()
+        pool = max(0, _as_int(
+            self.config.get("player", "temp_points", BASE_TEMP_POINTS),
+            BASE_TEMP_POINTS,
+        ))
+        topped = max(pool, total - allocated)
+        if topped != pool:
+            self.config.set("player", "temp_points", topped, save=False)
+            self.config.save()
+        return topped
+
+    def _allocated_total(self) -> int:
+        """How many temporary points are currently allocated to stats."""
+        player = self.config.data.get("player")
+        allocations = player.get("temp_allocations") if isinstance(player, dict) else None
+        if not isinstance(allocations, dict):
+            return 0
+        return sum(max(0, _as_int(value)) for value in allocations.values())
+
     def _refresh_pool_display(self):
         self._pool_lbl.setText(f"{self._pool:,}")
         colour = CYAN if self._pool else GRAY
@@ -692,7 +734,11 @@ class StatsWidget(QWidget):
         )
         self._name_lbl.setText(self.config.get("player", "name", "Wanderer"))
         self._refresh_xp_display()
+        self._apply_fortune_multiplier()
         for key, bar in self._bars.items():
             bar.temp = self.config.get_nested("player", "temp_allocations", key, default=0)
-        self._pool = max(0, _as_int(self.config.get("player", "temp_points", 10), 10))
+        self._pool = max(0, _as_int(
+            self.config.get("player", "temp_points", BASE_TEMP_POINTS),
+            BASE_TEMP_POINTS,
+        ))
         self._refresh_pool_display()

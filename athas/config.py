@@ -1,6 +1,7 @@
 """
 Athas — JSON config manager with auto-save.
 """
+import copy
 import json
 import os
 from pathlib import Path
@@ -74,7 +75,9 @@ class ConfigManager:
                 self._data[section] = {}
             for key, default_val in values.items():
                 if key not in self._data[section]:
-                    self._data[section][key] = default_val
+                    # Deep-copy so nested defaults (e.g. temp_allocations)
+                    # are never shared with future ConfigManager instances.
+                    self._data[section][key] = copy.deepcopy(default_val)
 
     def load(self):
         if self._path.exists():
