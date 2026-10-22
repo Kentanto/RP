@@ -17,6 +17,7 @@ from athas.mission_manager import MissionManager, Mission
 from athas.inventory_manager import InventoryManager
 from athas.inventory_panel import InventoryPanel
 from athas.git_sync import GitSyncWorker
+from athas.backup_manager import BackupManager, BACKUP_INTERVAL_MS
 from athas.notification_widget import NotificationWidget
 from athas.settings_panel import SettingsPanel
 from athas.stats_widget import LEVEL_PERM_BONUS, LEVEL_TEMP_BONUS, StatsWidget
@@ -243,6 +244,8 @@ class MainWindow(QMainWindow):
         self._inv_panel: InventoryPanel | None = None
         self._git_sync: GitSyncWorker | None = None
         self._scan_timer: QTimer | None = None
+        self._backup_manager: BackupManager | None = None
+        self._backup_timer: QTimer | None = None
 
         self.root = QWidget(self)
         self.setCentralWidget(self.root)
@@ -355,6 +358,15 @@ class MainWindow(QMainWindow):
             self._git_sync.pull_complete.connect(self._on_git_pull)
             self._git_sync.new_files_detected.connect(self._on_new_files)
             self._git_sync.start()
+        # Back up every JSON data file (plus the inventory db) once at
+        # startup, then create a fresh backup folder every 30 minutes.
+        # Folders older than 30 days are pruned inside create_backup().
+        self._backup_manager = BackupManager(root=rp)
+        self._backup_manager.create_backup()
+        self._backup_timer = QTimer(self)
+        self._backup_timer.timeout.connect(self._backup_manager.create_backup)
+        self._backup_timer.start(BACKUP_INTERVAL_MS)
+
         self._scan_timer = QTimer(self)
         self._scan_timer.timeout.connect(self._scan_missions)
         self._scan_timer.start(5000)
@@ -799,6 +811,8 @@ class MainWindow(QMainWindow):
             self._git_sync.stop()
         if self._scan_timer is not None:
             self._scan_timer.stop()
+        if self._backup_timer is not None:
+            self._backup_timer.stop()
         if self._fade_timer is not None:
             self._fade_timer.stop()
         if self._player is not None:

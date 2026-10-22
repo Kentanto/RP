@@ -18,6 +18,15 @@ python main.py
 | `icons/` | `background_menu.png` used as fullscreen background |
 | `sounds/` | SFX files reserved for future use |
 | `library/` | Word/name libraries used to generate artifacts |
+| `backups/` | Local snapshots of the JSON data files (git-ignored) |
+
+## Backups
+On startup and every 30 minutes the app copies every `*.json` data file —
+plus `cache/inventory.db` — into a new `backups/<date_time>/` folder,
+mirroring each file's original folder structure (e.g.
+`backups/2026-10-22_15-30-00/missions/<file>.json`). Every backup gets its
+own folder, and folders older than 30 days are deleted automatically. The
+`backups/` folder is git-ignored, so it is never committed or pushed.
 
 ## How the mission pipeline works
 1. You work on mission files inside `draft_missions/` — they stay local.
