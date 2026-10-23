@@ -1,17 +1,5 @@
 {
   "credited": {
-    "03_defeat_the_gatekeeper.json": {
-      "title": "Defeat the Gatekeeper",
-      "hash": "50042ad4ba7f44ac",
-      "xp": 500,
-      "constellation_points": 0,
-      "skill_points": 0,
-      "gold": 150,
-      "artifact_ids": [
-        2
-      ],
-      "credited_at": "2026-10-23T23:12:41"
-    },
     "03_defeat_the_gatekeeper copy.json": {
       "title": "Defeat the Gatekeeper",
       "hash": "50042ad4ba7f44ac",
