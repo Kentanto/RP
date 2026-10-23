@@ -13,32 +13,30 @@
   "git_sync": {
     "enabled": false,
     "interval_ms": 15000,
-    "folders": "missions,items,icons,skills,cache"
+    "folders": "missions,items,icons,skills,cache,completed_missions"
   },
   "player": {
     "name": "Kenji Izumi",
     "rank": "F",
     "level": 1,
     "xp": 0,
-    "health": 2,
+    "health": 1,
     "magic": 1,
-    "attack": 3,
+    "attack": 1,
     "defense": 1,
-    "speed": 4,
+    "speed": 1,
     "temp_points": 10,
     "temp_allocations": {
       "health": 0,
       "magic": 0,
       "attack": 0,
       "defense": 0,
-      "speed": 0,
-      "luck": 0
+      "speed": 0
     },
     "constellation_points": 0,
     "skill_points": 0,
     "perm_points": 0,
-    "gold": 0,
-    "luck": 5
+    "gold": 0
   },
   "missions": {
     "zoom": 1.0
