@@ -17,7 +17,7 @@ python main.py
 | `skills/` | Authored skill definitions stored as JSON |
 | `icons/` | `background_menu.png` used as fullscreen background |
 | `sounds/` | SFX files reserved for future use |
-| `library/` | Word/name libraries used to generate artifacts |
+| `library/` | `item_types.txt` — the item types artifacts are generated from |
 | `backups/` | Local snapshots of the JSON data files (git-ignored) |
 
 ## Backups
@@ -130,6 +130,31 @@ config. Existing constellation ranks saved under the old `skills` key are
 migrated automatically. The skills folder is included in git sync and
 autosave when sync is enabled.
 
+## Artifacts & the Shop
+Artifacts are auto-generated gear (weapons, armor, accessories) stored in
+`cache/inventory.db`. Every artifact rolls:
+* an **item type** from `library/item_types.txt` (Sword, Shield,
+  Chestplate, Ring, ...) — the type also names the artifact and biases
+  which stats it rolls
+* a **rarity** — Common, Uncommon, Rare, Epic, Legendary, Mythic — which
+  sets the power multiplier, how many stats are rolled, and the shop price
+* a **level** that scales the rolled stats (mission rewards roll at the
+  player's current level)
+
+There are only two ways to obtain artifacts:
+1. **Mission rewards** — add `"artifact_reward": <count>` to a mission JSON.
+   The rarity is rolled from the mission difficulty's loot table (E-rank
+   missions drop Common–Rare, S-rank drop Epic–Mythic) unless you pin it
+   with `"artifact_rarity": "Rare"`.
+2. **The Shop** — the SHOP tab sells 6 generated artifacts for gold. The
+   stock lives in the database (so it syncs and persists), RESTOCK rerolls
+   it, and buying moves the artifact into the inventory with its origin
+   recorded.
+
+Gold comes from mission `"gold"` rewards and is shown in the sidebar. The
+`library/` folder is part of git sync, so curating `item_types.txt` locally
+and committing it updates the loot pool for everyone.
+
 ## Mission file format
 JSON files (`*.json`) inside `missions/`:
 ```json
@@ -138,16 +163,24 @@ JSON files (`*.json`) inside `missions/`:
   "description": "What needs to be done.",
   "story": "Longer flavour text shown in the mission detail view.",
   "difficulty": "C",
-  "reward": "Bronze Key",
+  "reward": "Bronze Key, +100 Gold, 1 Artifact",
   "xp": 100,
+  "gold": 100,
+  "artifact_reward": 1,
+  "artifact_rarity": "Rare",
    "constellation_points": 0,
    "skill_points": 0,
   "completed": false
 }
 ```
-- `"xp"`, `"constellation_points"`, and `"skill_points"` are hidden integer
+- `"xp"`, `"constellation_points"`, `"skill_points"`, and `"gold"` are hidden integer
    amounts granted when the mission completes. They may be omitted or set to
-   `0`. Skill points add to the skill-upgrade balance.
+   `0`. Skill points add to the skill-upgrade balance; gold is
+   spent in the shop.
+- `"artifact_reward"` grants that many generated artifacts when the mission
+   completes. `"artifact_rarity"` optionally pins their rarity; otherwise it
+   is rolled from the difficulty loot table. Un-completing a mission revokes
+   its gold and removes the artifacts it granted.
 - `"reward"` is display text only; it is shown to the player without revealing
    the numeric reward fields.
 - `"completed"` is the hidden author mark. Players never see or set it in the

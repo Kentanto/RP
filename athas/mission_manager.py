@@ -5,9 +5,13 @@ and persists a cache of previously seen files to trigger notifications.
 A mission counts as completed when its JSON carries the hidden author mark
 ("completed": true — there is no UI toggle for players) or when its file sits
 in the completed folder without an explicit false mark. Completed files are
-credited once per completion; a credit ends when the file leaves the completed
+i credited once per completion; a credit ends when the file leaves the completed
 state (or its content changed since it was credited), which restores the
 recorded rewards and lets a later completion credit again.
+
+Rewards cover xp, constellation/skill points, gold, and generated artifacts
+(artifact_reward / artifact_rarity). The ids of granted artifacts are stored
+with the credit so an undo removes exactly those artifacts again.
 """
 import hashlib
 import json
@@ -16,6 +20,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Callable
 from dataclasses import dataclass
+
+from athas.artifact_generator import RARITIES
 
 
 def _parse_xp(data: Dict[str, Any]) -> int:
@@ -33,6 +39,14 @@ def _parse_points(data: Dict[str, Any], field: str) -> int:
     return 0
 
 
+def _clean_rarity(raw: Any) -> str:
+    """Normalise an artifact_rarity hint to a known rarity, or '' if absent."""
+    if not isinstance(raw, str):
+        return ""
+    rarity = raw.strip().title()
+    return rarity if rarity in RARITIES else ""
+
+
 @dataclass
 class Mission:
     title: str
@@ -47,6 +61,9 @@ class Mission:
     xp: int = 0
     constellation_points: int = 0
     skill_points: int = 0
+    gold: int = 0
+    artifact_reward: int = 0
+    artifact_rarity: str = ""  # optional rarity hint, e.g. "Rare"
 
     @classmethod
     def from_json(cls, raw: str, source: str) -> "Mission":
@@ -84,6 +101,9 @@ class Mission:
             xp=_parse_xp(data),
             constellation_points=_parse_points(data, "constellation_points"),
             skill_points=_parse_points(data, "skill_points"),
+            gold=_parse_points(data, "gold"),
+            artifact_reward=_parse_points(data, "artifact_reward"),
+            artifact_rarity=_clean_rarity(data.get("artifact_rarity")),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -96,6 +116,9 @@ class Mission:
             "xp": self.xp,
             "constellation_points": self.constellation_points,
             "skill_points": self.skill_points,
+            "gold": self.gold,
+            "artifact_reward": self.artifact_reward,
+            "artifact_rarity": self.artifact_rarity,
             "completed": self.completed,
         }
 
@@ -117,9 +140,9 @@ class MissionManager:
         cache_path: str,
         completed_dir: str | None = None,
         on_new_mission: Callable[[Mission], None] | None = None,
-        on_completed_mission: Callable[[Mission], None] | None = None,
+        on_completed_mission: Callable[[Mission], Any] | None = None,
         on_uncompleted_mission: Callable[[Mission, int], None] | None = None,
-        on_uncompleted_rewards: Callable[[Mission, Dict[str, int]], None] | None = None,
+        on_uncompleted_rewards: Callable[[Mission, Dict[str, Any]], None] | None = None,
     ):
         self.missions_dir = Path(missions_dir)
         self.completed_dir = (
@@ -208,6 +231,17 @@ class MissionManager:
         if credited is None or credited.get("hash") != h:
             if credited is not None:
                 self._revoke_credit(name, mission)
+            # Let the app grant the rewards first — it returns the ids of
+            # the artifacts it handed out so a revoked credit can take
+            # them back.
+            granted_artifact_ids: List[int] = []
+            if self.on_completed_mission:
+                result = self.on_completed_mission(mission)
+                for value in (result or []):
+                    try:
+                        granted_artifact_ids.append(int(value))
+                    except (TypeError, ValueError):
+                        continue
             mission.completed_at = datetime.now().isoformat(timespec="seconds")
             self._credited[name] = {
                 "title": mission.title,
@@ -215,11 +249,11 @@ class MissionManager:
                 "xp": mission.xp,
                 "constellation_points": mission.constellation_points,
                 "skill_points": mission.skill_points,
+                "gold": mission.gold,
+                "artifact_ids": granted_artifact_ids,
                 "credited_at": mission.completed_at,
             }
             self._save_credited()
-            if self.on_completed_mission:
-                self.on_completed_mission(mission)
 
         if move_to is not None:
             try:
@@ -263,9 +297,13 @@ class MissionManager:
         self._save_credited()
         rewards = {
             field: max(0, value) if isinstance(value, int) and not isinstance(value, bool) else 0
-            for field in ("xp", "constellation_points", "skill_points")
+            for field in ("xp", "constellation_points", "skill_points", "gold")
             for value in (credited.get(field, 0),)
         }
+        rewards["artifact_ids"] = [
+            value for value in (credited.get("artifact_ids") or [])
+            if isinstance(value, int) and not isinstance(value, bool)
+        ]
         if mission is None:
             mission = Mission(
                 title=str(credited.get("title") or name),

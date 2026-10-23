@@ -16,6 +16,7 @@ from athas.styles import MAIN_QSS, CYAN, BLACK, WHITE, DIFF_COLOURS, mission_car
 from athas.mission_manager import MissionManager, Mission
 from athas.inventory_manager import InventoryManager
 from athas.inventory_panel import InventoryPanel
+from athas.shop_panel import ShopPanel
 from athas.git_sync import GitSyncWorker
 from athas.backup_manager import BackupManager, BACKUP_INTERVAL_MS
 from athas.notification_widget import NotificationWidget
@@ -242,6 +243,7 @@ class MainWindow(QMainWindow):
         self._inv_manager: InventoryManager | None = None
         self._skills_manager: SkillManager | None = None
         self._inv_panel: InventoryPanel | None = None
+        self._shop_panel: ShopPanel | None = None
         self._git_sync: GitSyncWorker | None = None
         self._scan_timer: QTimer | None = None
         self._backup_manager: BackupManager | None = None
@@ -337,17 +339,20 @@ class MainWindow(QMainWindow):
         if self._inv_panel is not None:
             self._inv_panel.inv_manager = self._inv_manager
             self._inv_panel.refresh()
+        if self._shop_panel is not None:
+            self._shop_panel.inv_manager = self._inv_manager
+            self._shop_panel.refresh()
         if self.config.get("git_sync", "enabled", True):
             folders = self.config.get(
                 "git_sync", "folders",
-                "missions,completed_missions,items,icons,cache,skills",
+                "missions,completed_missions,items,icons,cache,skills,library",
             )
             sync_paths = [p.strip() for p in str(folders).split(",") if p.strip()]
             # The completed-missions folder is part of the mission pipeline —
             # always sync it alongside the active missions folder.
             if "missions" in sync_paths and "completed_missions" not in sync_paths:
                 sync_paths.append("completed_missions")
-            for required_path in ("missions", "completed_missions", "cache", "skills"):
+            for required_path in ("missions", "completed_missions", "cache", "skills", "library"):
                 if required_path not in sync_paths:
                     sync_paths.append(required_path)
             self._git_sync = GitSyncWorker(
@@ -378,7 +383,12 @@ class MainWindow(QMainWindow):
         level = self.config.get("player", "level", 1)
         if isinstance(level, float) and level.is_integer():
             level = int(level)
-        self._sidebar_player_lbl.setText(f"Rank: {rank}\nLevel: {level}")
+        gold = self.config.get("player", "gold", 0)
+        try:
+            gold = int(gold)
+        except (TypeError, ValueError):
+            gold = 0
+        self._sidebar_player_lbl.setText(f"Rank: {rank}\nLevel: {level}\nGold: {gold}")
 
     def _build_sidebar(self):
         sidebar = QFrame()
@@ -405,7 +415,7 @@ class MainWindow(QMainWindow):
         sb_layout.addSpacing(20)
 
         self._nav_buttons = {}
-        for label in ["DASHBOARD", "MISSIONS", "INVENTORY", "SETTINGS"]:
+        for label in ["DASHBOARD", "MISSIONS", "INVENTORY", "SHOP", "SETTINGS"]:
             btn = HoverButton(label)
             btn.setStyleSheet(f"""
                 QPushButton {{
@@ -430,6 +440,8 @@ class MainWindow(QMainWindow):
                 btn.clicked.connect(lambda _=None: self._show_page(1))
             elif label == "INVENTORY":
                 btn.clicked.connect(lambda _=None: self._show_page(2))
+            elif label == "SHOP":
+                btn.clicked.connect(lambda _=None: self._show_page(5))
             elif label == "SETTINGS":
                 btn.clicked.connect(self._toggle_settings)
             sb_layout.addWidget(btn)
@@ -522,6 +534,11 @@ class MainWindow(QMainWindow):
         self._stats_widget.abilities_clicked.connect(lambda: self._show_page(3))
         self._stats_widget.skills_clicked.connect(self._show_skills)
 
+        # ── Page 5 : SHOP ──
+        self._shop_panel = ShopPanel(self.config, None)
+        self._shop_panel.gold_changed.connect(self._refresh_sidebar_player)
+        self._content_pages.addWidget(self._shop_panel)
+
         return self._content_pages
 
     def _show_skills(self):
@@ -536,10 +553,13 @@ class MainWindow(QMainWindow):
         if index == 0:
             self._refresh_sidebar_player()
             self._stats_widget.refresh()
-        for i, (label, btn) in enumerate(self._nav_buttons.items()):
+        elif index == 5 and self._shop_panel is not None:
+            self._shop_panel.refresh()
+        page_by_label = {"DASHBOARD": 0, "MISSIONS": 1, "INVENTORY": 2, "SHOP": 5}
+        for label, btn in self._nav_buttons.items():
             if label == "SETTINGS":
                 continue
-            if i == index:
+            if page_by_label.get(label) == index:
                 btn.setStyleSheet(btn.styleSheet() + f"color: {CYAN}; border-left: 3px solid {CYAN};")
             else:
                 btn.setStyleSheet(btn.styleSheet().replace(f"color: {CYAN}; border-left: 3px solid {CYAN};", ""))
@@ -699,8 +719,22 @@ class MainWindow(QMainWindow):
         self._detail_view.show()
         self._detail_view.raise_()
 
+    def _add_gold(self, amount: int):
+        """Credit gold to the player and refresh every gold display."""
+        try:
+            current = int(self.config.get("player", "gold", 0) or 0)
+        except (TypeError, ValueError):
+            current = 0
+        self.config.set("player", "gold", max(0, current) + max(0, amount))
+        self._refresh_sidebar_player()
+        if self._shop_panel is not None:
+            self._shop_panel.refresh_gold()
+
     def _on_mission_completed(self, mission: Mission):
-        """The author marked a mission as done — grant its numeric rewards once."""
+        """The author marked a mission as done — grant its rewards once.
+
+        Returns the ids of the artifacts granted so the credit record can
+        revoke them if the completion is ever undone."""
         levels_gained = 0
         if mission.xp > 0:
             levels_gained = self._stats_widget.grant_xp(mission.xp)
@@ -712,9 +746,34 @@ class MainWindow(QMainWindow):
             points = self.config.get("player", "constellation_points", 0)
             self.config.set("player", "constellation_points", max(0, points) + mission.constellation_points)
             self._ability_panel.refresh_points()
+        if mission.gold > 0:
+            self._add_gold(mission.gold)
+        granted_ids: list = []
+        loot_lines: list = []
+        if mission.artifact_reward > 0 and self._inv_manager is not None:
+            level = 1
+            try:
+                level = max(1, int(self.config.get("player", "level", 1) or 1))
+            except (TypeError, ValueError):
+                pass
+            artifacts = self._inv_manager.generate_artifacts(
+                count=mission.artifact_reward,
+                rarity=mission.artifact_rarity or None,
+                difficulty=mission.difficulty,
+                level=level,
+                source="mission",
+            )
+            for artifact in artifacts:
+                granted_ids.append(int(artifact.uid.split(":", 1)[1]))
+                loot_lines.append(f"  ARTIFACT ACQUIRED — {artifact.name} ({artifact.rarity}).")
+            if self._inv_panel is not None:
+                self._inv_panel.refresh()
         if not self.config.get("notifications", "enabled", True):
-            return
+            return granted_ids
         description = f"Reward: {mission.reward}" if mission.reward else "The System acknowledges your success."
+        if mission.gold > 0:
+            description += f"  +{mission.gold} gold."
+        description += "".join(loot_lines)
         if levels_gained > 0:
             temp_gain = LEVEL_TEMP_BONUS * levels_gained
             perm_gain = LEVEL_PERM_BONUS * levels_gained
@@ -730,6 +789,7 @@ class MainWindow(QMainWindow):
             duration_ms=int(self.config.get("notifications", "duration_ms", 8000)),
             header="MISSION COMPLETED",
         )
+        return granted_ids
 
     def _on_mission_uncompleted(self, mission: Mission, rewards: dict):
         """Revoke the numeric rewards previously granted for a mission."""
@@ -746,6 +806,21 @@ class MainWindow(QMainWindow):
             points = self.config.get("player", "constellation_points", 0)
             self.config.set("player", "constellation_points", max(0, points - constellation_points))
             self._ability_panel.refresh_points()
+        gold = rewards.get("gold", 0)
+        if gold > 0:
+            try:
+                current = int(self.config.get("player", "gold", 0) or 0)
+            except (TypeError, ValueError):
+                current = 0
+            self.config.set("player", "gold", max(0, current - gold))
+            self._refresh_sidebar_player()
+            if self._shop_panel is not None:
+                self._shop_panel.refresh_gold()
+        artifact_ids = rewards.get("artifact_ids") or []
+        if artifact_ids and self._inv_manager is not None:
+            self._inv_manager.delete_artifacts(artifact_ids)
+            if self._inv_panel is not None:
+                self._inv_panel.refresh()
 
     def _on_new_mission(self, mission: Mission):
         if not self.config.get("notifications", "enabled", True):
@@ -769,6 +844,8 @@ class MainWindow(QMainWindow):
         self._scan_missions()
         if self._inv_panel is not None:
             self._inv_panel.refresh()
+        if self._shop_panel is not None:
+            self._shop_panel.refresh()
 
     def _manual_pull(self):
         if self._git_sync is None:

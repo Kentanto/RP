@@ -168,7 +168,13 @@ class InventoryDetailView(QFrame):
         self.item = item
         self._on_close = on_close
         self._name.setText(item.name)
-        cat_label = "Hand-Made Item" if item.category == "item" else "Auto-Generated Artifact"
+        if item.category == "item":
+            cat_label = "Hand-Made Item"
+        else:
+            cat_label = {
+                "mission": "Artifact — Mission Reward",
+                "shop": "Artifact — Bought from the Shop",
+            }.get(item.source, "Artifact")
         self._type.setText(f"Type: {item.item_type}  |  {cat_label}")
         self._rarity.setText(f"Rarity: {item.rarity}")
         self._meta.setText(f"Level {item.level}  |  Quantity: {item.count}")
