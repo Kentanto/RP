@@ -11,7 +11,7 @@
     "duration_ms": 8000
   },
   "git_sync": {
-    "enabled": true,
+    "enabled": false,
     "interval_ms": 15000,
     "folders": "missions,items,icons,skills,cache"
   },
@@ -25,7 +25,7 @@
     "attack": 3,
     "defense": 1,
     "speed": 4,
-    "temp_points": 22,
+    "temp_points": 10,
     "temp_allocations": {
       "health": 0,
       "magic": 0,
