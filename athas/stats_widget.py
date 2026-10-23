@@ -25,7 +25,6 @@ STAT_COLORS = {
     "attack":  "#ffb84d",
     "defense": "#4db5ff",
     "speed":   "#6fe07f",
-    "luck":    "#ffd700",
 }
 
 # Base amount of temporary stat points; every level past the first adds
@@ -607,7 +606,6 @@ class StatsWidget(QWidget):
             ("attack", "ATTACK"),
             ("defense", "DEFENSE"),
             ("speed", "SPEED"),
-            ("luck", "LUCK"),
         ]
         self._bars = {}
         for key, label in stats:

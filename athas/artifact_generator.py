@@ -6,9 +6,9 @@ An artifact is rolled from three ingredients:
   * a rarity      (Common .. Mythic)          that sets its power and price
   * a level       (scales the rolled stat values)
 
-Rolled stats are either main stats (health, magic, attack, defense, speed,
-luck) or detailed stats (crit, dodge, penetration, regeneration) granted
-directly — see the DASHBOARD details page for how everything adds up.
+Rolled stats are either main stats (health, magic, attack, defense, speed)
+or crit stats (crit chance, crit damage) granted directly — see the
+DASHBOARD details page for how everything adds up.
 
 The rarity can be pinned by the caller (a mission that promises a "Rare
 Artifact") or rolled from the mission-difficulty loot table. The item type
@@ -64,20 +64,16 @@ SHOP_RARITY_TABLE = [("Common", 85), ("Uncommon", 12), ("Rare", 3)]
 SACRIFICE_PER_FUSION = 3
 
 # ── Stats ────────────────────────────────────────────────────────────────
-# Main stats can be allocated with points and roll on artifacts. Luck is
-# the newest main stat — it feeds the fortune-flavoured detailed stats.
-MAIN_STATS = ["health", "magic", "attack", "defense", "speed", "luck"]
+# Main stats can be allocated with points and roll on artifacts.
+MAIN_STATS = ["health", "magic", "attack", "defense", "speed"]
 
-# Detailed stats are second-order stats: each is derived from the main stat
+# Crit stats are second-order stats: each is derived from the main stat
 # totals (see athas/detailed_stats.py), and artifacts can also grant them
 # directly. Those direct rolls are added on top of the derived value.
-DETAILED_STATS = [
-    "crit_chance", "crit_damage", "dodge", "block",
-    "armor_pen", "magic_pen", "hp_regen", "mana_regen",
-]
+DETAILED_STATS = ["crit_chance", "crit_damage"]
 
-# Detailed stats shown as percentages in the UI.
-PCT_DETAILED_STATS = {"crit_chance", "crit_damage", "dodge", "block"}
+# Crit stats shown as percentages in the UI.
+PCT_DETAILED_STATS = {"crit_chance", "crit_damage"}
 
 # Direct detailed-stat rolls scale far more gently than main stats.
 RARITY_DETAIL_SCALE = {
@@ -90,31 +86,31 @@ RARITY_DETAIL_SCALE = {
 # and a few accessories. The artifact is named after its item type.
 
 ITEM_TYPES: Dict[str, Dict[str, float]] = {
-    "Sword":      {"attack": 6, "speed": 2, "health": 1, "crit_chance": 1.5, "armor_pen": 1},
+    "Sword":      {"attack": 6, "speed": 2, "health": 1, "crit_chance": 2.5},
     "Greatsword": {"attack": 7, "health": 2, "defense": 1, "crit_damage": 1.5},
-    "Axe":        {"attack": 6, "defense": 2, "health": 1, "armor_pen": 1.5},
-    "Mace":       {"attack": 5, "defense": 3, "health": 1, "armor_pen": 1.5, "block": 1},
+    "Axe":        {"attack": 6, "defense": 2, "health": 1, "crit_damage": 1.5},
+    "Mace":       {"attack": 5, "defense": 3, "health": 1, "crit_damage": 1.5},
     "Spear":      {"attack": 5, "speed": 3, "health": 1, "crit_chance": 1.5},
-    "Dagger":     {"speed": 5, "attack": 4, "magic": 1, "crit_chance": 2, "dodge": 1},
-    "Bow":        {"attack": 5, "speed": 4, "crit_chance": 1.5, "armor_pen": 1},
-    "Crossbow":   {"attack": 6, "speed": 2, "defense": 1, "armor_pen": 1.5},
-    "Staff":      {"magic": 6, "health": 2, "magic_pen": 1.5, "mana_regen": 1},
-    "Wand":       {"magic": 5, "speed": 3, "mana_regen": 1.5},
-    "Shield":     {"defense": 6, "health": 3, "block": 2},
-    "Helmet":     {"defense": 4, "health": 3, "magic": 2, "block": 1, "mana_regen": 0.5},
-    "Chestplate": {"defense": 5, "health": 4, "block": 1.5, "hp_regen": 0.5},
-    "Gauntlets":  {"attack": 4, "defense": 4, "health": 1, "armor_pen": 1},
-    "Leggings":   {"defense": 4, "health": 3, "speed": 2, "dodge": 1.5},
-    "Boots":      {"speed": 6, "defense": 2, "dodge": 2},
-    "Cloak":      {"speed": 3, "defense": 3, "magic": 3, "dodge": 1, "luck": 1},
-    "Ring":       {"magic": 4, "health": 3, "attack": 2, "luck": 2, "crit_chance": 1},
-    "Amulet":     {"health": 4, "magic": 3, "defense": 2, "luck": 2, "hp_regen": 1, "mana_regen": 1},
+    "Dagger":     {"speed": 5, "attack": 4, "magic": 1, "crit_chance": 2, "crit_damage": 1},
+    "Bow":        {"attack": 5, "speed": 4, "crit_chance": 1.5, "crit_damage": 1},
+    "Crossbow":   {"attack": 6, "speed": 2, "defense": 1, "crit_damage": 1.5},
+    "Staff":      {"magic": 6, "health": 2, "crit_chance": 1.5},
+    "Wand":       {"magic": 5, "speed": 3, "crit_chance": 1.5},
+    "Shield":     {"defense": 6, "health": 3, "magic": 1},
+    "Helmet":     {"defense": 4, "health": 3, "magic": 2.5},
+    "Chestplate": {"defense": 5, "health": 5},
+    "Gauntlets":  {"attack": 4, "defense": 4, "health": 1, "crit_damage": 1},
+    "Leggings":   {"defense": 4, "health": 3, "speed": 3.5},
+    "Boots":      {"speed": 6, "defense": 2, "health": 2},
+    "Cloak":      {"speed": 3, "defense": 3, "magic": 3, "crit_chance": 2},
+    "Ring":       {"magic": 4, "health": 3, "attack": 2, "crit_chance": 3},
+    "Amulet":     {"health": 4, "magic": 3, "defense": 2, "crit_chance": 2, "crit_damage": 1},
 }
 
 # Bias used for custom item types added to library/item_types.txt that have
 # no entry above.
 GENERIC_BIAS: Dict[str, float] = {
-    "attack": 3, "defense": 3, "magic": 3, "speed": 3, "health": 3, "luck": 2,
+    "attack": 3, "defense": 3, "magic": 3, "speed": 3, "health": 3,
 }
 
 # ── Flavour text ─────────────────────────────────────────────────────────

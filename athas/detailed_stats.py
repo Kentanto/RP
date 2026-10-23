@@ -1,10 +1,19 @@
 """
 Detailed Stats — the DASHBOARD details page.
 
-Main stats (health, magic, attack, defense, speed, luck) come from the
-player's config plus every owned artifact's bonuses. Detailed stats are
-second-order values derived from those totals; artifacts can also grant
-detailed stats directly, which stack on top of the derived value.
+Every regular stat (health, magic, attack, defense, speed) converts into a
+physical measurement: the stat's total — base + temp points + every owned
+artifact's bonuses — times a per-point unit, times the level multiplier.
+
+The level multiplier compounds 5% for every level past the first:
+
+    level multiplier = 1.05 ** (level - 1)    (x1.0 at level 1, x1.05 at 2)
+
+For example 1 ATK always equals 100 joules of kinetic energy per strike, so
+energy per strike = ATK total x 100 J x level multiplier.
+
+Crit chance and crit damage stay percentage stats derived from the main
+stat totals; artifacts can also grant them directly, stacking on top.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -16,7 +25,7 @@ from athas.styles import CYAN, WHITE, GOLD, GRAY
 from athas.artifact_generator import (
     MAIN_STATS, DETAILED_STATS, PCT_DETAILED_STATS,
 )
-from athas.stats_widget import STAT_COLORS, TEXT_DIM
+from athas.stats_widget import STAT_COLORS, TEXT_DIM, SURFACE, EDGE
 
 
 def _as_int(value, fallback=0):
@@ -29,31 +38,40 @@ def _as_int(value, fallback=0):
 # Human labels for every stat shown on this page.
 STAT_LABELS = {
     "health": "Health", "magic": "Magic", "attack": "Attack",
-    "defense": "Defense", "speed": "Speed", "luck": "Luck",
+    "defense": "Defense", "speed": "Speed",
     "crit_chance": "Crit Chance", "crit_damage": "Crit Damage",
-    "dodge": "Dodge", "block": "Block",
-    "armor_pen": "Armor Penetration", "magic_pen": "Magic Penetration",
-    "hp_regen": "HP Regen", "mana_regen": "Mana Regen",
 }
 
-# Detailed stat key → (formula over main stat totals, readable formula text).
+# ── Physical measurements ──────────────────────────────────────────────────
+# Every regular stat maps to a real-world measurement through a per-point
+# unit. The measurement scales with the compounding level multiplier below.
+LEVEL_GROWTH = 1.05   # multiplier growth for each level past the first
+
+# stat -> (per-point unit, unit symbol, what the measurement means)
+STAT_MEASUREMENTS = {
+    "attack":  (100.0, "J",   "Energy delivered per strike"),
+    "defense": (200.0, "N",   "Impact force deflected per block"),
+    "speed":   (0.5,   "m/s", "Top movement speed"),
+    "health":  (0.25,  "kJ",  "Punishment absorbed before collapse"),
+    "magic":   (50.0,  "W",   "Arcane power channelled while casting"),
+}
+
+
+def level_multiplier(level) -> float:
+    """Compounding level multiplier — x1.0 at level 1, x1.05 at level 2, ..."""
+    return LEVEL_GROWTH ** (max(1, _as_int(level, 1)) - 1)
+
+
+# Crit stat key → (formula over main stat totals, readable formula text).
 DETAILED_FORMULAS = {
-    "crit_chance": (lambda t: 3 + 0.15 * t["speed"] + 0.30 * t["luck"],
-                   "3% + Speed x 0.15% + Luck x 0.30%"),
-    "crit_damage": (lambda t: 50 + 1.00 * t["attack"] + 0.50 * t["luck"],
-                    "50% + Attack x 1% + Luck x 0.50%"),
-    "dodge":       (lambda t: 1 + 0.10 * t["speed"] + 0.25 * t["luck"],
-                    "1% + Speed x 0.10% + Luck x 0.25%"),
-    "block":       (lambda t: 2 + 0.15 * t["defense"],
-                    "2% + Defense x 0.15%"),
-    "armor_pen":   (lambda t: t["attack"] * 0.5, "Attack x 0.5"),
-    "magic_pen":   (lambda t: t["magic"] * 0.5, "Magic x 0.5"),
-    "hp_regen":    (lambda t: 1 + 0.05 * t["health"], "1 + Health x 0.05"),
-    "mana_regen":  (lambda t: 1 + 0.10 * t["magic"], "1 + Magic x 0.10"),
+    "crit_chance": (lambda t: 3 + 0.45 * t["speed"],
+                   "3% + Speed x 0.45%"),
+    "crit_damage": (lambda t: 50 + 1.50 * t["attack"],
+                    "50% + Attack x 1.50%"),
 }
 
-# Caps for percentage detailed stats (derived + direct bonuses combined).
-PCT_CAPS = {"crit_chance": 75, "crit_damage": 300, "dodge": 50, "block": 60}
+# Caps for the percentage crit stats (derived + direct bonuses combined).
+PCT_CAPS = {"crit_chance": 75, "crit_damage": 300}
 
 
 def collect_artifact_bonuses(artifacts):
@@ -105,10 +123,35 @@ def detailed_stat_values(main_totals, artifacts):
     return values
 
 
+def measured_stat_values(main_totals, level):
+    """Per regular stat: point totals plus the physical measurement."""
+    mult = level_multiplier(level)
+    values = {}
+    for key in MAIN_STATS:
+        if key not in STAT_MEASUREMENTS:
+            continue
+        per_point, unit, label = STAT_MEASUREMENTS[key]
+        data = main_totals[key]
+        total = data["total"]
+        values[key] = {
+            "base": data["base"], "temp": data["temp"],
+            "artifact": data["artifact"], "total": total,
+            "per_point": per_point, "unit": unit, "label": label,
+            "mult": mult, "value": total * per_point * mult,
+        }
+    return values
+
+
 def _fmt(value, pct):
     if pct:
         return f"{value:.1f}%"
     return str(int(round(value)))
+
+
+def _fmt_measurement(value, unit):
+    if unit in ("m/s", "kJ"):
+        return f"{value:,.1f} {unit}"
+    return f"{int(round(value)):,} {unit}"
 
 
 class DetailedStatsPanel(QWidget):
@@ -202,25 +245,65 @@ class DetailedStatsPanel(QWidget):
             grid.addWidget(lbl, 1, c)
         return frame, grid
 
-    def _build_main_section(self, totals):
-        frame, grid = self._section_frame("MAIN STATS", ["BASE + TEMP", "ARTIFACTS", "TOTAL"])
-        row = 2
+    def _build_level_card(self, level):
+        """Banner: current level and the compounding measurement multiplier."""
+        frame = QFrame()
+        frame.setObjectName("LevelCard")
+        frame.setStyleSheet(f"""
+            QFrame#LevelCard {{ background-color: {SURFACE}; border: 1px solid {EDGE}; border-radius: 8px; }}
+        """)
+        row = QHBoxLayout(frame)
+        row.setContentsMargins(20, 14, 20, 14)
+        lvl_lbl = QLabel(f"LEVEL {level}")
+        lvl_lbl.setStyleSheet(f"color: {WHITE}; font-size: 20px; font-weight: bold; letter-spacing: 2px;")
+        row.addWidget(lvl_lbl)
+        row.addStretch()
+        cap = QLabel("MEASUREMENT MULTIPLIER")
+        cap.setStyleSheet(f"color: {GRAY}; font-size: 10px; font-weight: bold; letter-spacing: 2px;")
+        row.addWidget(cap)
+        mult = level_multiplier(level)
+        mult_lbl = QLabel(f"x1.05^({level}-1) = x{mult:.2f}")
+        mult_lbl.setStyleSheet(f"color: {GOLD}; font-size: 20px; font-weight: bold;")
+        row.addWidget(mult_lbl)
+        return frame
+
+    def _build_power_section(self, measured):
+        frame, grid = self._section_frame(
+            "POWER MEASUREMENTS",
+            ["BASE + TEMP", "ARTIFACTS", "TOTAL", "FORMULA", "MEASUREMENT"],
+        )
+        legend = QLabel(
+            "1 ATK = 100 J  ·  1 DEF = 200 N  ·  1 SPD = 0.5 m/s  ·  "
+            "1 HP = 0.25 kJ  ·  1 MAG = 50 W"
+        )
+        legend.setStyleSheet("color: #5d6373; font-size: 10px; letter-spacing: 1px; background: transparent;")
+        grid.addWidget(legend, 2, 0, 1, 6)
+        row = 3
         for key in MAIN_STATS:
-            data = totals[key]
+            data = measured.get(key)
+            if data is None:
+                continue
             color = STAT_COLORS.get(key, CYAN)
-            name = QLabel(STAT_LABELS.get(key, key.title()))
-            name.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: bold; background: transparent;")
+            name = QLabel(
+                f"<span style='color:{color}; font-size:13px; font-weight:bold;'>"
+                f"{STAT_LABELS.get(key, key.title())}</span>"
+                f"<br><span style='color:#5d6373; font-size:10px;'>{data['label']}</span>"
+            )
+            name.setStyleSheet("background: transparent;")
             grid.addWidget(name, row, 0)
             base_txt = str(data["base"]) + (f" +{data['temp']}" if data["temp"] else "")
             grid.addWidget(self._cell(base_txt, TEXT_DIM), row, 1)
             bonus_color = GOLD if data["artifact"] else "#3a3a44"
             grid.addWidget(self._cell(f"+{data['artifact']}", bonus_color), row, 2)
             grid.addWidget(self._cell(f"= {data['total']}", WHITE, bold=True), row, 3)
+            formula = f"{data['total']} x {data['per_point']:g} {data['unit']} x {data['mult']:.2f}"
+            grid.addWidget(self._cell(formula, "#5d6373", align=Qt.AlignmentFlag.AlignLeft), row, 4)
+            grid.addWidget(self._cell(_fmt_measurement(data["value"], data["unit"]), WHITE, bold=True), row, 5)
             row += 1
         return frame
 
     def _build_detailed_section(self, values):
-        frame, grid = self._section_frame("DETAILED STATS", ["FORMULA", "DERIVED", "ARTIFACTS", "TOTAL"])
+        frame, grid = self._section_frame("CRIT STATS", ["FORMULA", "DERIVED", "ARTIFACTS", "TOTAL"])
         row = 2
         for key in DETAILED_STATS:
             data = values[key]
@@ -245,14 +328,20 @@ class DetailedStatsPanel(QWidget):
             if it.widget():
                 it.widget().deleteLater()
         artifacts = self.inv_manager.get_artifacts() if self.inv_manager else []
+        level = max(1, _as_int(self.config.get("player", "level", 1), 1))
         totals = main_stat_totals(self.config, artifacts)
+        measured = measured_stat_values(totals, level)
         detailed = detailed_stat_values(totals, artifacts)
-        self._body.addWidget(self._build_main_section(totals))
+        self._body.addWidget(self._build_level_card(level))
+        self._body.addWidget(self._build_power_section(measured))
         self._body.addWidget(self._build_detailed_section(detailed))
         note = QLabel(
-            "Detailed stats are calculated from your main stat totals — base + temp points "
-            "plus every owned artifact's bonuses. Artifacts can also roll detailed stats "
-            "directly, and those stack on top of the derived value. Percentage stats are capped."
+            "Every regular stat converts into a physical measurement: total stat "
+            "(base + temp points + artifact bonuses) x per-point unit x level "
+            "multiplier — the multiplier is x1.05 at level 2 and compounds 5% for "
+            "every level after that. Crit chance and crit damage are derived from "
+            "your stat totals; artifacts that roll crit stats add directly on top. "
+            "Crit chance is capped at 75% and crit damage at 300%."
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: #5d6373; font-size: 11px;")

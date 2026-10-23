@@ -142,8 +142,7 @@ Artifacts are auto-generated gear (weapons, armor, accessories) stored in
   player's current level)
 
 Rolled stats are either **main stats** (health, magic, attack, defense,
-speed, luck) or **detailed stats** (crit chance, crit damage, dodge, block,
-armor pen, magic pen, HP/mana regen) granted directly.
+speed) or **crit stats** (crit chance, crit damage) granted directly.
 
 There are only two ways to obtain artifacts:
 1. **Mission rewards** — add `"artifact_reward": <count>` to a mission JSON.
@@ -162,12 +161,17 @@ select 3 artifacts of the same rarity, then FORGE consumes them and creates
 1 artifact of the next rarity with fresh random stats (Mythic cannot be
 fused — there is nothing higher).
 
-**Detailed stats** — the DASHBOARD's DETAILED STATS button opens a page that
-breaks every stat down: main stats show base + temp points + artifact
-bonuses, and each detailed stat shows the formula derived from those
-totals plus any direct artifact bonuses. Luck is the newest main stat and
-feeds the fortune-flavoured stats (crit chance, crit damage, dodge).
-Percentage stats are capped.
+**Detailed stats** — the DASHBOARD's DETAILED STATS button opens a page
+that turns every regular stat into a physical measurement. Each stat has a
+per-point unit — 1 ATK = 100 J of kinetic energy per strike, 1 DEF = 200 N
+of impact force deflected per block, 1 SPD = 0.5 m/s of movement speed,
+1 HP = 0.25 kJ of punishment absorbed before collapse, 1 MAG = 50 W of
+arcane power channelled — and the measurement scales with a compounding
+level multiplier: x1.05 for every level past the first (1.05^(level-1)), so
+a level-12 hero measures everything at x1.71. The page also shows the two
+crit stats, derived from the stat totals (crit chance: 3% + Speed x 0.45%,
+crit damage: 50% + Attack x 1.50%) with direct artifact crit rolls stacked
+on top. Crit chance caps at 75% and crit damage at 300%.
 
 Gold comes from mission `"gold"` rewards and is shown in the sidebar. The
 `library/` folder is part of git sync, so curating `item_types.txt` locally
