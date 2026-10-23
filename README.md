@@ -162,16 +162,23 @@ select 3 artifacts of the same rarity, then FORGE consumes them and creates
 fused — there is nothing higher).
 
 **Detailed stats** — the DASHBOARD's DETAILED STATS button opens a page
-that turns every regular stat into a physical measurement. Each stat has a
-per-point unit — 1 ATK = 100 J of kinetic energy per strike, 1 DEF = 200 N
-of impact force deflected per block, 1 SPD = 0.5 m/s of movement speed,
-1 HP = 0.25 kJ of punishment absorbed before collapse, 1 MAG = 50 W of
-arcane power channelled — and the measurement scales with a compounding
-level multiplier: x1.05 for every level past the first (1.05^(level-1)), so
-a level-12 hero measures everything at x1.71. The page also shows the two
+that turns every regular stat into a simple, linear DG power rating — no
+real-world units. Each stat awards DG per point (60 for every stat right
+now; edit `STAT_DG_PER_POINT` in `athas/detailed_stats.py` to scale stats
+differently), scaled by a compounding level multiplier: x1.10 for every
+level past the first (1.10^(level-1)), so a level-12 hero measures
+everything at x2.85. The page also shows the two
 crit stats, derived from the stat totals (crit chance: 3% + Speed x 0.45%,
 crit damage: 50% + Attack x 1.50%) with direct artifact crit rolls stacked
-on top. Crit chance caps at 75% and crit damage at 300%.
+on top. Crit chance caps at 75% and crit damage at 300%. Below the crit
+cards, a TOTAL DG card sums every stat's rating into one overall number,
+with each stat's contribution listed in its own color and its own
+capability description.
+Below each stat, a capability reference compares the current DG rating
+with a short description. Edit `STAT_CAPABILITY_RANGES` in
+`athas/detailed_stats.py` to change the descriptions or add value bands; each
+band uses a lower-inclusive and upper-exclusive DG range, and the final
+band can use `None` as its open-ended upper bound.
 
 Gold comes from mission `"gold"` rewards and is shown in the sidebar. The
 `library/` folder is part of git sync, so curating `item_types.txt` locally
@@ -210,3 +217,10 @@ JSON files (`*.json`) inside `missions/`:
    the mission for everyone. A file moved directly into `completed_missions/`
    without a `"completed"` property still counts as completed. Setting the
    property to `false` there restores the mission to `missions/`.
+
+random ideas:
+- some artifacts can flat increase the worth of each point into a certain stat, this can create som cool artifact interactions and strategies on building, especially since all stats points are worth the same amount of DG
+- Some artifacts can give direct temp points
+- a folder i can drop json files, txt files in order to give gold, notifications, skill points con point and any spendable thing, notifications would come in the form of a popup that cant be x-ed out until 2 seconds have passed so no one accidentally clicks it away when it pops up suddenly, once processed the file is deleted and one can only download from it, the program itself cant upload from this folder to git, only manual from IDE. 
+- artifacts need to be equiped for their stats to actually be given to the character and you only have 5 slots
+- you can upgrade artifacts un upgrade them for a portion of gold back you can reroll their stat types to something completely random with random starting numbers, when upgrading it can roll low or high into a random stat and max level isnt decided yet but lets baseline it at 20, rarity depends how many different stats can be on it at once. if youre happy with stats, you can reroll while keepign the current stats, but rerolling what went into where at random, just like genshins feather, but just for gold, this gold is not recoverable and is kinda expensive.
