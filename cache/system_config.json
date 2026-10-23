@@ -25,13 +25,14 @@
     "attack": 4,
     "defense": 5,
     "speed": 3,
-    "temp_points": 10,
+    "temp_points": 0,
     "temp_allocations": {
       "health": 0,
       "magic": 0,
-      "attack": 0,
+      "attack": 10,
       "defense": 0,
-      "speed": 0
+      "speed": 0,
+      "luck": 0
     },
     "constellation_points": 0,
     "skill_points": 0,
