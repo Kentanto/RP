@@ -25,6 +25,7 @@ STAT_COLORS = {
     "attack":  "#ffb84d",
     "defense": "#4db5ff",
     "speed":   "#6fe07f",
+    "luck":    "#ffd700",
 }
 
 # Base amount of temporary stat points; every level past the first adds
@@ -452,6 +453,7 @@ class StatsWidget(QWidget):
     MAX_STAT = 500
     abilities_clicked = Signal()
     skills_clicked = Signal()
+    details_clicked = Signal()
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -605,6 +607,7 @@ class StatsWidget(QWidget):
             ("attack", "ATTACK"),
             ("defense", "DEFENSE"),
             ("speed", "SPEED"),
+            ("luck", "LUCK"),
         ]
         self._bars = {}
         for key, label in stats:
@@ -628,7 +631,8 @@ class StatsWidget(QWidget):
         btn_row.setSpacing(16)
         abilities_btn = QPushButton("ABILITIES")
         skills_btn = QPushButton("SKILLS")
-        for btn in (abilities_btn, skills_btn):
+        details_btn = QPushButton("DETAILED STATS")
+        for btn in (abilities_btn, skills_btn, details_btn):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setMinimumHeight(48)
             btn.setStyleSheet(f"""
@@ -655,8 +659,10 @@ class StatsWidget(QWidget):
             """)
         abilities_btn.clicked.connect(self._on_abilities_clicked)
         skills_btn.clicked.connect(self._on_skills_clicked)
+        details_btn.clicked.connect(self._on_details_clicked)
         btn_row.addWidget(abilities_btn, 1)
         btn_row.addWidget(skills_btn, 1)
+        btn_row.addWidget(details_btn, 1)
         main_layout.addLayout(btn_row)
 
         self._refresh_xp_display()
@@ -667,6 +673,9 @@ class StatsWidget(QWidget):
 
     def _on_skills_clicked(self):
         self.skills_clicked.emit()
+
+    def _on_details_clicked(self):
+        self.details_clicked.emit()
 
     def _try_spend(self, delta):
         """Validate and apply a pool change of ±N points. Returns how many

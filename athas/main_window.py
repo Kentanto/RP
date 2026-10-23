@@ -17,6 +17,7 @@ from athas.mission_manager import MissionManager, Mission
 from athas.inventory_manager import InventoryManager
 from athas.inventory_panel import InventoryPanel
 from athas.shop_panel import ShopPanel
+from athas.detailed_stats import DetailedStatsPanel
 from athas.git_sync import GitSyncWorker
 from athas.backup_manager import BackupManager, BACKUP_INTERVAL_MS
 from athas.notification_widget import NotificationWidget
@@ -342,6 +343,9 @@ class MainWindow(QMainWindow):
         if self._shop_panel is not None:
             self._shop_panel.inv_manager = self._inv_manager
             self._shop_panel.refresh()
+        if getattr(self, "_details_panel", None) is not None:
+            self._details_panel.inv_manager = self._inv_manager
+            self._details_panel.refresh()
         if self.config.get("git_sync", "enabled", True):
             folders = self.config.get(
                 "git_sync", "folders",
@@ -539,11 +543,23 @@ class MainWindow(QMainWindow):
         self._shop_panel.gold_changed.connect(self._refresh_sidebar_player)
         self._content_pages.addWidget(self._shop_panel)
 
+        # ── Page 6 : DETAILED STATS ──
+        self._details_panel = DetailedStatsPanel(
+            self.config, None, on_back=lambda: self._show_page(0),
+        )
+        self._stats_widget.details_clicked.connect(self._show_details)
+        self._content_pages.addWidget(self._details_panel)
+
         return self._content_pages
 
     def _show_skills(self):
         self._skills_panel.refresh()
         self._show_page(4)
+
+    def _show_details(self):
+        if self._details_panel is not None:
+            self._details_panel.refresh()
+        self._show_page(6)
 
     def _show_page(self, index: int):
         """Switch the content area between pages."""
@@ -555,6 +571,8 @@ class MainWindow(QMainWindow):
             self._stats_widget.refresh()
         elif index == 5 and self._shop_panel is not None:
             self._shop_panel.refresh()
+        elif index == 6 and getattr(self, "_details_panel", None) is not None:
+            self._details_panel.refresh()
         page_by_label = {"DASHBOARD": 0, "MISSIONS": 1, "INVENTORY": 2, "SHOP": 5}
         for label, btn in self._nav_buttons.items():
             if label == "SETTINGS":

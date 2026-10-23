@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from athas.styles import CYAN, WHITE, GOLD
+from athas.artifact_generator import PCT_DETAILED_STATS
 from athas.inventory_panel import RARITY_COLORS
 
 
@@ -71,7 +72,10 @@ class ShopCard(QFrame):
         rar.setStyleSheet(f"font-size: 10px; color: {col}; background: transparent; border: none;")
         layout.addWidget(rar)
 
-        stat_lines = [f"{k.title()} +{v}" for k, v in (entry.get("stats") or {}).items() if v]
+        stat_lines = [
+            f"{k.replace('_', ' ').title()} +{v}{'%' if k in PCT_DETAILED_STATS else ''}"
+            for k, v in (entry.get("stats") or {}).items() if v
+        ]
         stats_lbl = QLabel("\n".join(stat_lines) if stat_lines else "No bonuses")
         stats_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stats_lbl.setStyleSheet(f"font-size: 10px; color: {CYAN}; background: transparent; border: none;")
@@ -144,6 +148,41 @@ class ShopPanel(QWidget):
         line.setStyleSheet(f"background-color: {CYAN}44;")
         layout.addWidget(line)
 
+        package = QFrame()
+        package.setStyleSheet(f"""
+            QFrame {{
+                background-color: #14110a;
+                border: 1px solid {GOLD}44;
+                border-radius: 4px;
+            }}
+        """)
+        pkg_layout = QHBoxLayout(package)
+        pkg_layout.setContentsMargins(16, 10, 16, 10)
+        pkg_layout.setSpacing(12)
+        pkg_title = QLabel("PACKAGE")
+        pkg_title.setStyleSheet(f"color: {GOLD}; font-size: 11px; font-weight: bold; letter-spacing: 2px;")
+        pkg_layout.addWidget(pkg_title)
+        pkg_desc = QLabel("10 x Common Artifact — fresh random gear, straight to your inventory.")
+        pkg_desc.setStyleSheet("color: #ccc; font-size: 12px;")
+        pkg_layout.addWidget(pkg_desc, 1)
+        self._pkg_price_lbl = QLabel("— GOLD")
+        self._pkg_price_lbl.setStyleSheet(f"color: {GOLD}; font-size: 13px; font-weight: bold;")
+        pkg_layout.addWidget(self._pkg_price_lbl)
+        self._pkg_btn = QPushButton("BUY PACKAGE")
+        self._pkg_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pkg_btn.setEnabled(False)
+        self._pkg_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GOLD}11; border: 1px solid {GOLD}66;
+                color: {GOLD}; padding: 6px 16px; font-weight: bold; border-radius: 2px;
+            }}
+            QPushButton:hover {{ background-color: {GOLD}; color: #0a0a0a; }}
+            QPushButton:disabled {{ color: #555; border-color: #333; background: transparent; }}
+        """)
+        self._pkg_btn.clicked.connect(self._buy_package)
+        pkg_layout.addWidget(self._pkg_btn)
+        layout.addWidget(package)
+
         self._status = QLabel("Spend gold earned from missions. RESTOCK rerolls the shelves.")
         self._status.setStyleSheet("color: #888; font-size: 12px;")
         layout.addWidget(self._status)
@@ -177,6 +216,9 @@ class ShopPanel(QWidget):
 
     def refresh(self):
         self.refresh_gold()
+        price = self.inv_manager.PACKAGE_PRICE if self.inv_manager else 0
+        self._pkg_price_lbl.setText(f"{price} GOLD")
+        self._pkg_btn.setEnabled(self.inv_manager is not None and self._player_gold() >= price)
         stock = self.inv_manager.get_shop_stock() if self.inv_manager else []
         if not stock and self.inv_manager is not None:
             # First run — fill the shelves automatically.
@@ -222,6 +264,22 @@ class ShopPanel(QWidget):
             return
         self.config.set("player", "gold", gold - price)
         self._status.setText(f"Purchased {item.name} ({item.rarity}). Check your inventory.")
+        self.gold_changed.emit()
+        self.refresh()
+
+    def _buy_package(self):
+        if self.inv_manager is None:
+            return
+        price = self.inv_manager.PACKAGE_PRICE
+        gold = self._player_gold()
+        if gold < price:
+            self._status.setText(f"Not enough gold — the package costs {price} gold.")
+            return
+        items = self.inv_manager.buy_common_package(player_level=self._player_level())
+        if not items:
+            return
+        self.config.set("player", "gold", gold - price)
+        self._status.setText(f"Package opened — {len(items)} common artifacts added to your inventory.")
         self.gold_changed.emit()
         self.refresh()
 

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPixmap
 
 from athas.styles import CYAN, WHITE, GOLD
+from athas.artifact_generator import PCT_DETAILED_STATS, RARITIES, SACRIFICE_PER_FUSION
 from athas.inventory_manager import InventoryItem
 
 
@@ -25,21 +26,23 @@ def _rarity_border(rarity: str) -> str:
 
 
 class InventoryCard(QFrame):
-    def __init__(self, item: InventoryItem, on_click=None, parent=None):
+    def __init__(self, item: InventoryItem, on_click=None, parent=None, selected: bool = False):
         super().__init__(parent)
         self.item = item
         self.on_click = on_click
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         col = _rarity_border(item.rarity)
+        rest_border = f"2px solid {GOLD}" if selected else f"1px solid {col}44"
+        hover_border = f"2px solid {GOLD}" if selected else f"1px solid {col}"
         self.setStyleSheet(f"""
             QFrame {{
                 background-color: rgba(10,10,10,200);
-                border: 1px solid {col}44;
+                border: {rest_border};
                 border-radius: 4px;
             }}
             QFrame:hover {{
                 background-color: rgba(20,20,30,220);
-                border: 1px solid {col};
+                border: {hover_border};
             }}
         """)
         self.setMinimumSize(160, 200)
@@ -68,7 +71,7 @@ class InventoryCard(QFrame):
         type_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(type_badge)
 
-        name = QLabel(item.name)
+        name = QLabel(("✓ " if selected else "") + item.name)
         name.setWordWrap(True)
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name.setStyleSheet("font-size: 13px; font-weight: bold; color: #ffffff; background: transparent;")
@@ -174,6 +177,7 @@ class InventoryDetailView(QFrame):
             cat_label = {
                 "mission": "Artifact — Mission Reward",
                 "shop": "Artifact — Bought from the Shop",
+                "forge": "Artifact — Forged from Sacrifice",
             }.get(item.source, "Artifact")
         self._type.setText(f"Type: {item.item_type}  |  {cat_label}")
         self._rarity.setText(f"Rarity: {item.rarity}")
@@ -181,7 +185,10 @@ class InventoryDetailView(QFrame):
         self._desc.setText(item.description or "No description.")
         self._story.setText(item.story or "")
         if item.stats:
-            stats_str = "  |  ".join(f"{k.title()}: +{v}" for k, v in item.stats.items() if v)
+            stats_str = "  |  ".join(
+                f"{k.replace('_', ' ').title()}: +{v}{'%' if k in PCT_DETAILED_STATS else ''}"
+                for k, v in item.stats.items() if v
+            )
             self._stats.setText(f"Stats: {stats_str}")
         else:
             self._stats.setText("Stats: None")
@@ -241,6 +248,54 @@ class InventoryPanel(QWidget):
         tabs.addStretch()
         layout.addLayout(tabs)
 
+        # --- sacrifice / forge bar (artifacts tab only) ---
+        self._sacrifice_mode = False
+        self._selected_uids: set = set()
+        self._current_artifacts: list = []
+
+        forge_row = QHBoxLayout()
+        forge_row.setSpacing(12)
+        self._sacrifice_btn = QPushButton("SACRIFICE")
+        self._sacrifice_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sacrifice_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: 1px solid {GOLD}44;
+                color: #aaa;
+                padding: 6px 20px;
+            }}
+            QPushButton:hover {{ color: {GOLD}; border-color: {GOLD}; }}
+        """)
+        self._sacrifice_btn.clicked.connect(self._toggle_sacrifice)
+        forge_row.addWidget(self._sacrifice_btn)
+
+        self._forge_lbl = QLabel(f"Fuse {SACRIFICE_PER_FUSION} artifacts of one rarity into 1 of the next rank.")
+        self._forge_lbl.setStyleSheet("color: #888; font-size: 11px;")
+        forge_row.addWidget(self._forge_lbl, 1)
+
+        self._forge_btn = QPushButton("FORGE")
+        self._forge_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._forge_btn.setEnabled(False)
+        self._forge_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GOLD}11;
+                border: 1px solid {GOLD}66;
+                color: {GOLD};
+                padding: 6px 20px;
+                font-weight: bold;
+                border-radius: 2px;
+            }}
+            QPushButton:hover {{ background-color: {GOLD}; color: #0a0a0a; }}
+            QPushButton:disabled {{ color: #555; border-color: #333; background: transparent; }}
+        """)
+        self._forge_btn.clicked.connect(self._forge_selected)
+        forge_row.addWidget(self._forge_btn)
+
+        self._forge_bar = QWidget()
+        self._forge_bar.setLayout(forge_row)
+        self._forge_bar.hide()
+        layout.addWidget(self._forge_bar)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("background: transparent; border: none;")
@@ -295,10 +350,13 @@ class InventoryPanel(QWidget):
             items = self.inv_manager.scan_items() if self.inv_manager else []
             self._btn_items.setStyleSheet(active)
             self._btn_artifacts.setStyleSheet(inactive)
+            self._forge_bar.hide()
         else:
             items = self.inv_manager.get_artifacts() if self.inv_manager else []
             self._btn_items.setStyleSheet(inactive)
             self._btn_artifacts.setStyleSheet(active)
+            self._forge_bar.show()
+        self._current_artifacts = items if tab != "items" else []
 
         while self._grid.count():
             it = self._grid.takeAt(0)
@@ -309,13 +367,96 @@ class InventoryPanel(QWidget):
             empty = QLabel("Nothing here yet.")
             empty.setStyleSheet("color: #555; font-size: 14px; padding: 20px;")
             self._grid.addWidget(empty, 0, 0)
+            self._update_forge_state()
             return
 
         cols = max(1, self.width() // 220)
         for i, itm in enumerate(items):
-            card = InventoryCard(itm, on_click=self._open_detail)
+            selected = self._sacrifice_mode and itm.uid in self._selected_uids
+            card = InventoryCard(itm, on_click=self._open_detail, selected=selected)
             self._grid.addWidget(card, i // cols, i % cols)
+        self._update_forge_state()
 
     def _open_detail(self, item):
+        if self._sacrifice_mode and self._tab == "artifacts":
+            self._toggle_select(item)
+            return
         self._detail.show_item(item, on_close=lambda: self._detail.hide())
+
+    # --- sacrifice / forge ---
+    def _toggle_sacrifice(self):
+        self._sacrifice_mode = not self._sacrifice_mode
+        self._selected_uids.clear()
+        if self._sacrifice_mode:
+            self._sacrifice_btn.setText("CANCEL")
+            self._sacrifice_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {GOLD}22;
+                    border: 1px solid {GOLD};
+                    color: {GOLD};
+                    padding: 6px 20px;
+                }}
+            """)
+        else:
+            self._sacrifice_btn.setText("SACRIFICE")
+            self._sacrifice_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    border: 1px solid {GOLD}44;
+                    color: #aaa;
+                    padding: 6px 20px;
+                }}
+                QPushButton:hover {{ color: {GOLD}; border-color: {GOLD}; }}
+            """)
+        self._switch_tab(self._tab)
+
+    def _toggle_select(self, item):
+        if item.uid in self._selected_uids:
+            self._selected_uids.discard(item.uid)
+        else:
+            self._selected_uids.add(item.uid)
+        self._switch_tab(self._tab)
+
+    def _update_forge_state(self):
+        by_uid = {it.uid: it for it in self._current_artifacts}
+        chosen = [by_uid[u] for u in self._selected_uids if u in by_uid]
+        rarities = {it.rarity for it in chosen}
+        valid = False
+        if (self._sacrifice_mode and len(chosen) == SACRIFICE_PER_FUSION
+                and len(rarities) == 1):
+            if next(iter(rarities)) != RARITIES[-1]:
+                valid = True
+        self._forge_btn.setEnabled(valid)
+        if not self._sacrifice_mode:
+            self._forge_lbl.setText(
+                f"Fuse {SACRIFICE_PER_FUSION} artifacts of one rarity into 1 of the next rank."
+            )
+        elif not chosen:
+            self._forge_lbl.setText(f"Select {SACRIFICE_PER_FUSION} artifacts of the same rarity.")
+        elif len(rarities) == 1:
+            rarity = next(iter(rarities))
+            suffix = " — Mythic cannot be fused." if rarity == RARITIES[-1] else ""
+            self._forge_lbl.setText(
+                f"Selected {len(chosen)}/{SACRIFICE_PER_FUSION} — {rarity}{suffix}"
+            )
+        else:
+            self._forge_lbl.setText("All sacrificed artifacts must share one rarity.")
+
+    def _forge_selected(self):
+        if self.inv_manager is None:
+            return
+        ids = []
+        for uid in self._selected_uids:
+            if uid.startswith("artifact:"):
+                try:
+                    ids.append(int(uid.split(":", 1)[1]))
+                except ValueError:
+                    pass
+        result = self.inv_manager.sacrifice_artifacts(ids)
+        self._selected_uids.clear()
+        self._switch_tab(self._tab)
+        if result is None:
+            self._forge_lbl.setText("Forge failed — need 3 of one non-Mythic rarity.")
+        else:
+            self._forge_lbl.setText(f"FORGED: {result.name} ({result.rarity}) — check your inventory.")
 

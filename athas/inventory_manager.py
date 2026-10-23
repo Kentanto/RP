@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
-from athas.artifact_generator import ArtifactGenerator, RARITIES
+from athas.artifact_generator import (
+    ArtifactGenerator, RARITIES, SACRIFICE_PER_FUSION,
+)
 
 
 @dataclass
@@ -67,6 +69,8 @@ class InventoryManager:
     """Owns the artifact database: earned artifacts plus the shop's stock."""
 
     SHOP_STOCK_SIZE = 6
+    PACKAGE_SIZE = 10      # artifacts in the shop's bulk common package
+    PACKAGE_PRICE = 400    # gold for the package
 
     def __init__(
         self,
@@ -314,7 +318,7 @@ class InventoryManager:
             conn.execute("DELETE FROM shop_stock")
             for _ in range(count):
                 level = random.randint(1, max(1, int(player_level)))
-                a = self.generator.generate(level=level)
+                a = self.generator.generate(rarity=self.generator.roll_shop_rarity(), level=level)
                 conn.execute("""
                     INSERT INTO shop_stock
                         (name, item_type, rarity, level, stats, price, description, story)
@@ -368,3 +372,50 @@ class InventoryManager:
             source_file=str(self.db_path),
             source="shop",
         )
+
+    def buy_common_package(self, player_level: int = 1) -> List[InventoryItem]:
+        """The shop's bulk deal: PACKAGE_SIZE common artifacts at once."""
+        items: List[InventoryItem] = []
+        for _ in range(self.PACKAGE_SIZE):
+            level = random.randint(1, max(1, int(player_level)))
+            items.extend(self.generate_artifacts(
+                count=1, rarity="Common", level=level, source="shop",
+            ))
+        return items
+
+    def sacrifice_artifacts(self, ids: List[Any]) -> Optional[InventoryItem]:
+        """Fuse SACRIFICE_PER_FUSION artifacts of one rarity into a single
+        artifact of the next rarity with fresh random stats.
+
+        Returns the forged artifact, or None when the sacrifice is invalid
+        (wrong count, missing rows, mixed rarities, or Mythic input)."""
+        clean: List[int] = []
+        for value in ids or []:
+            try:
+                clean.append(int(value))
+            except (TypeError, ValueError):
+                return None
+        if len(clean) != SACRIFICE_PER_FUSION:
+            return None
+        placeholders = ",".join("?" * len(clean))
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"SELECT * FROM artifacts WHERE id IN ({placeholders})", clean
+            ).fetchall()
+            if len(rows) != SACRIFICE_PER_FUSION:
+                return None
+            rarities = {row["rarity"] for row in rows}
+            if len(rarities) != 1:
+                return None
+            rarity = rarities.pop()
+            if rarity not in RARITIES or rarity == RARITIES[-1]:
+                return None  # Mythic has no higher rank
+            forge_level = max(1, max(int(row["level"] or 1) for row in rows))
+            conn.execute(f"DELETE FROM artifacts WHERE id IN ({placeholders})", clean)
+            conn.commit()
+        next_rarity = RARITIES[RARITIES.index(rarity) + 1]
+        forged = self.generate_artifacts(
+            count=1, rarity=next_rarity, level=forge_level, source="forge",
+        )
+        return forged[0] if forged else None

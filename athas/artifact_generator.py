@@ -6,6 +6,10 @@ An artifact is rolled from three ingredients:
   * a rarity      (Common .. Mythic)          that sets its power and price
   * a level       (scales the rolled stat values)
 
+Rolled stats are either main stats (health, magic, attack, defense, speed,
+luck) or detailed stats (crit, dodge, penetration, regeneration) granted
+directly — see the DASHBOARD details page for how everything adds up.
+
 The rarity can be pinned by the caller (a mission that promises a "Rare
 Artifact") or rolled from the mission-difficulty loot table. The item type
 list is read from library/item_types.txt when that file is filled in; the
@@ -20,7 +24,7 @@ from typing import Any, Dict, List, Optional
 
 RARITIES = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"]
 
-# Chance of each rarity on a plain random roll (shop stock).
+# Chance of each rarity on a plain random roll (when nothing pins the rarity).
 RARITY_WEIGHTS = [40, 25, 15, 10, 7, 3]
 
 # Power multiplier applied to every rolled stat.
@@ -51,36 +55,66 @@ DIFFICULTY_LOOT_TABLE = {
     "S": [("Epic", 45), ("Legendary", 35), ("Mythic", 20)],
 }
 
+# What the shop stocks: almost always Common, sometimes Uncommon, rarely
+# Rare — anything higher must be earned from missions or fused.
+SHOP_RARITY_TABLE = [("Common", 85), ("Uncommon", 12), ("Rare", 3)]
+
+# How many artifacts of one rarity must be sacrificed to forge a single
+# artifact of the next rarity (on the inventory ARTIFACTS tab).
+SACRIFICE_PER_FUSION = 3
+
+# ── Stats ────────────────────────────────────────────────────────────────
+# Main stats can be allocated with points and roll on artifacts. Luck is
+# the newest main stat — it feeds the fortune-flavoured detailed stats.
+MAIN_STATS = ["health", "magic", "attack", "defense", "speed", "luck"]
+
+# Detailed stats are second-order stats: each is derived from the main stat
+# totals (see athas/detailed_stats.py), and artifacts can also grant them
+# directly. Those direct rolls are added on top of the derived value.
+DETAILED_STATS = [
+    "crit_chance", "crit_damage", "dodge", "block",
+    "armor_pen", "magic_pen", "hp_regen", "mana_regen",
+]
+
+# Detailed stats shown as percentages in the UI.
+PCT_DETAILED_STATS = {"crit_chance", "crit_damage", "dodge", "block"}
+
+# Direct detailed-stat rolls scale far more gently than main stats.
+RARITY_DETAIL_SCALE = {
+    "Common": 1, "Uncommon": 2, "Rare": 3,
+    "Epic": 4, "Legendary": 5, "Mythic": 6,
+}
+
 # ── Item types ───────────────────────────────────────────────────────────
 # type → stat bias (weight per player stat). Simple gear: weapons, armor,
 # and a few accessories. The artifact is named after its item type.
 
 ITEM_TYPES: Dict[str, Dict[str, float]] = {
-    "Sword":      {"attack": 6, "speed": 2, "health": 1},
-    "Greatsword": {"attack": 7, "health": 2, "defense": 1},
-    "Axe":        {"attack": 6, "defense": 2, "health": 1},
-    "Mace":       {"attack": 5, "defense": 3, "health": 1},
-    "Spear":      {"attack": 5, "speed": 3, "health": 1},
-    "Dagger":     {"speed": 5, "attack": 4, "magic": 1},
-    "Bow":        {"attack": 5, "speed": 4},
-    "Crossbow":   {"attack": 6, "speed": 2, "defense": 1},
-    "Staff":      {"magic": 6, "health": 2},
-    "Wand":       {"magic": 5, "speed": 3},
-    "Shield":     {"defense": 6, "health": 3},
-    "Helmet":     {"defense": 4, "health": 3, "magic": 2},
-    "Chestplate": {"defense": 5, "health": 4},
-    "Gauntlets":  {"attack": 4, "defense": 4, "health": 1},
-    "Leggings":   {"defense": 4, "health": 3, "speed": 2},
-    "Boots":      {"speed": 6, "defense": 2},
-    "Cloak":      {"speed": 3, "defense": 3, "magic": 3},
-    "Ring":       {"magic": 4, "health": 3, "attack": 2},
-    "Amulet":     {"health": 4, "magic": 3, "defense": 2},
+    "Sword":      {"attack": 6, "speed": 2, "health": 1, "crit_chance": 1.5, "armor_pen": 1},
+    "Greatsword": {"attack": 7, "health": 2, "defense": 1, "crit_damage": 1.5},
+    "Axe":        {"attack": 6, "defense": 2, "health": 1, "armor_pen": 1.5},
+    "Mace":       {"attack": 5, "defense": 3, "health": 1, "armor_pen": 1.5, "block": 1},
+    "Spear":      {"attack": 5, "speed": 3, "health": 1, "crit_chance": 1.5},
+    "Dagger":     {"speed": 5, "attack": 4, "magic": 1, "crit_chance": 2, "dodge": 1},
+    "Bow":        {"attack": 5, "speed": 4, "crit_chance": 1.5, "armor_pen": 1},
+    "Crossbow":   {"attack": 6, "speed": 2, "defense": 1, "armor_pen": 1.5},
+    "Staff":      {"magic": 6, "health": 2, "magic_pen": 1.5, "mana_regen": 1},
+    "Wand":       {"magic": 5, "speed": 3, "mana_regen": 1.5},
+    "Shield":     {"defense": 6, "health": 3, "block": 2},
+    "Helmet":     {"defense": 4, "health": 3, "magic": 2, "block": 1, "mana_regen": 0.5},
+    "Chestplate": {"defense": 5, "health": 4, "block": 1.5, "hp_regen": 0.5},
+    "Gauntlets":  {"attack": 4, "defense": 4, "health": 1, "armor_pen": 1},
+    "Leggings":   {"defense": 4, "health": 3, "speed": 2, "dodge": 1.5},
+    "Boots":      {"speed": 6, "defense": 2, "dodge": 2},
+    "Cloak":      {"speed": 3, "defense": 3, "magic": 3, "dodge": 1, "luck": 1},
+    "Ring":       {"magic": 4, "health": 3, "attack": 2, "luck": 2, "crit_chance": 1},
+    "Amulet":     {"health": 4, "magic": 3, "defense": 2, "luck": 2, "hp_regen": 1, "mana_regen": 1},
 }
 
 # Bias used for custom item types added to library/item_types.txt that have
 # no entry above.
 GENERIC_BIAS: Dict[str, float] = {
-    "attack": 3, "defense": 3, "magic": 3, "speed": 3, "health": 3,
+    "attack": 3, "defense": 3, "magic": 3, "speed": 3, "health": 3, "luck": 2,
 }
 
 # ── Flavour text ─────────────────────────────────────────────────────────
@@ -149,6 +183,12 @@ class ArtifactGenerator:
             return random.choices(list(rarities), weights=list(weights))[0]
         return random.choices(RARITIES, weights=RARITY_WEIGHTS)[0]
 
+    def roll_shop_rarity(self) -> str:
+        """Shop shelves are almost always Common, sometimes Uncommon,
+        rarely Rare — anything higher must be earned or fused."""
+        rarities, weights = zip(*SHOP_RARITY_TABLE)
+        return random.choices(list(rarities), weights=list(weights))[0]
+
     def price(self, rarity: str, level: int = 1) -> int:
         """Shop price in gold for a rarity/level combination."""
         base = RARITY_BASE_PRICES.get(rarity, 60)
@@ -189,10 +229,15 @@ class ArtifactGenerator:
             weights.pop(index)
         mult = RARITY_MULTIPLIER.get(rarity, 1)
         level_scale = 1 + 0.1 * (level - 1)
-        return {
-            stat: max(1, int(round(random.randint(1, 5) * mult * level_scale)))
-            for stat in picked
-        }
+        result: Dict[str, int] = {}
+        for stat in picked:
+            if stat in DETAILED_STATS:
+                # Direct detailed rolls scale gently and ignore level.
+                detail_mult = RARITY_DETAIL_SCALE.get(rarity, 1)
+                result[stat] = max(1, int(round(random.randint(1, 5) * detail_mult)))
+            else:
+                result[stat] = max(1, int(round(random.randint(1, 5) * mult * level_scale)))
+        return result
 
     def _describe(self, rarity: str, itype: str) -> str:
         template = random.choice(_DESCRIPTIONS.get(rarity, _DESCRIPTIONS["Common"]))

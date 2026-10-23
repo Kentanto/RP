@@ -141,15 +141,33 @@ Artifacts are auto-generated gear (weapons, armor, accessories) stored in
 * a **level** that scales the rolled stats (mission rewards roll at the
   player's current level)
 
+Rolled stats are either **main stats** (health, magic, attack, defense,
+speed, luck) or **detailed stats** (crit chance, crit damage, dodge, block,
+armor pen, magic pen, HP/mana regen) granted directly.
+
 There are only two ways to obtain artifacts:
 1. **Mission rewards** — add `"artifact_reward": <count>` to a mission JSON.
    The rarity is rolled from the mission difficulty's loot table (E-rank
    missions drop Common–Rare, S-rank drop Epic–Mythic) unless you pin it
    with `"artifact_rarity": "Rare"`.
-2. **The Shop** — the SHOP tab sells 6 generated artifacts for gold. The
-   stock lives in the database (so it syncs and persists), RESTOCK rerolls
-   it, and buying moves the artifact into the inventory with its origin
-   recorded.
+2. **The Shop** — the SHOP tab sells 6 generated artifacts for gold, plus a
+   fixed **PACKAGE: 10 common artifacts for 400 gold**. Shelf stock is
+   almost always Common, sometimes Uncommon, rarely Rare — anything higher
+   must be earned or fused. The stock lives in the database (so it syncs
+   and persists), RESTOCK rerolls it, and buying moves the artifact into
+   the inventory with its origin recorded.
+
+**Sacrifice / Forge** — on the inventory ARTIFACTS tab, press SACRIFICE and
+select 3 artifacts of the same rarity, then FORGE consumes them and creates
+1 artifact of the next rarity with fresh random stats (Mythic cannot be
+fused — there is nothing higher).
+
+**Detailed stats** — the DASHBOARD's DETAILED STATS button opens a page that
+breaks every stat down: main stats show base + temp points + artifact
+bonuses, and each detailed stat shows the formula derived from those
+totals plus any direct artifact bonuses. Luck is the newest main stat and
+feeds the fortune-flavoured stats (crit chance, crit damage, dodge).
+Percentage stats are capped.
 
 Gold comes from mission `"gold"` rewards and is shown in the sidebar. The
 `library/` folder is part of git sync, so curating `item_types.txt` locally
