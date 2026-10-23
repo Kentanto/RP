@@ -23,6 +23,18 @@
         3
       ],
       "credited_at": "2026-10-23T23:13:31"
+    },
+    "03_defeat_the_gatekeeper copy 2.json": {
+      "title": "Defeat the Gatekeeper",
+      "hash": "50042ad4ba7f44ac",
+      "xp": 500,
+      "constellation_points": 0,
+      "skill_points": 0,
+      "gold": 150,
+      "artifact_ids": [
+        4
+      ],
+      "credited_at": "2026-10-23T23:18:46"
     }
   }
 }

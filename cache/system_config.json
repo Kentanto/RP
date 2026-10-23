@@ -19,7 +19,7 @@
     "name": "Kenji Izumi",
     "rank": "F",
     "level": 4,
-    "xp": 99,
+    "xp": 599,
     "health": 2,
     "magic": 1,
     "attack": 3,
@@ -37,7 +37,7 @@
     "constellation_points": 0,
     "skill_points": 0,
     "perm_points": 0,
-    "gold": 300,
+    "gold": 450,
     "luck": 5
   },
   "missions": {
