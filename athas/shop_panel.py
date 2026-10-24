@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from athas.styles import CYAN, WHITE, GOLD
-from athas.artifact_generator import PCT_DETAILED_STATS
+from athas.artifact_generator import PCT_DETAILED_STATS, stat_display
 from athas.inventory_panel import RARITY_COLORS
 
 
@@ -73,7 +73,7 @@ class ShopCard(QFrame):
         layout.addWidget(rar)
 
         stat_lines = [
-            f"{k.replace('_', ' ').title()} +{v}{'%' if k in PCT_DETAILED_STATS else ''}"
+            stat_display(k, v)
             for k, v in (entry.get("stats") or {}).items() if v
         ]
         stats_lbl = QLabel("\n".join(stat_lines) if stat_lines else "No bonuses")

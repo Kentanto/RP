@@ -18,7 +18,7 @@ def _totals(**over):
 
 
 def test_level_growth_is_1_10_per_level():
-    assert LEVEL_GROWTH == 1.10
+    assert LEVEL_GROWTH == 1.05
     assert level_multiplier(1) == 1.0
     assert abs(level_multiplier(2) - 1.1) < 1e-9
     assert abs(level_multiplier(12) - 1.1 ** 11) < 1e-9

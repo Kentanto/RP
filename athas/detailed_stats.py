@@ -24,8 +24,10 @@ from PySide6.QtWidgets import (
 from athas.styles import CYAN, WHITE, GOLD, GRAY
 from athas.artifact_generator import (
     MAIN_STATS, DETAILED_STATS, PCT_DETAILED_STATS,
+    WORTH_PREFIX, TEMP_POINTS_KEY,
 )
 from athas.stats_widget import STAT_COLORS, TEXT_DIM, SURFACE, SURFACE_HI, EDGE, EDGE_HI
+from athas import equip
 
 
 def _as_int(value, fallback=0):
@@ -209,6 +211,26 @@ def collect_artifact_bonuses(artifacts):
     return main, detailed
 
 
+def collect_worth_bonuses(artifacts):
+    """Sum equipped artifacts' worth_<stat> bonuses: extra DG per point."""
+    worth = {}
+    for artifact in artifacts or []:
+        for key, value in (artifact.stats or {}).items():
+            if isinstance(key, str) and key.startswith(WORTH_PREFIX):
+                stat = key[len(WORTH_PREFIX):]
+                if stat in STAT_DG_PER_POINT:
+                    worth[stat] = worth.get(stat, 0) + _as_int(value)
+    return worth
+
+
+def collect_temp_points(artifacts):
+    """Total extra temp points granted by equipped artifacts."""
+    total = 0
+    for artifact in artifacts or []:
+        total += _as_int((artifact.stats or {}).get(TEMP_POINTS_KEY))
+    return max(0, total)
+
+
 def main_stat_totals(config, artifacts):
     """Per main stat: base+perm value, temp allocation, artifact bonus, total."""
     main_bonus, _ = collect_artifact_bonuses(artifacts)
@@ -242,20 +264,24 @@ def detailed_stat_values(main_totals, artifacts):
     return values
 
 
-def measured_stat_values(main_totals, level):
-    """Per regular stat: point totals plus the linear DG power rating."""
+def measured_stat_values(main_totals, level, worth=None):
+    """Per regular stat: point totals plus the linear DG power rating.
+
+    `worth` maps a stat to extra DG per point granted by equipped
+    artifacts (worth_<stat> bonuses) — it stacks onto the base rating."""
     mult = level_multiplier(level)
+    worth = worth or {}
     values = {}
     for key in MAIN_STATS:
         if key not in STAT_DG_PER_POINT:
             continue
-        dg = STAT_DG_PER_POINT[key]
+        dg = STAT_DG_PER_POINT[key] + worth.get(key, 0)
         data = main_totals[key]
         total = data["total"]
         values[key] = {
             "base": data["base"], "temp": data["temp"],
             "artifact": data["artifact"], "total": total,
-            "per_point": dg, "unit": "DG",
+            "per_point": dg, "worth": worth.get(key, 0), "unit": "DG",
             "label": STAT_DG_DESCRIPTIONS.get(key, "Power rating"),
             "mult": mult, "value": total * dg * mult,
         }
@@ -376,7 +402,7 @@ class DetailedStatsPanel(QWidget):
             row.addWidget(hint_lbl)
         return row
 
-    def _build_level_card(self, level):
+    def _build_level_card(self, level, equipped_count=0, temp_bonus=0):
         """Banner: current level and the compounding measurement multiplier."""
         frame = QFrame()
         frame.setObjectName("LevelCard")
@@ -400,6 +426,12 @@ class DetailedStatsPanel(QWidget):
         )
         lvl_sub.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px; letter-spacing: 1px;")
         left.addWidget(lvl_sub)
+        equip_bits = [f"EQUIPPED ARTIFACTS: {max(0, equipped_count)}/{equip.EQUIP_SLOTS}"]
+        if temp_bonus:
+            equip_bits.append(f"+{temp_bonus} temp points")
+        equip_lbl = QLabel("  ·  ".join(equip_bits))
+        equip_lbl.setStyleSheet(f"color: {GOLD}; font-size: 11px; letter-spacing: 1px;")
+        left.addWidget(equip_lbl)
         row.addLayout(left)
         row.addStretch()
         right = QVBoxLayout()
@@ -479,6 +511,10 @@ class DetailedStatsPanel(QWidget):
             parts.append(f"<span style='color:{TEXT_DIM};'>+{data['temp']} temp</span>")
         if data["artifact"]:
             parts.append(f"<span style='color:{GOLD};'>+{data['artifact']} artifacts</span>")
+        if data.get("worth"):
+            parts.append(
+                f"<span style='color:{GOLD};'>+{data['worth']} DG/pt point worth</span>"
+            )
         pts = QLabel(
             f"<span style='color:{WHITE}; font-weight:bold;'>{data['total']} pts</span>"
             + sep + sep.join(parts)
@@ -493,6 +529,8 @@ class DetailedStatsPanel(QWidget):
         formula.setToolTip(
             f"{data['total']} stat points × {data['per_point']:g} DG per point "
             f"× level multiplier {data['mult']:.2f}"
+            + (f" (includes +{data['worth']} DG/pt from equipped artifacts)"
+               if data.get("worth") else "")
         )
         col.addWidget(formula)
 
@@ -652,23 +690,29 @@ class DetailedStatsPanel(QWidget):
             it = self._body.takeAt(0)
             if it.widget():
                 it.widget().deleteLater()
-        artifacts = self.inv_manager.get_artifacts() if self.inv_manager else []
+        # Only EQUIPPED artifacts apply their bonuses.
+        equipped_ids = equip.equipped_ids(self.config)
+        artifacts = self.inv_manager.get_equipped_artifacts(equipped_ids) if self.inv_manager else []
         level = max(1, _as_int(self.config.get("player", "level", 1), 1))
         totals = main_stat_totals(self.config, artifacts)
-        measured = measured_stat_values(totals, level)
+        worth = collect_worth_bonuses(artifacts)
+        temp_bonus = collect_temp_points(artifacts)
+        measured = measured_stat_values(totals, level, worth)
         detailed = detailed_stat_values(totals, artifacts)
-        self._body.addWidget(self._build_level_card(level))
+        self._body.addWidget(self._build_level_card(level, len(artifacts), temp_bonus))
         self._body.addWidget(self._build_power_section(measured))
         self._body.addWidget(self._build_crit_section(detailed))
         self._body.addWidget(self._build_total_section(measured))
         mult = level_multiplier(level)
         footer = QLabel(
             f"Every stat converts into a linear DG power rating: your stat total "
-            f"(base + temporary points + artifact bonuses) × that stat's per-point "
-            f"DG rating (60 for every stat right now) × the level multiplier — "
+            f"(base + temporary points + equipped artifact bonuses) × that stat's per-point "
+            f"DG rating (60 for every stat right now, raised by equipped point-worth "
+            f"artifacts) × the level multiplier — "
             f"×{mult:.2f} at your current level, compounding 10% for every level past "
             f"the first. Crit chance and crit damage derive from your Speed and "
-            f"Attack totals; artifact rolls add on top, capped at 75% and 300%."
+            f"Attack totals; equipped artifact rolls add on top, capped at 75% and 300%. "
+            f"Only equipped artifacts count — unequipped gear gives nothing."
         )
         footer.setWordWrap(True)
         footer.setAlignment(Qt.AlignmentFlag.AlignCenter)

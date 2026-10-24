@@ -36,7 +36,11 @@
     "constellation_points": 0,
     "skill_points": 0,
     "perm_points": 0,
-    "gold": 0
+    "gold": 999835190,
+    "bonus_temp_points": 0,
+    "equipped_artifacts": [
+      63
+    ]
   },
   "missions": {
     "zoom": 1.0

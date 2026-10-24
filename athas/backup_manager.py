@@ -25,8 +25,9 @@ BACKUP_RETENTION_DAYS = 30
 # File types that hold player data (matches the git autosave watch list).
 BACKUP_SUFFIXES = {".json", ".db"}
 
-# Folders that never hold player data worth backing up.
-EXCLUDED_DIRS = {"backups", ".git", ".venv", "__pycache__", ".pytest_cache"}
+# Folders that never hold player data worth backing up. drops/ holds
+# transient hand-out files that are consumed (and deleted) within seconds.
+EXCLUDED_DIRS = {"backups", ".git", ".venv", "__pycache__", ".pytest_cache", "drops"}
 
 _FOLDER_FORMAT = "%Y-%m-%d_%H-%M-%S"
 

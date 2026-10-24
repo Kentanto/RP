@@ -30,6 +30,11 @@ DEFAULTS = {
         "perm_points": 0,
         "skill_points": 0,
         "gold": 0,
+        # Extra allocatable temp points granted by drop files (added to the
+        # level-derived base pool — see stats_widget._base_temp_points).
+        "bonus_temp_points": 0,
+        # Ids of the equipped artifacts (max EQUIP_SLOTS entries).
+        "equipped_artifacts": [],
         "temp_allocations": {
             "health": 0,
             "magic": 0,

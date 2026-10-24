@@ -18,6 +18,7 @@ python main.py
 | `icons/` | `background_menu.png` used as fullscreen background |
 | `sounds/` | SFX files reserved for future use |
 | `library/` | `item_types.txt` — the item types artifacts are generated from |
+| `drops/` | Local hand-out files (gold, points, notifications) — git-ignored, processed once, then deleted |
 | `backups/` | Local snapshots of the JSON data files (git-ignored) |
 
 ## Backups
@@ -141,8 +142,40 @@ Artifacts are auto-generated gear (weapons, armor, accessories) stored in
 * a **level** that scales the rolled stats (mission rewards roll at the
   player's current level)
 
-Rolled stats are either **main stats** (health, magic, attack, defense,
-speed) or **crit stats** (crit chance, crit damage) granted directly.
+Rolled stats come in four kinds:
+* **main stats** (health, magic, attack, defense, speed) — granted directly
+* **crit stats** (crit chance, crit damage) — granted directly
+* **point-worth stats** (`worth_attack`, ...) — every point allocated into
+  that stat is worth extra DG on the DETAILED STATS page (the base is 60
+  DG per point). Two artifacts raising different stats' worth can make
+  very different builds out of the same point budget.
+* **temp points** — extra allocatable temporary points granted while the
+  artifact is equipped.
+
+Rarity decides how many *different* stats sit on one artifact (Common 1 …
+Mythic 5); special stats roll with a lower weight than plain ones.
+
+**Equipment** — artifacts must be **equipped** for their stats to apply,
+and there are only **5 equipment slots**. The loadout lives in the player
+config (`player.equipped_artifacts`) and shows as a clickable slot bar at
+the top of the inventory ARTIFACTS tab (click a filled slot to unequip).
+Unequipped gear gives nothing, and artifacts that leave the inventory
+(forged away or revoked by an un-completed mission) leave their slot too.
+
+**Workshop** — open any artifact to work on it (all prices are gold, all
+rolls are random):
+* **UPGRADE** — a low or high roll into a random stat on the artifact,
+  up to **+20** (baseline; edit `MAX_UPGRADE_LEVEL`). The price grows with
+  the rarity and the current upgrade level.
+* **DOWNGRADE** — takes the last upgrade back off and refunds half its gold.
+* **REROLL STATS** — completely new random stat types with random starting
+  numbers. Upgrades reset.
+* **REROLL VALUES** — keeps the current stat types but re-rolls where the
+  numbers went (like the artifact reroll in Genshin). Deliberately
+  expensive, and the gold is never recoverable. Upgrades reset.
+
+Artifacts don't use pictures — their cards show the rolled stat lines
+directly. Hand-made JSON items in `items/` keep their images.
 
 There are only two ways to obtain artifacts:
 1. **Mission rewards** — add `"artifact_reward": <count>` to a mission JSON.
@@ -167,7 +200,9 @@ real-world units. Each stat awards DG per point (60 for every stat right
 now; edit `STAT_DG_PER_POINT` in `athas/detailed_stats.py` to scale stats
 differently), scaled by a compounding level multiplier: x1.10 for every
 level past the first (1.10^(level-1)), so a level-12 hero measures
-everything at x2.85. The page also shows the two
+everything at x2.85. **Only equipped artifacts** add their bonuses, and
+equipped point-worth artifacts raise the per-point DG rating itself. The
+page also shows the two
 crit stats, derived from the stat totals (crit chance: 3% + Speed x 0.45%,
 crit damage: 50% + Attack x 1.50%) with direct artifact crit rolls stacked
 on top. Crit chance caps at 75% and crit damage at 300%. Below the crit
@@ -183,6 +218,39 @@ band can use `None` as its open-ended upper bound.
 Gold comes from mission `"gold"` rewards and is shown in the sidebar. The
 `library/` folder is part of git sync, so curating `item_types.txt` locally
 and committing it updates the loot pool for everyone.
+
+## Drops folder
+Drop a `*.json` or `*.txt` file into `drops/` to hand the local player
+gold, xp, skill points, constellation points, temp points, permanent
+points, or a notification — the app scans the folder every 2 seconds,
+applies the grants, and **deletes the file**. A reward popup confirms
+what was granted; its OK button stays disabled for the first **2 seconds**
+so a popup that appears suddenly cannot be clicked away by accident.
+
+The folder is git-ignored, outside every git-sync path, and never backed
+up — the app can never upload from it. Sharing a drop file with someone
+happens manually from the IDE, nothing else.
+
+JSON format (any subset of the keys):
+```json
+{
+  "gold": 100,
+  "xp": 50,
+  "skill_points": 1,
+  "constellation_points": 2,
+  "temp_points": 3,
+  "perm_points": 1,
+  "notification": { "title": "System Message", "message": "Well done." }
+}
+```
+TXT format — one `key: value` pair per line (`key = value` works too,
+spacing and case are free, and friendly aliases like `con points`,
+`exp`, `money`, or `points` are accepted):
+```
+gold: 100
+skill points: 1
+notification: The System acknowledges your progress.
+```
 
 ## Mission file format
 JSON files (`*.json`) inside `missions/`:
@@ -218,9 +286,13 @@ JSON files (`*.json`) inside `missions/`:
    without a `"completed"` property still counts as completed. Setting the
    property to `false` there restores the mission to `missions/`.
 
-random ideas:
-- some artifacts can flat increase the worth of each point into a certain stat, this can create som cool artifact interactions and strategies on building, especially since all stats points are worth the same amount of DG
-- Some artifacts can give direct temp points
-- a folder i can drop json files, txt files in order to give gold, notifications, skill points con point and any spendable thing, notifications would come in the form of a popup that cant be x-ed out until 2 seconds have passed so no one accidentally clicks it away when it pops up suddenly, once processed the file is deleted and one can only download from it, the program itself cant upload from this folder to git, only manual from IDE. 
-- artifacts need to be equiped for their stats to actually be given to the character and you only have 5 slots
-- you can upgrade artifacts un upgrade them for a portion of gold back you can reroll their stat types to something completely random with random starting numbers, when upgrading it can roll low or high into a random stat and max level isnt decided yet but lets baseline it at 20, rarity depends how many different stats can be on it at once. if youre happy with stats, you can reroll while keepign the current stats, but rerolling what went into where at random, just like genshins feather, but just for gold, this gold is not recoverable and is kinda expensive.
+Random ideas:
+- the drops folder should have a ready json file in there that isnt processed by default, so i can write any given reward be it gold, con points, skill points or even artifacts is supported, they are all in the ignored json file by default at 0 so i can change it copy the file and rename it, it should also support text so i can write messages
+
+- instead of random artifacts in the store, keep the 10 packaged deal but replace the random ones with instead regular shop items such as bandages, medkits, healing potion in rising price, healing potion being significantly higher, like 5k gold. think of other supplies too i guess 
+
+- the detailed view of artifacts by clicking on them is a little bad, could you make the interface look better still adhering to the systems look
+
+- drops messages has no background when it processes something that wasnt supported,
+
+- rerolling artifact values doesnt reset the artifact to level 0, but since each upgrade has a chance to hit a high or low number to add to it, it does that again for all levels with a new chance to get a higher number, the 

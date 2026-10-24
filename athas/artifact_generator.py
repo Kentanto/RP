@@ -81,6 +81,47 @@ RARITY_DETAIL_SCALE = {
     "Epic": 4, "Legendary": 5, "Mythic": 6,
 }
 
+# ── Special artifact stats ────────────────────────────────────────────────
+# Besides plain stat bonuses, artifacts can roll two special stat kinds:
+#   * worth_<stat>  — every point allocated into that stat is worth extra
+#                     DG on the DASHBOARD details page (e.g. worth_attack
+#                     raises the 60 DG each attack point normally grants).
+#   * temp_points   — extra allocatable temporary points granted while the
+#                     artifact is equipped.
+WORTH_PREFIX = "worth_"
+TEMP_POINTS_KEY = "temp_points"
+
+# Relative weight of the special candidates inside an item type's stat pool.
+WORTH_STAT_WEIGHT_FACTOR = 0.25   # worth_<stat> gets 25% of the stat's weight
+TEMP_POINTS_WEIGHT = 0.8          # temp_points candidate weight for every type
+
+# How high an artifact can be upgraded (baseline; tune freely).
+MAX_UPGRADE_LEVEL = 20
+
+# How many artifacts the player can equip at once.
+EQUIP_SLOTS = 5
+
+# Fraction of the gold an upgrade cost that an un-upgrade refunds.
+UNUPGRADE_REFUND = 0.5
+
+
+def is_worth_stat(key: str) -> bool:
+    """True when the key is a worth_<main stat> bonus."""
+    return (isinstance(key, str) and key.startswith(WORTH_PREFIX)
+            and key[len(WORTH_PREFIX):] in MAIN_STATS)
+
+
+def stat_display(key: str, value) -> str:
+    """Human-readable one-line text for a stat entry, e.g. 'Health +12'."""
+    value = value if isinstance(value, int) else int(value or 0)
+    if is_worth_stat(key):
+        stat = key[len(WORTH_PREFIX):].replace("_", " ").title()
+        return f"{stat} Point Worth +{value} DG"
+    if key == TEMP_POINTS_KEY:
+        return f"Temp Points +{value}"
+    label = key.replace("_", " ").title()
+    return f"{label} +{value}{'%' if key in PCT_DETAILED_STATS else ''}"
+
 # ── Item types ───────────────────────────────────────────────────────────
 # type → stat bias (weight per player stat). Simple gear: weapons, armor,
 # and a few accessories. The artifact is named after its item type.
@@ -212,9 +253,25 @@ class ArtifactGenerator:
         }
 
     def _roll_stats(self, itype: str, rarity: str, level: int) -> Dict[str, int]:
+        """Roll the artifact's stat types and their starting values.
+
+        The candidate pool is the item type's stat bias, extended by the
+        special stat kinds: every main stat also offers a worth_<stat>
+        candidate (a fraction of its weight) and every pool contains a
+        temp_points candidate. Rarity decides how many different stats the
+        artifact rolls at once."""
         bias = ITEM_TYPES.get(itype, GENERIC_BIAS)
-        keys = list(bias.keys())
-        weights = [bias[k] for k in keys]
+        keys: List[str] = []
+        weights: List[float] = []
+        for stat, weight in bias.items():
+            keys.append(stat)
+            weights.append(float(weight))
+            if stat in MAIN_STATS:
+                keys.append(f"{WORTH_PREFIX}{stat}")
+                weights.append(float(weight) * WORTH_STAT_WEIGHT_FACTOR)
+        keys.append(TEMP_POINTS_KEY)
+        weights.append(TEMP_POINTS_WEIGHT)
+
         count = min(RARITY_STAT_COUNTS.get(rarity, 1), len(keys))
         picked: List[str] = []
         for _ in range(count):
@@ -223,17 +280,69 @@ class ArtifactGenerator:
             index = keys.index(stat)
             keys.pop(index)
             weights.pop(index)
+        return {stat: self.roll_stat_value(stat, rarity, level) for stat in picked}
+
+    def roll_stat_value(self, stat: str, rarity: str, level: int) -> int:
+        """Roll the starting value for one stat entry."""
+        if is_worth_stat(stat):
+            # Extra DG per point — gently scaling, ignores level.
+            return max(1, random.randint(1, 2) * RARITY_DETAIL_SCALE.get(rarity, 1))
+        if stat == TEMP_POINTS_KEY:
+            return random.randint(1, RARITY_DETAIL_SCALE.get(rarity, 1))
+        if stat in DETAILED_STATS:
+            # Direct detailed rolls scale gently and ignore level.
+            detail_mult = RARITY_DETAIL_SCALE.get(rarity, 1)
+            return max(1, int(round(random.randint(1, 5) * detail_mult)))
         mult = RARITY_MULTIPLIER.get(rarity, 1)
         level_scale = 1 + 0.1 * (level - 1)
-        result: Dict[str, int] = {}
-        for stat in picked:
-            if stat in DETAILED_STATS:
-                # Direct detailed rolls scale gently and ignore level.
-                detail_mult = RARITY_DETAIL_SCALE.get(rarity, 1)
-                result[stat] = max(1, int(round(random.randint(1, 5) * detail_mult)))
-            else:
-                result[stat] = max(1, int(round(random.randint(1, 5) * mult * level_scale)))
-        return result
+        return max(1, int(round(random.randint(1, 5) * mult * level_scale)))
+
+    def reroll_stat_values(self, stats: Dict[str, int], rarity: str, level: int) -> Dict[str, int]:
+        """Keep the same stat types but roll fresh starting numbers."""
+        return {key: self.roll_stat_value(key, rarity, level) for key in stats}
+
+    def upgrade_roll(self, stat: str, rarity: str) -> Dict[str, Any]:
+        """One upgrade: a random amount (low or high roll) for one stat.
+
+        Returns {'amount': int, 'high': bool}."""
+        if is_worth_stat(stat):
+            if random.random() < 0.5:
+                return {"amount": random.randint(1, 2), "high": False}
+            return {"amount": random.randint(2, 5), "high": True}
+        if stat == TEMP_POINTS_KEY:
+            if random.random() < 0.5:
+                return {"amount": 1, "high": False}
+            return {"amount": random.randint(1, 2), "high": True}
+        if stat in DETAILED_STATS:
+            scale = max(1, RARITY_DETAIL_SCALE.get(rarity, 1))
+            if random.random() < 0.5:
+                return {"amount": max(1, random.randint(1, max(1, scale // 2))), "high": False}
+            return {"amount": random.randint(1, scale) * 2, "high": True}
+        mult = RARITY_MULTIPLIER.get(rarity, 1)
+        if random.random() < 0.5:
+            return {"amount": max(1, random.randint(1, 2) * mult), "high": False}
+        return {"amount": max(1, random.randint(3, 5) * mult), "high": True}
+
+    # ── workshop prices ──
+    def upgrade_cost(self, rarity: str, upgrade_level: int) -> int:
+        """Gold price of the next upgrade (0-based: level 0 → first upgrade)."""
+        base = RARITY_BASE_PRICES.get(rarity, 60)
+        return max(1, int(round(base * (0.15 + 0.10 * max(0, int(upgrade_level))))))
+
+    def unupgrade_refund(self, rarity: str, paid_cost: int) -> int:
+        """Gold refunded when an upgrade is taken back off."""
+        return max(1, int(round(max(0, int(paid_cost)) * UNUPGRADE_REFUND)))
+
+    def reroll_stats_cost(self, rarity: str) -> int:
+        """Gold price of rerolling the stat types entirely."""
+        return max(1, int(round(RARITY_BASE_PRICES.get(rarity, 60) * 0.5)))
+
+    def reroll_values_cost(self, rarity: str) -> int:
+        """Gold price of rerolling the values while keeping the stat types.
+
+        Deliberately expensive — and unlike upgrades, this gold is gone."""
+        return max(1, int(round(RARITY_BASE_PRICES.get(rarity, 60) * 0.75)))
+
 
     def _describe(self, rarity: str, itype: str) -> str:
         template = random.choice(_DESCRIPTIONS.get(rarity, _DESCRIPTIONS["Common"]))

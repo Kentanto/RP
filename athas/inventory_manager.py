@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from athas.artifact_generator import (
     ArtifactGenerator, RARITIES, SACRIFICE_PER_FUSION,
+    MAX_UPGRADE_LEVEL,
 )
 
 
@@ -32,6 +33,8 @@ class InventoryItem:
     level: int = 1
     source_file: str = ""  # for JSON items
     source: str = ""       # artifact origin: "mission" | "shop"
+    upgrade_level: int = 0                 # workshop upgrades applied (max 20)
+    upgrade_log: Optional[List[Dict[str, Any]]] = None  # what each upgrade did
 
 
 _ARTIFACTS_SQL = """
@@ -45,6 +48,8 @@ _ARTIFACTS_SQL = """
         source      TEXT DEFAULT 'mission',
         description TEXT DEFAULT '',
         story       TEXT DEFAULT '',
+        upgrade_level INTEGER DEFAULT 0,
+        upgrade_log TEXT DEFAULT '[]',
         created_at  TEXT DEFAULT CURRENT_TIMESTAMP
     )
 """
@@ -105,6 +110,10 @@ class InventoryManager:
                 conn.execute("ALTER TABLE artifacts ADD COLUMN description TEXT DEFAULT ''")
             if "story" not in cols:
                 conn.execute("ALTER TABLE artifacts ADD COLUMN story TEXT DEFAULT ''")
+            if "upgrade_level" not in cols:
+                conn.execute("ALTER TABLE artifacts ADD COLUMN upgrade_level INTEGER DEFAULT 0")
+            if "upgrade_log" not in cols:
+                conn.execute("ALTER TABLE artifacts ADD COLUMN upgrade_log TEXT DEFAULT '[]'")
             if legacy:
                 # Old rows were blind auto-seeds built from empty word lists
                 # (twenty "Unknown Relic"s) — the new system starts clean.
@@ -149,10 +158,23 @@ class InventoryManager:
     def _insert_artifact(self, conn, payload: Dict[str, Any]) -> int:
         cur = conn.execute("""
             INSERT INTO artifacts
-                (name, item_type, rarity, level, stats, source, description, story)
+                (name, item_type, rarity, level, stats, source, description, story,
+                 upgrade_level, upgrade_log)
             VALUES
-                (:name, :item_type, :rarity, :level, :stats, :source, :description, :story)
-        """, payload)
+                (:name, :item_type, :rarity, :level, :stats, :source, :description, :story,
+                 :upgrade_level, :upgrade_log)
+        """, {
+            "name": payload.get("name", ""),
+            "item_type": payload.get("item_type", ""),
+            "rarity": payload.get("rarity", "Common"),
+            "level": payload.get("level", 1),
+            "stats": payload.get("stats", "{}"),
+            "source": payload.get("source", "mission"),
+            "description": payload.get("description", ""),
+            "story": payload.get("story", ""),
+            "upgrade_level": int(payload.get("upgrade_level", 0) or 0),
+            "upgrade_log": payload.get("upgrade_log", "[]"),
+        })
         return int(cur.lastrowid or 0)
 
     def _row_to_item(self, row) -> InventoryItem:
@@ -170,7 +192,17 @@ class InventoryManager:
             level=row["level"],
             source_file=str(self.db_path),
             source=row["source"] or "",
+            upgrade_level=int(row["upgrade_level"] or 0) if "upgrade_level" in row.keys() else 0,
+            upgrade_log=self._parse_upgrade_log(row["upgrade_log"]) if "upgrade_log" in row.keys() else [],
         )
+
+    @staticmethod
+    def _parse_upgrade_log(raw: Any) -> List[Dict[str, Any]]:
+        try:
+            data = json.loads(raw or "[]")
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
 
     def generate_artifacts(self, count: int = 1, rarity: Optional[str] = None,
                            difficulty: Optional[str] = None, level: int = 1,
@@ -223,6 +255,152 @@ class InventoryManager:
             placeholders = ",".join("?" * len(clean))
             conn.execute(f"DELETE FROM artifacts WHERE id IN ({placeholders})", clean)
             conn.commit()
+
+    # --- Workshop (upgrade / reroll) ---
+    def get_artifact_by_id(self, artifact_id: Any) -> Optional[InventoryItem]:
+        """Fetch one artifact row by its numeric id."""
+        try:
+            aid = int(artifact_id)
+        except (TypeError, ValueError):
+            return None
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM artifacts WHERE id = ?", (aid,)).fetchone()
+        return self._row_to_item(row) if row is not None else None
+
+    def get_equipped_artifacts(self, equipped_ids) -> List[InventoryItem]:
+        """The equipped artifacts in slot order; missing ids are skipped."""
+        items: List[InventoryItem] = []
+        for value in equipped_ids or []:
+            try:
+                aid = int(value)
+            except (TypeError, ValueError):
+                continue
+            item = self.get_artifact_by_id(aid)
+            if item is not None:
+                items.append(item)
+        return items
+
+    def upgrade_artifact(self, artifact_id: Any) -> Optional[Dict[str, Any]]:
+        """Apply one workshop upgrade: a low/high roll into a random stat.
+
+        Returns {'item', 'stat', 'amount', 'high', 'cost'} on success,
+        or None when the artifact is missing, already maxed, or has no
+        stats to grow."""
+        try:
+            aid = int(artifact_id)
+        except (TypeError, ValueError):
+            return None
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM artifacts WHERE id = ?", (aid,)).fetchone()
+            if row is None:
+                return None
+            stats = self._parse_stats(row["stats"])
+            upgrade_level = int(row["upgrade_level"] or 0)
+            if upgrade_level >= MAX_UPGRADE_LEVEL or not stats:
+                return None
+            rarity = row["rarity"]
+            stat = random.choice(list(stats.keys()))
+            roll = self.generator.upgrade_roll(stat, rarity)
+            cost = self.generator.upgrade_cost(rarity, upgrade_level)
+            stats[stat] = max(1, int(stats.get(stat, 0)) + roll["amount"])
+            log = self._parse_upgrade_log(row["upgrade_log"])
+            log.append({
+                "stat": stat, "amount": roll["amount"],
+                "high": bool(roll["high"]), "cost": cost,
+            })
+            conn.execute(
+                "UPDATE artifacts SET stats = ?, upgrade_level = ?, upgrade_log = ? WHERE id = ?",
+                (json.dumps(stats), upgrade_level + 1, json.dumps(log), aid),
+            )
+            conn.commit()
+        return {
+            "item": self.get_artifact_by_id(aid),
+            "stat": stat,
+            "amount": roll["amount"],
+            "high": bool(roll["high"]),
+            "cost": cost,
+        }
+
+    def unupgrade_artifact(self, artifact_id: Any) -> Optional[Dict[str, Any]]:
+        """Take the last upgrade back off, refunding part of its gold.
+
+        Returns {'item', 'refund'} or None when there is nothing to undo."""
+        try:
+            aid = int(artifact_id)
+        except (TypeError, ValueError):
+            return None
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM artifacts WHERE id = ?", (aid,)).fetchone()
+            if row is None:
+                return None
+            log = self._parse_upgrade_log(row["upgrade_log"])
+            upgrade_level = int(row["upgrade_level"] or 0)
+            if upgrade_level <= 0 or not log:
+                return None
+            entry = log.pop()
+            stats = self._parse_stats(row["stats"])
+            stat = entry.get("stat")
+            if stat in stats:
+                stats[stat] = max(1, int(stats.get(stat, 0)) - int(entry.get("amount", 0)))
+            refund = self.generator.unupgrade_refund(
+                row["rarity"], int(entry.get("cost", 0)),
+            )
+            conn.execute(
+                "UPDATE artifacts SET stats = ?, upgrade_level = ?, upgrade_log = ? WHERE id = ?",
+                (json.dumps(stats), upgrade_level - 1, json.dumps(log), aid),
+            )
+            conn.commit()
+        return {"item": self.get_artifact_by_id(aid), "refund": refund}
+
+    def reroll_artifact_stats(self, artifact_id: Any) -> Optional[InventoryItem]:
+        """Reroll the stat types entirely, with fresh random starting
+        numbers. The item type, rarity and level stay; upgrades are reset."""
+        try:
+            aid = int(artifact_id)
+        except (TypeError, ValueError):
+            return None
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM artifacts WHERE id = ?", (aid,)).fetchone()
+            if row is None:
+                return None
+            stats = self.generator._roll_stats(
+                row["item_type"], row["rarity"], int(row["level"] or 1),
+            )
+            conn.execute(
+                "UPDATE artifacts SET stats = ?, upgrade_level = 0, upgrade_log = '[]' WHERE id = ?",
+                (json.dumps(stats), aid),
+            )
+            conn.commit()
+        return self.get_artifact_by_id(aid)
+
+    def reroll_artifact_values(self, artifact_id: Any) -> Optional[InventoryItem]:
+        """Keep the current stat types but re-roll where the numbers went,
+        Genshin-style. Upgrades are reset — their gold is spent either way."""
+        try:
+            aid = int(artifact_id)
+        except (TypeError, ValueError):
+            return None
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM artifacts WHERE id = ?", (aid,)).fetchone()
+            if row is None:
+                return None
+            stats = self._parse_stats(row["stats"])
+            if not stats:
+                return None
+            stats = self.generator.reroll_stat_values(
+                stats, row["rarity"], int(row["level"] or 1),
+            )
+            conn.execute(
+                "UPDATE artifacts SET stats = ?, upgrade_level = 0, upgrade_log = '[]' WHERE id = ?",
+                (json.dumps(stats), aid),
+            )
+            conn.commit()
+        return self.get_artifact_by_id(aid)
 
     # --- Items (JSON scan) ---
     def scan_items(self) -> List[InventoryItem]:

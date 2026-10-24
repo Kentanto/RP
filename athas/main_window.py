@@ -21,6 +21,10 @@ from athas.detailed_stats import DetailedStatsPanel
 from athas.git_sync import GitSyncWorker
 from athas.backup_manager import BackupManager, BACKUP_INTERVAL_MS
 from athas.notification_widget import NotificationWidget
+from athas.reward_popup import RewardPopup
+from athas.drop_manager import DropManager
+from athas.detailed_stats import collect_temp_points
+from athas import equip
 from athas.settings_panel import SettingsPanel
 from athas.stats_widget import LEVEL_PERM_BONUS, LEVEL_TEMP_BONUS, StatsWidget
 from athas.ability_tree_panel import AbilityTreePanel
@@ -279,6 +283,13 @@ class MainWindow(QMainWindow):
         self.notif = NotificationWidget(self.root)
         self.notif.raise_()
 
+        # Drops-folder reward popup (2-second close lockout).
+        self._drop_manager: DropManager | None = None
+        self._drop_timer: QTimer | None = None
+        self.reward_popup = RewardPopup(self.root)
+        self.reward_popup.reposition(self.root.rect())
+        self.reward_popup.raise_()
+
         self._settings_panel = SettingsPanel(self.config, audio_output=audio_output, parent=self.root)
         self._settings_panel.hide()
         self._settings_panel.setGeometry(0, 0, self.root.width(), self.root.height())
@@ -380,6 +391,15 @@ class MainWindow(QMainWindow):
         self._scan_timer.timeout.connect(self._scan_missions)
         self._scan_timer.start(5000)
         self._scan_missions()
+
+        # Drops folder — local hand-outs (git-ignored, never uploaded).
+        # The stat bars count the temp points granted by equipped artifacts.
+        self._drop_manager = DropManager(rp / "drops")
+        self._stats_widget.set_temp_bonus_provider(self._equipped_temp_points)
+        self._drop_timer = QTimer(self)
+        self._drop_timer.timeout.connect(self._process_drops)
+        self._drop_timer.start(2000)
+        self._process_drops()
 
     def _refresh_sidebar_player(self):
         """Keep the sidebar rank/level line in sync with the config."""
@@ -526,7 +546,9 @@ class MainWindow(QMainWindow):
         self._content_pages.addWidget(missions_page)
 
         # ── Page 2 : INVENTORY ──
-        self._inv_panel = InventoryPanel(inv_manager=None, parent=None)
+        self._inv_panel = InventoryPanel(inv_manager=None, config=self.config)
+        self._inv_panel.gold_changed.connect(self._on_gold_changed)
+        self._inv_panel.stats_changed.connect(self._on_stats_changed)
         self._content_pages.addWidget(self._inv_panel)
 
         # ── Page 3 : ABILITY TREE ──
@@ -617,6 +639,7 @@ class MainWindow(QMainWindow):
         self.bg_label.setGeometry(self.root.rect())
         self._ui_overlay.setGeometry(self.root.rect())
         self.notif.reposition(QPoint(self.root.width(), 0))
+        self.reward_popup.reposition(self.root.rect())
         if hasattr(self, "_detail_view"):
             self._detail_view.setGeometry(self.root.rect())
         super().resizeEvent(event)
@@ -748,6 +771,89 @@ class MainWindow(QMainWindow):
         if self._shop_panel is not None:
             self._shop_panel.refresh_gold()
 
+    # ── Workshop / equip side effects ──
+    def _on_gold_changed(self):
+        """Gold spent or earned inside the inventory panel."""
+        self._refresh_sidebar_player()
+        if self._shop_panel is not None:
+            self._shop_panel.refresh_gold()
+
+    def _on_stats_changed(self):
+        """The equipped loadout changed — recompute every stat display."""
+        self._stats_widget.refresh()
+        if getattr(self, "_details_panel", None) is not None:
+            self._details_panel.refresh()
+
+    def _equipped_temp_points(self) -> int:
+        """Temp points granted by the currently equipped artifacts."""
+        if self._inv_manager is None:
+            return 0
+        equipped = self.inv_manager_equipped()
+        return collect_temp_points(equipped)
+
+    def inv_manager_equipped(self):
+        ids = equip.equipped_ids(self.config)
+        return self._inv_manager.get_equipped_artifacts(ids)
+
+    # ── Drops folder ──
+    def _process_drops(self):
+        """Apply every drop file found in drops/ and show the reward popup."""
+        if self._drop_manager is None:
+            return
+        grants = self._drop_manager.collect()
+        for grant in grants:
+            self._apply_drop(grant)
+
+    def _apply_drop(self, grant: dict):
+        summary: list = []
+        gold = int(grant.get("gold", 0) or 0)
+        if gold > 0:
+            self._add_gold(gold)
+            summary.append(f"+{gold} gold")
+        xp = int(grant.get("xp", 0) or 0)
+        levels = 0
+        if xp > 0:
+            levels = self._stats_widget.grant_xp(xp)
+            self._refresh_sidebar_player()
+            summary.append(f"+{xp} XP")
+        skill_points = int(grant.get("skill_points", 0) or 0)
+        if skill_points > 0:
+            self._stats_widget.grant_skill_points(skill_points)
+            if self._skills_panel is not None:
+                self._skills_panel.refresh()
+            summary.append(f"+{skill_points} skill point{'s' if skill_points != 1 else ''}")
+        con_points = int(grant.get("constellation_points", 0) or 0)
+        if con_points > 0:
+            points = self.config.get("player", "constellation_points", 0)
+            self.config.set("player", "constellation_points", max(0, points) + con_points)
+            if self._ability_panel is not None:
+                self._ability_panel.refresh_points()
+            summary.append(f"+{con_points} constellation point{'s' if con_points != 1 else ''}")
+        temp_points = int(grant.get("temp_points", 0) or 0)
+        if temp_points > 0:
+            self._stats_widget.grant_bonus_temp_points(temp_points)
+            summary.append(f"+{temp_points} temp point{'s' if temp_points != 1 else ''}")
+        perm_points = int(grant.get("perm_points", 0) or 0)
+        if perm_points > 0:
+            perm = max(0, int(self.config.get("player", "perm_points", 0) or 0))
+            self.config.set("player", "perm_points", perm + perm_points)
+            self._stats_widget.refresh()
+            summary.append(f"+{perm_points} permanent point{'s' if perm_points != 1 else ''}")
+        if levels > 0:
+            summary.append(f"LEVEL UP - Level {self.config.get('player', 'level', 1)}")
+
+        notification = grant.get("notification") or {}
+        title = str(notification.get("title") or "SYSTEM REWARD")
+        lines = []
+        message = str(notification.get("message") or "").strip()
+        if message:
+            lines.append(message)
+        if summary:
+            lines.append("  ".join(summary))
+        if not lines:
+            lines.append("The System acknowledged a drop file - nothing was granted.")
+        self.reward_popup.show_message(title, "  |  ".join(lines))
+
     def _on_mission_completed(self, mission: Mission):
         """The author marked a mission as done — grant its rewards once.
 
@@ -836,7 +942,14 @@ class MainWindow(QMainWindow):
                 self._shop_panel.refresh_gold()
         artifact_ids = rewards.get("artifact_ids") or []
         if artifact_ids and self._inv_manager is not None:
+            clean_ids = [
+                value for value in artifact_ids
+                if isinstance(value, int) and not isinstance(value, bool)
+            ]
             self._inv_manager.delete_artifacts(artifact_ids)
+            # Revoked artifacts leave the equip slots too.
+            equip.prune_equipped(self.config, clean_ids)
+            self._on_stats_changed()
             if self._inv_panel is not None:
                 self._inv_panel.refresh()
 
@@ -906,6 +1019,8 @@ class MainWindow(QMainWindow):
             self._git_sync.stop()
         if self._scan_timer is not None:
             self._scan_timer.stop()
+        if self._drop_timer is not None:
+            self._drop_timer.stop()
         if self._backup_timer is not None:
             self._backup_timer.stop()
         if self._fade_timer is not None:

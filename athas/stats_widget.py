@@ -732,19 +732,51 @@ class StatsWidget(QWidget):
 
     def _base_temp_points(self) -> int:
         """Un-multiplied base pool: BASE_TEMP_POINTS plus LEVEL_TEMP_BONUS
-        for every level past the first. The level is the single source of
-        truth, so the base can never drift out of sync with level-ups."""
+        for every level past the first, plus any bonus temp points granted
+        through drop files. The level is the single source of truth for the
+        level part, so the base can never drift out of sync with level-ups."""
         level = max(1, _as_int(self.config.get("player", "level", 1), 1))
-        return BASE_TEMP_POINTS + LEVEL_TEMP_BONUS * (level - 1)
+        bonus = _as_int(self.config.get("player", "bonus_temp_points", 0))
+        return BASE_TEMP_POINTS + LEVEL_TEMP_BONUS * (level - 1) + max(0, bonus)
+
+    def set_temp_bonus_provider(self, provider):
+        """Give the dashboard a callable that returns the extra allocatable
+        temp points granted by equipped artifacts (0 when none)."""
+        self._temp_bonus_provider = provider
+
+    def _artifact_temp_bonus(self) -> int:
+        provider = getattr(self, "_temp_bonus_provider", None)
+        if not callable(provider):
+            return 0
+        try:
+            return max(0, _as_int(provider()))
+        except Exception:
+            return 0
+
+    def grant_bonus_temp_points(self, amount: int) -> int:
+        """Grant extra allocatable temp points (drop-file rewards). They act
+        like extra base points and persist until spent."""
+        amount = max(0, _as_int(amount))
+        if amount <= 0:
+            return 0
+        bonus = max(0, _as_int(self.config.get("player", "bonus_temp_points", 0)))
+        self.config.set("player", "bonus_temp_points", bonus + amount)
+        self.refresh()
+        return amount
 
     def _temp_points_total(self) -> int:
         """Total temporary stat points: base points × (Fortune rank + 1)."""
         return self._base_temp_points() * (self._fortune_rank() + 1)
 
     def _available_temp_points(self) -> int:
-        """Points still free to allocate: the multiplied total minus
-        whatever is already sitting on stats."""
-        return max(0, self._temp_points_total() - self._allocated_total())
+        """Points still free to allocate: the multiplied total plus the
+        equipped artifacts' flat temp-point bonus, minus whatever is
+        already sitting on stats."""
+        return max(
+            0,
+            self._temp_points_total() + self._artifact_temp_bonus()
+            - self._allocated_total(),
+        )
 
     def _sync_pool(self) -> int:
         """Recompute the pool from scratch and return it.
