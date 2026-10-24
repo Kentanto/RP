@@ -33,6 +33,57 @@ def panel_style(bg: str = DARK, border: str = CYAN) -> str:
     """
 
 
+def button_style(accent: str = CYAN, active: bool = True) -> str:
+    """A clearly defined button: solid dark fill, crisp accent border,
+    visible hover / pressed / disabled states. Used for the shop and
+    inventory buttons so they always read as buttons."""
+    if active:
+        return f"""
+            QPushButton {{
+                background-color: {DARK};
+                border: 1px solid {accent};
+                color: {accent};
+                padding: 6px 20px;
+                font-weight: bold;
+                border-radius: 2px;
+            }}
+            QPushButton:hover {{
+                background-color: {accent};
+                border: 1px solid {accent};
+                color: {BLACK};
+            }}
+            QPushButton:pressed {{
+                background-color: {accent};
+                border: 1px solid {WHITE};
+                color: {BLACK};
+            }}
+            QPushButton:disabled {{
+                background-color: {DARKER};
+                border: 1px solid #333;
+                color: #555;
+            }}
+        """
+    return f"""
+        QPushButton {{
+            background-color: {DARK};
+            border: 1px solid #3a4a52;
+            color: {GRAY};
+            padding: 6px 20px;
+            border-radius: 2px;
+        }}
+        QPushButton:hover {{
+            background-color: {DARK};
+            border: 1px solid {accent};
+            color: {accent};
+        }}
+        QPushButton:disabled {{
+            background-color: {DARKER};
+            border: 1px solid #333;
+            color: #555;
+        }}
+    """
+
+
 def mission_card_style(difficulty: str = "E", completed: bool = False) -> str:
     col = DIFF_COLOURS.get(difficulty.upper(), CYAN)
     if completed:

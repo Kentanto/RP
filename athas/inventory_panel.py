@@ -1,29 +1,28 @@
 """
-Inventory Panel -- tabbed grid of Items (JSON) and Artifacts (DB), plus the
-artifact workshop.
+Inventory Panel -- tabbed grid of Items (JSON), Artifacts (DB), and
+Supplies (shop consumables), plus the artifact workshop.
 
 Artifacts no longer use pictures: their cards show the rolled stat lines
 directly. Only EQUIPPED artifacts (5 slots) apply their stats to the
 character. From the artifact detail view you can equip/unequip, UPGRADE
 (a low/high roll into a random stat, max level 20), DOWNGRADE for a partial
-gold refund, REROLL the stat types entirely, or reroll only where the
-numbers went while keeping the stats.
+gold refund, REROLL the stat types entirely (resets the upgrades), or
+reroll only where the numbers went while keeping the stat types and the
+upgrade level — every upgrade is applied again with fresh low/high rolls.
+Supplies bought in the shop show up on the SUPPLIES tab with their counts
+and can be used from their detail view.
 """
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QPushButton, QScrollArea, QWidget,
+    QPushButton, QScrollArea, QWidget, QGraphicsDropShadowEffect,
 )
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 
-try:
-    from PySide6.QtMultimedia import QSoundEffect
-except Exception:  # headless / test environments
-    QSoundEffect = None
-
-from athas.styles import CYAN, WHITE, GOLD
+from athas import audio
+from athas.styles import CYAN, WHITE, GOLD, button_style
 from athas.artifact_generator import (
     PCT_DETAILED_STATS, RARITIES, SACRIFICE_PER_FUSION,
     MAX_UPGRADE_LEVEL, EQUIP_SLOTS, stat_display,
@@ -128,7 +127,7 @@ class InventoryCard(QFrame):
         rar.setStyleSheet(f"font-size: 10px; color: {col}; background: transparent; border: none;")
         layout.addWidget(rar)
 
-        meta_bits = [f"Lv.{item.level}"]
+        meta_bits = [] if item.category == "supply" else [f"Lv.{item.level}"]
         if item.category == "artifact" and item.upgrade_level:
             meta_bits.append(f"+{item.upgrade_level} UP")
         meta_bits.append(f"x{item.count}")
@@ -143,6 +142,12 @@ class InventoryCard(QFrame):
             stats_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             stats_lbl.setStyleSheet(f"font-size: 10px; color: {CYAN}; background: transparent; border: none;")
             layout.addWidget(stats_lbl, 1)
+        elif item.category == "supply":
+            desc_lbl = QLabel(item.description or "")
+            desc_lbl.setWordWrap(True)
+            desc_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            desc_lbl.setStyleSheet("font-size: 10px; color: #aaa; background: transparent; border: none;")
+            layout.addWidget(desc_lbl, 1)
 
     def mousePressEvent(self, event):
         if self.on_click:
@@ -151,92 +156,220 @@ class InventoryCard(QFrame):
 
 
 
+class _DetailCard(QFrame):
+    """The centered detail card. It paints its own dark background and
+    rarity-coloured border/glow, so it always renders — even when a
+    parent stylesheet would leave it transparent."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.border_color = CYAN
+        glow = QGraphicsDropShadowEffect(self)
+        glow.setBlurRadius(36)
+        glow.setOffset(0, 0)
+        glow.setColor(QColor(CYAN))
+        self.setGraphicsEffect(glow)
+        self._glow = glow
+
+    def set_theme(self, color: str):
+        """Border + glow follow the shown item's rarity colour."""
+        self.border_color = color or CYAN
+        self._glow.setColor(QColor(self.border_color))
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        painter.setPen(QPen(QColor(self.border_color), 2))
+        painter.setBrush(QColor(8, 9, 13, 250))
+        painter.drawRoundedRect(rect, 8, 8)
+
+
 class InventoryDetailView(QFrame):
-    """Full overlay panel: item details plus the artifact workshop buttons."""
+    """Full overlay panel: a centered, rarity-lit detail card for the
+    clicked item, artifact, or supply — plus the artifact workshop."""
 
     def __init__(self, panel, parent=None):
         super().__init__(parent)
         self.panel = panel
-        self.setStyleSheet(f"""
-            QFrame {{ background-color: rgba(5,5,8,245); border: 1px solid {CYAN}44; }}
-            QLabel {{ background: transparent; border: none; color: {WHITE}; }}
-            QPushButton {{
-                background-color: {CYAN}11; border: 1px solid {CYAN}; color: {CYAN};
-                padding: 6px 14px; border-radius: 2px;
-            }}
-            QPushButton:hover {{ background-color: {CYAN}; color: #000; }}
-            QPushButton:disabled {{ color: #555; border-color: #333; background: transparent; }}
-        """)
-        self.hide()
         self.item = None
         self._on_close = None
+        self.setObjectName("InventoryDetail")
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setStyleSheet(f"""
+            QFrame#InventoryDetail {{ background: transparent; border: none; }}
+            QLabel {{ background: transparent; border: none; color: {WHITE}; }}
+        """ + button_style(CYAN))
+        self.hide()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 30, 40, 30)
-        layout.setSpacing(14)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(36, 28, 36, 28)
 
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("background: transparent; border: none;")
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        holder = QWidget()
+        holder.setStyleSheet("background: transparent; border: none;")
+        holder_layout = QHBoxLayout(holder)
+        holder_layout.setContentsMargins(0, 0, 0, 0)
+        holder_layout.addStretch()
+        scroll.setWidget(holder)
+
+        self._card = _DetailCard()
+        self._card.setMaximumWidth(940)
+        self._card.setMinimumWidth(720)
+        holder_layout.addWidget(self._card, 1)
+        holder_layout.addStretch()
+        outer.addWidget(scroll)
+
+        layout = QVBoxLayout(self._card)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(12)
+
+        # --- header: caption / name / rarity / meta + CLOSE ---
         header = QHBoxLayout()
-        self._img_label = QLabel()
-        self._img_label.setFixedSize(120, 120)
-        self._img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._img_label.setScaledContents(True)
-        self._img_label.setStyleSheet("border: 2px solid #222; border-radius: 4px;")
-        self._img_label.hide()
-        header.addWidget(self._img_label)
-
-        txt = QVBoxLayout()
+        header.setSpacing(16)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        self._type_caption = QLabel("")
+        self._type_caption.setStyleSheet(
+            f"font-size: 10px; color: {CYAN}; font-weight: bold; letter-spacing: 2px;"
+        )
+        title_col.addWidget(self._type_caption)
         self._name = QLabel("")
-        self._name.setStyleSheet("font-size: 24px; font-weight: bold; color: #fff;")
-        txt.addWidget(self._name)
-        self._type = QLabel("")
-        self._type.setStyleSheet(f"font-size: 13px; color: {CYAN};")
-        txt.addWidget(self._type)
+        self._name.setWordWrap(True)
+        self._name.setStyleSheet("font-size: 26px; font-weight: bold; color: #ffffff;")
+        title_col.addWidget(self._name)
         self._rarity = QLabel("")
-        self._rarity.setStyleSheet("font-size: 12px; color: #aaa;")
-        txt.addWidget(self._rarity)
+        self._rarity.setStyleSheet("font-size: 12px; font-weight: bold;")
+        title_col.addWidget(self._rarity)
         self._meta = QLabel("")
         self._meta.setStyleSheet("font-size: 11px; color: #777;")
-        txt.addWidget(self._meta)
-        header.addLayout(txt, 1)
+        title_col.addWidget(self._meta)
+        header.addLayout(title_col, 1)
 
-        back = QPushButton("BACK")
-        back.setStyleSheet(f"""
-            QPushButton {{
-                background-color: transparent; border: 1px solid {CYAN}44;
-                color: {CYAN}; padding: 4px 10px;
-            }}
-            QPushButton:hover {{ background-color: {CYAN}22; }}
-        """)
+        back = QPushButton("CLOSE")
+        back.setCursor(Qt.CursorShape.PointingHandCursor)
         back.clicked.connect(self._close)
         header.addWidget(back, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
 
         line = QFrame()
         line.setFixedHeight(1)
-        line.setStyleSheet(f"background-color: {CYAN}44;")
+        line.setStyleSheet(f"background-color: {CYAN}44; border: none;")
         layout.addWidget(line)
 
+
+        # --- body: description/lore (left) + bonuses/history (right) ---
+        body = QHBoxLayout()
+        body.setSpacing(20)
+
+        left = QVBoxLayout()
+        left.setSpacing(6)
+        self._img_label = QLabel()
+        self._img_label.setFixedSize(180, 140)
+        self._img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._img_label.setScaledContents(True)
+        self._img_label.hide()
+        left.addWidget(self._img_label, alignment=Qt.AlignmentFlag.AlignLeft)
+        self._desc_caption = QLabel("DESCRIPTION")
+        self._desc_caption.setStyleSheet(
+            f"color: {CYAN}; font-size: 10px; font-weight: bold; letter-spacing: 2px;"
+        )
+        left.addWidget(self._desc_caption)
         self._desc = QLabel("")
         self._desc.setWordWrap(True)
-        self._desc.setStyleSheet("font-size: 14px; color: #ccc; padding-top: 8px;")
-        layout.addWidget(self._desc)
-
+        self._desc.setStyleSheet("font-size: 13px; color: #ccc;")
+        left.addWidget(self._desc)
+        self._lore_caption = QLabel("LORE")
+        self._lore_caption.setStyleSheet(
+            f"color: {GOLD}; font-size: 10px; font-weight: bold; letter-spacing: 2px;"
+        )
+        self._lore_caption.hide()
+        left.addWidget(self._lore_caption)
         self._story = QLabel("")
         self._story.setWordWrap(True)
-        self._story.setStyleSheet("font-size: 14px; color: #bbb; padding-top: 8px;")
-        layout.addWidget(self._story, 1)
+        self._story.setStyleSheet("font-size: 12px; color: #9a9a9a; font-style: italic;")
+        left.addWidget(self._story, 1)
+        body.addLayout(left, 1)
 
-        self._stats = QLabel("")
-        self._stats.setWordWrap(True)
-        self._stats.setStyleSheet(f"font-size: 12px; color: {CYAN}; padding-top: 10px;")
-        layout.addWidget(self._stats)
+        self._bonus_panel = QFrame()
+        self._bonus_panel.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(0,240,255,12);
+                border: 1px solid {CYAN}33;
+                border-radius: 4px;
+            }}
+            QLabel {{ background: transparent; border: none; }}
+        """)
+        self._bonus_panel.setMinimumWidth(300)
+        self._bonus_panel.setMaximumWidth(340)
+        bonus_layout = QVBoxLayout(self._bonus_panel)
+        bonus_layout.setContentsMargins(14, 12, 14, 12)
+        bonus_layout.setSpacing(6)
+        self._bonus_caption = QLabel("BONUSES")
+        self._bonus_caption.setStyleSheet(
+            f"color: {CYAN}; font-size: 10px; font-weight: bold; letter-spacing: 2px;"
+        )
+        bonus_layout.addWidget(self._bonus_caption)
+        self._stats_box = QVBoxLayout()
+        self._stats_box.setSpacing(4)
+        bonus_layout.addLayout(self._stats_box)
+        self._history_caption = QLabel("UPGRADE HISTORY")
+        self._history_caption.setStyleSheet(
+            f"color: {GOLD}; font-size: 10px; font-weight: bold; letter-spacing: 2px;"
+        )
+        self._history_caption.hide()
+        bonus_layout.addWidget(self._history_caption)
+        self._history_box = QVBoxLayout()
+        self._history_box.setSpacing(3)
+        bonus_layout.addLayout(self._history_box)
+        bonus_layout.addStretch()
+        body.addWidget(self._bonus_panel)
+        layout.addLayout(body, 1)
 
-        # --- workshop buttons (artifacts only) ---
+        # --- supply bar (supplies only): USE + owned count ---
+        self._supply_bar = QWidget()
+        self._supply_bar.setStyleSheet("background: transparent; border: none;")
+        sb = QVBoxLayout(self._supply_bar)
+        sb.setContentsMargins(0, 6, 0, 0)
+        sb.setSpacing(8)
+        sb_row = QHBoxLayout()
+        self._use_btn = QPushButton("USE ONE")
+        self._use_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._use_btn.clicked.connect(self._on_use_supply)
+        sb_row.addWidget(self._use_btn)
+        self._supply_owned = QLabel("")
+        self._supply_owned.setStyleSheet("font-size: 12px; color: #888;")
+        sb_row.addWidget(self._supply_owned)
+        sb_row.addStretch()
+        sb.addLayout(sb_row)
+        self._supply_status = QLabel("")
+        self._supply_status.setWordWrap(True)
+        self._supply_status.setStyleSheet("font-size: 12px; color: #aaa;")
+        sb.addWidget(self._supply_status)
+        layout.addWidget(self._supply_bar)
+
+        # --- workshop (artifacts only) ---
         self._workshop = QWidget()
         self._workshop.setStyleSheet("background: transparent; border: none;")
         wl = QVBoxLayout(self._workshop)
-        wl.setContentsMargins(0, 0, 0, 0)
+        wl.setContentsMargins(0, 6, 0, 0)
         wl.setSpacing(10)
+
+        workshop_head = QHBoxLayout()
+        self._workshop_title = QLabel("ARTIFACT WORKSHOP")
+        self._workshop_title.setStyleSheet(
+            f"color: {GOLD}; font-size: 10px; font-weight: bold; letter-spacing: 2px;"
+        )
+        workshop_head.addWidget(self._workshop_title)
+        workshop_head.addStretch()
+        self._workshop_gold = QLabel("")
+        self._workshop_gold.setStyleSheet(f"color: {GOLD}; font-size: 11px; font-weight: bold;")
+        workshop_head.addWidget(self._workshop_gold)
+        wl.addLayout(workshop_head)
 
         row1 = QHBoxLayout()
         row1.setSpacing(10)
@@ -272,47 +405,117 @@ class InventoryDetailView(QFrame):
         wl.addWidget(self._workshop_status)
         layout.addWidget(self._workshop)
 
-
+    def paintEvent(self, event):
+        """Dim whatever is behind the overlay, painted by hand so it
+        always renders."""
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(3, 4, 7, 215))
 
     # --- showing an item ---
     def show_item(self, item, on_close):
         self.item = item
         self._on_close = on_close
+        col = _rarity_border(item.rarity)
+        self._card.set_theme(col)
         self._name.setText(item.name)
         if item.category == "item":
-            cat_label = "Hand-Made Item"
+            cat_label = "HAND-MADE ITEM"
+        elif item.category == "supply":
+            cat_label = "SUPPLY"
         else:
             cat_label = {
-                "mission": "Artifact - Mission Reward",
-                "shop": "Artifact - Bought from the Shop",
-                "forge": "Artifact - Forged from Sacrifice",
-            }.get(item.source, "Artifact")
-        self._type.setText(f"Type: {item.item_type}  |  {cat_label}")
-        self._rarity.setText(f"Rarity: {item.rarity}")
-        meta = f"Level {item.level}  |  Quantity: {item.count}"
+                "mission": "ARTIFACT — MISSION REWARD",
+                "shop": "ARTIFACT — BOUGHT FROM THE SHOP",
+                "forge": "ARTIFACT — FORGED FROM SACRIFICE",
+                "drop": "ARTIFACT — SYSTEM DROP",
+            }.get(item.source, "ARTIFACT")
+        self._type_caption.setText(f"{item.item_type.upper()}  |  {cat_label}")
+        self._rarity.setText(item.rarity.upper())
+        self._rarity.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {col};")
         if item.category == "artifact":
-            meta += f"  |  Upgrade +{item.upgrade_level}/{MAX_UPGRADE_LEVEL}"
-        self._meta.setText(meta)
-        self._desc.setText(item.description or "No description.")
-        self._story.setText(item.story or "")
-        if item.category == "artifact":
-            self._stats.setText(_stat_lines(item))
-            self._img_label.hide()
+            # Artifacts have no level — only their upgrade level matters.
+            meta = f"Upgrade +{item.upgrade_level}/{MAX_UPGRADE_LEVEL}  |  Quantity: x{item.count}"
         else:
-            self._stats.setText("")
+            meta = f"Level {item.level}  |  Quantity: x{item.count}"
+        self._meta.setText(meta)
+
+        # Hand-made items keep their picture.
+        if item.category == "item" and item.image_path and Path(item.image_path).exists():
+            pix = QPixmap(item.image_path)
+            if not pix.isNull():
+                self._img_label.setPixmap(pix)
+                self._img_label.show()
+            else:
+                self._img_label.hide()
+        else:
             self._img_label.hide()
-            if item.image_path and Path(item.image_path).exists():
-                pix = QPixmap(item.image_path)
-                if not pix.isNull():
-                    self._img_label.setPixmap(pix)
-                    self._img_label.show()
-            if item.stats:
-                self._stats.setText("Stats: " + "  |  ".join(
-                    stat_display(k, v) for k, v in item.stats.items() if v
-                ))
+
+        self._desc.setText(item.description or "No description.")
+        story = (item.story or "").strip()
+        self._lore_caption.setVisible(bool(story))
+        self._story.setText(story)
+
+        # Bonuses panel: stats + upgrade history for artifacts.
+        if item.category == "artifact":
+            self._bonus_panel.show()
+            self._fill_stats(item)
+            self._fill_history(item)
+        elif getattr(item, "stats", None):
+            self._bonus_panel.show()
+            self._fill_stats(item)
+            self._clear_layout(self._history_box)
+            self._history_caption.hide()
+        else:
+            self._bonus_panel.hide()
+
+        # Supply bar (use / owned count).
+        self._supply_bar.setVisible(item.category == "supply")
+        if item.category == "supply":
+            self._supply_owned.setText(f"Owned: x{item.count}")
+            self._use_btn.setEnabled(item.count > 0)
+            self._supply_status.setText("")
+
         self._configure_workshop(item)
         self.show()
         self.raise_()
+
+    @staticmethod
+    def _clear_layout(layout):
+        while layout.count():
+            it = layout.takeAt(0)
+            if it.widget():
+                it.widget().deleteLater()
+
+    def _fill_stats(self, item):
+        self._clear_layout(self._stats_box)
+        stats = {k: v for k, v in (item.stats or {}).items() if v}
+        if not stats:
+            empty = QLabel("No bonuses.")
+            empty.setStyleSheet("color: #555; font-size: 11px;")
+            self._stats_box.addWidget(empty)
+            return
+        for key, value in stats.items():
+            row = QLabel(stat_display(key, value))
+            row.setStyleSheet(f"color: {CYAN}; font-size: 12px;")
+            self._stats_box.addWidget(row)
+
+    def _fill_history(self, item):
+        self._clear_layout(self._history_box)
+        log = [e for e in (item.upgrade_log or []) if isinstance(e, dict)]
+        if not log:
+            self._history_caption.hide()
+            return
+        self._history_caption.show()
+        for i, entry in enumerate(log, start=1):
+            stat = str(entry.get("stat", "")).replace("_", " ").title()
+            amount = int(entry.get("amount", 0) or 0)
+            cost = int(entry.get("cost", 0) or 0)
+            kind = str(entry.get("tier") or ("high" if entry.get("high") else "low"))
+            color = GOLD if kind == "high" else ("#b8a04a" if kind == "mid" else "#888888")
+            row = QLabel(f"+{i}  {stat} +{amount}  ({kind} roll, {cost}g)")
+            row.setStyleSheet(f"color: {color}; font-size: 10px;")
+            self._history_box.addWidget(row)
+
 
     def _configure_workshop(self, item):
         """Update the workshop buttons for the shown artifact (or hide them)."""
@@ -322,6 +525,7 @@ class InventoryDetailView(QFrame):
             return
         panel = self.panel
         gold = panel._gold() if panel is not None else 0
+        self._workshop_gold.setText(f"YOUR GOLD: {gold}")
         aid = _artifact_id(item)
         equipped = panel._is_equipped(aid) if panel is not None else False
         slots_used = len(equip.equipped_ids(panel.config)) if panel is not None else 0
@@ -371,6 +575,22 @@ class InventoryDetailView(QFrame):
         self.show_item(fresh, self._on_close)
         self._workshop_status.setText(status)
 
+    def _reload_supply(self, status: str):
+        """Refresh the view after using a supply; close it when the
+        stash entry ran out."""
+        panel = self.panel
+        if panel is None or panel.inv_manager is None:
+            return
+        uid = str(getattr(self.item, "uid", ""))
+        fresh = None
+        if uid.startswith("supply:"):
+            fresh = panel.inv_manager.get_supply(uid.split(":", 1)[1])
+        if fresh is None or fresh.count <= 0:
+            self._close()
+            return
+        self.show_item(fresh, self._on_close)
+        self._supply_status.setText(status)
+
     # --- workshop actions (delegated to the panel) ---
     def _on_equip(self):
         if self.panel is not None:
@@ -391,6 +611,10 @@ class InventoryDetailView(QFrame):
     def _on_reroll_values(self):
         if self.panel is not None:
             self._reload_item(self.panel.workshop_reroll_values(self.item))
+
+    def _on_use_supply(self):
+        if self.panel is not None:
+            self._reload_supply(self.panel.workshop_use_supply(self.item))
 
     def _close(self):
         self.hide()
@@ -428,20 +652,16 @@ class InventoryPanel(QWidget):
         tabs.setSpacing(12)
         self._btn_items = QPushButton("ITEMS")
         self._btn_artifacts = QPushButton("ARTIFACTS")
-        for btn in (self._btn_items, self._btn_artifacts):
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: transparent;
-                    border: 1px solid {CYAN}44;
-                    color: #aaa;
-                    padding: 6px 20px;
-                }}
-                QPushButton:hover {{ color: {CYAN}; border-color: {CYAN}; }}
-            """)
+        self._btn_supplies = QPushButton("SUPPLIES")
+        for btn in (self._btn_items, self._btn_artifacts, self._btn_supplies):
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(button_style(CYAN, active=False))
         self._btn_items.clicked.connect(lambda: self._switch_tab("items"))
         self._btn_artifacts.clicked.connect(lambda: self._switch_tab("artifacts"))
+        self._btn_supplies.clicked.connect(lambda: self._switch_tab("supplies"))
         tabs.addWidget(self._btn_items)
         tabs.addWidget(self._btn_artifacts)
+        tabs.addWidget(self._btn_supplies)
         tabs.addStretch()
         layout.addLayout(tabs)
 
@@ -471,15 +691,7 @@ class InventoryPanel(QWidget):
         forge_row.setSpacing(12)
         self._sacrifice_btn = QPushButton("SACRIFICE")
         self._sacrifice_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._sacrifice_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: transparent;
-                border: 1px solid {GOLD}44;
-                color: #aaa;
-                padding: 6px 20px;
-            }}
-            QPushButton:hover {{ color: {GOLD}; border-color: {GOLD}; }}
-        """)
+        self._sacrifice_btn.setStyleSheet(button_style(GOLD, active=False))
         self._sacrifice_btn.clicked.connect(self._toggle_sacrifice)
 
         forge_row.addWidget(self._sacrifice_btn)
@@ -490,18 +702,7 @@ class InventoryPanel(QWidget):
         self._forge_btn = QPushButton("FORGE")
         self._forge_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._forge_btn.setEnabled(False)
-        self._forge_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {GOLD}11;
-                border: 1px solid {GOLD}66;
-                color: {GOLD};
-                padding: 6px 20px;
-                font-weight: bold;
-                border-radius: 2px;
-            }}
-            QPushButton:hover {{ background-color: {GOLD}; color: #0a0a0a; }}
-            QPushButton:disabled {{ color: #555; border-color: #333; background: transparent; }}
-        """)
+        self._forge_btn.setStyleSheet(button_style(GOLD))
         self._forge_btn.clicked.connect(self._forge_selected)
         forge_row.addWidget(self._forge_btn)
 
@@ -526,7 +727,6 @@ class InventoryPanel(QWidget):
         self._detail = InventoryDetailView(self, self)
         self._detail.hide()
 
-        self._sounds = {}
         title.setText("INVENTORY")
         self._switch_tab("items")
 
@@ -548,25 +748,6 @@ class InventoryPanel(QWidget):
     def _equipped_ids(self) -> list:
         return equip.equipped_ids(self.config) if self.config is not None else []
 
-    # --- sounds (best effort) ---
-    def _play_sound(self, filename: str):
-        if QSoundEffect is None:
-            return
-        try:
-            effect = self._sounds.get(filename)
-            if effect is None:
-                from PySide6.QtCore import QUrl
-                path = Path(__file__).parent.parent / "sounds" / filename
-                if not path.exists():
-                    return
-                effect = QSoundEffect()
-                effect.setSource(QUrl.fromLocalFile(str(path)))
-                effect.setVolume(0.3)
-                self._sounds[filename] = effect
-            effect.play()
-        except Exception:
-            pass
-
     def setGeometry(self, x, y, w, h):
         super().setGeometry(x, y, w, h)
         self._detail.setGeometry(0, 0, w, h)
@@ -580,28 +761,26 @@ class InventoryPanel(QWidget):
 
     def _switch_tab(self, tab: str):
         self._tab = tab
-        active = f"""
-            QPushButton {{
-                background-color: {CYAN}22;
-                border: 1px solid {CYAN};
-                color: {CYAN};
-                padding: 6px 20px;
-            }}
-        """
-        inactive = f"""
-            QPushButton {{
-                background-color: transparent;
-                border: 1px solid {CYAN}44;
-                color: #aaa;
-                padding: 6px 20px;
-            }}
-            QPushButton:hover {{ color: {CYAN}; border-color: {CYAN}; }}
-        """
+        active = button_style(CYAN)
+        inactive = button_style(CYAN, active=False)
 
-        if tab == "items":
+        if tab == "supplies":
+            items = [
+                s for s in (self.inv_manager.get_supplies() if self.inv_manager else [])
+                if s.count > 0
+            ]
+            self._btn_items.setStyleSheet(inactive)
+            self._btn_artifacts.setStyleSheet(inactive)
+            self._btn_supplies.setStyleSheet(active)
+            self._forge_bar.hide()
+            self._equip_bar.hide()
+            self._current_artifacts = []
+            self._rebuild_equip_bar([])
+        elif tab == "items":
             items = self.inv_manager.scan_items() if self.inv_manager else []
             self._btn_items.setStyleSheet(active)
             self._btn_artifacts.setStyleSheet(inactive)
+            self._btn_supplies.setStyleSheet(inactive)
             self._forge_bar.hide()
             self._equip_bar.hide()
             self._current_artifacts = []
@@ -610,6 +789,7 @@ class InventoryPanel(QWidget):
             items = self.inv_manager.get_artifacts() if self.inv_manager else []
             self._btn_items.setStyleSheet(inactive)
             self._btn_artifacts.setStyleSheet(active)
+            self._btn_supplies.setStyleSheet(inactive)
             self._forge_bar.show()
             self._equip_bar.show()
             self._current_artifacts = items
@@ -719,25 +899,10 @@ class InventoryPanel(QWidget):
         self._selected_uids.clear()
         if self._sacrifice_mode:
             self._sacrifice_btn.setText("CANCEL")
-            self._sacrifice_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {GOLD}22;
-                    border: 1px solid {GOLD};
-                    color: {GOLD};
-                    padding: 6px 20px;
-                }}
-            """)
+            self._sacrifice_btn.setStyleSheet(button_style(GOLD))
         else:
             self._sacrifice_btn.setText("SACRIFICE")
-            self._sacrifice_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: transparent;
-                    border: 1px solid {GOLD}44;
-                    color: #aaa;
-                    padding: 6px 20px;
-                }}
-                QPushButton:hover {{ color: {GOLD}; border-color: {GOLD}; }}
-            """)
+            self._sacrifice_btn.setStyleSheet(button_style(GOLD, active=False))
         self._switch_tab(self._tab)
 
     def _toggle_select(self, item):
@@ -794,6 +959,7 @@ class InventoryPanel(QWidget):
         if result is None:
             self._forge_lbl.setText("Forge failed - need 3 of one non-Mythic rarity.")
         else:
+            audio.play("forge")
             self._forge_lbl.setText(f"FORGED: {result.name} ({result.rarity}) - check your inventory.")
 
 
@@ -805,10 +971,12 @@ class InventoryPanel(QWidget):
         if equip.is_equipped(self.config, aid):
             equip.unequip(self.config, aid)
             self.stats_changed.emit()
+            audio.play("equip")
             self._switch_tab(self._tab)
             return "Unequipped - its stats no longer apply."
         if equip.equip(self.config, aid):
             self.stats_changed.emit()
+            audio.play("equip")
             self._switch_tab(self._tab)
             return f"Equipped ({len(self._equipped_ids())}/{EQUIP_SLOTS} slots)."
         return f"No free slot - only {EQUIP_SLOTS} artifacts can be equipped at once."
@@ -829,11 +997,11 @@ class InventoryPanel(QWidget):
         if result is None:
             return "Upgrade failed."
         self._add_gold(-cost)
-        kind = "HIGH" if result["high"] else "low"
-        self._play_sound("upgrade_artifact_sound.wav")
+        kind = str(result.get("tier") or ("high" if result.get("high") else "low"))
+        audio.play("upgrade")
         status = f"+{result['amount']} {result['stat'].replace('_', ' ').title()} ({kind} roll) for {cost} gold."
         if result["item"] is not None and result["item"].upgrade_level >= MAX_UPGRADE_LEVEL:
-            self._play_sound("upgrade_artifact_level_up.wav")
+            audio.play("upgrade_max")
             status += f"  MAX upgrade level (+{MAX_UPGRADE_LEVEL}) reached!"
         if self.config is not None and equip.is_equipped(self.config, aid):
             self.stats_changed.emit()
@@ -848,6 +1016,7 @@ class InventoryPanel(QWidget):
         if result is None:
             return "Nothing to take back off."
         self._add_gold(result["refund"])
+        audio.play("refund")
         if self.config is not None and equip.is_equipped(self.config, aid):
             self.stats_changed.emit()
         self._switch_tab(self._tab)
@@ -866,6 +1035,7 @@ class InventoryPanel(QWidget):
         if self.inv_manager.reroll_artifact_stats(aid) is None:
             return "Reroll failed."
         self._add_gold(-cost)
+        audio.play("reroll")
         if self.config is not None and equip.is_equipped(self.config, aid):
             self.stats_changed.emit()
         self._switch_tab(self._tab)
@@ -884,11 +1054,28 @@ class InventoryPanel(QWidget):
         if self.inv_manager.reroll_artifact_values(aid) is None:
             return "Reroll failed."
         self._add_gold(-cost)
+        audio.play("reroll")
         if self.config is not None and equip.is_equipped(self.config, aid):
             self.stats_changed.emit()
         self._switch_tab(self._tab)
         return (
-            f"Values re-rolled for {cost} gold - the stat types stayed, "
-            f"upgrades were reset."
+            f"Values re-rolled for {cost} gold - the stat types and upgrade level "
+            f"(+{fresh.upgrade_level}) stayed, every upgrade was rolled fresh."
         )
+
+    def workshop_use_supply(self, item) -> str:
+        """Consume one unit of a supply from the stash."""
+        if self.inv_manager is None:
+            return "Supplies are unavailable."
+        uid = str(getattr(item, "uid", ""))
+        if not uid.startswith("supply:"):
+            return "Only supplies can be used."
+        supply_id = uid.split(":", 1)[1]
+        name = getattr(item, "name", "The supply")
+        fresh = self.inv_manager.consume_supply(supply_id)
+        self._switch_tab(self._tab)
+        audio.play("click")
+        if fresh is None or fresh.count <= 0:
+            return f"{name} used - none left."
+        return f"{name} used - x{fresh.count} remaining."
 

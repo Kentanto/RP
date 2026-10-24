@@ -69,6 +69,134 @@ _SHOP_STOCK_SQL = """
     )
 """
 
+_SUPPLIES_SQL = """
+    CREATE TABLE IF NOT EXISTS supplies (
+        id          TEXT PRIMARY KEY,
+        count       INTEGER DEFAULT 0
+    )
+"""
+
+# The shop's fixed supply catalogue — always fully stocked, no rerolls.
+# Regular expedition gear in rising order of price; the Healing Potion is
+# a rare miracle medicine, hence the price gap.
+SUPPLIES = [
+    {
+        "id": "bandage",
+        "name": "Bandage",
+        "price": 50,
+        "description": ("Sterile field dressing. Stops bleeding and keeps "
+                        "light wounds stable until proper care is available."),
+    },
+    {
+        "id": "field_ration",
+        "name": "Field Ration",
+        "price": 80,
+        "description": ("A compact, barely-tasteful meal. Restores stamina "
+                        "and keeps a Wanderer moving through long operations."),
+    },
+    {
+        "id": "antidote",
+        "name": "Antidote",
+        "price": 150,
+        "description": ("A broad-spectrum counteragent. Neutralises most "
+                        "common poisons and venoms."),
+    },
+    {
+        "id": "smoke_bomb",
+        "name": "Smoke Bomb",
+        "price": 250,
+        "description": ("Fills a small area with thick smoke — perfect for "
+                        "retreats the System would rather not explain."),
+    },
+    {
+        "id": "mana_draught",
+        "name": "Mana Draught",
+        "price": 400,
+        "description": ("Bitter azure essence. Restores spent magic in a "
+                        "single swallow."),
+    },
+    {
+        "id": "medkit",
+        "name": "Medkit",
+        "price": 800,
+        "description": ("A full field surgery kit. Treats serious injuries — "
+                        "deep cuts, burns, broken bones."),
+    },
+    {
+        "id": "vigor_elixir",
+        "name": "Elixir of Vigor",
+        "price": 1500,
+        "description": ("The System's own stimulant blend. Suppresses fatigue "
+                        "and sharpens reflexes for hours on end."),
+    },
+    {
+        "id": "healing_potion",
+        "name": "Healing Potion",
+        "price": 5000,
+        "description": ("A miracle in a vial — rapidly closes even grievous "
+                        "wounds. The shop guards these carefully, hence the price."),
+    },
+]
+
+
+def load_shop_catalogue(shop_dir) -> List[Dict[str, Any]]:
+    """Read the shop's supply catalogue from JSON files in `shop/`.
+
+    Every ``*.json`` file (names starting with ``_`` are skipped, so
+    templates survive) may hold one supply object, a list of supplies, or
+    the wrapped ``{"items": [...]}`` format. Each supply needs a name and
+    a positive price; the id defaults to the file stem. Bad files are
+    skipped so one mistake cannot empty the shop. Returns [] when the
+    folder is missing or holds nothing usable."""
+    folder = Path(shop_dir)
+    if not folder.is_dir():
+        return []
+    catalogue: List[Dict[str, Any]] = []
+    seen_ids: set = set()
+
+    def _add(entry: Any, default_id: str):
+        if not isinstance(entry, dict):
+            return
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            return
+        try:
+            price = int(entry.get("price", 0) or 0)
+        except (TypeError, ValueError):
+            return
+        if price <= 0:
+            return
+        supply_id = str(entry.get("id") or default_id).strip()
+        if supply_id in seen_ids:
+            return
+        seen_ids.add(supply_id)
+        catalogue.append({
+            "id": supply_id,
+            "name": name,
+            "price": price,
+            "description": str(entry.get("description") or ""),
+        })
+
+    for file_path in sorted(folder.iterdir()):
+        if (not file_path.is_file()
+                or file_path.suffix.lower() != ".json"
+                or file_path.name.startswith("_")):
+            continue
+        try:
+            data = json.loads(file_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        stem = file_path.stem
+        if isinstance(data, list):
+            for entry in data:
+                _add(entry, stem)
+        elif isinstance(data, dict) and isinstance(data.get("items"), list):
+            for entry in data["items"]:
+                _add(entry, stem)
+        else:
+            _add(data, stem)
+    return catalogue
+
 
 class InventoryManager:
     """Owns the artifact database: earned artifacts plus the shop's stock."""
@@ -83,14 +211,20 @@ class InventoryManager:
         library_dir: str,
         cache_dir: str,
         rp_root: str,
+        shop_dir: str | None = None,
     ):
         self.items_dir = Path(items_dir)
         self.library_dir = Path(library_dir)
         self.cache_dir = Path(cache_dir)
         self.rp_root = Path(rp_root)
+        self.shop_dir = Path(shop_dir) if shop_dir is not None else self.rp_root / "shop"
 
         self.items_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # The shop sells whatever the JSON files in shop/ define; the
+        # built-in list below is the fallback when that folder is empty.
+        self.supplies = load_shop_catalogue(self.shop_dir) or list(SUPPLIES)
 
         self.generator = ArtifactGenerator(library_dir)
         self.db_path = self.cache_dir / "inventory.db"
@@ -131,6 +265,7 @@ class InventoryManager:
                     FROM artifacts_old
                 """)
                 conn.execute("DROP TABLE artifacts_old")
+            conn.execute(_SUPPLIES_SQL)
             conn.execute(_SHOP_STOCK_SQL)
             shop_cols = {row[1] for row in conn.execute("PRAGMA table_info(shop_stock)")}
             if "adjective" in shop_cols:
@@ -207,11 +342,13 @@ class InventoryManager:
     def generate_artifacts(self, count: int = 1, rarity: Optional[str] = None,
                            difficulty: Optional[str] = None, level: int = 1,
                            source: str = "mission") -> List[InventoryItem]:
-        """Roll `count` new artifacts, store them, and return them as items."""
+        """Roll `count` new artifacts, store them, and return them as items.
+        Artifacts have no level — the `level` argument is accepted for
+        compatibility and ignored."""
         items: List[InventoryItem] = []
         with sqlite3.connect(str(self.db_path)) as conn:
             for _ in range(max(0, count)):
-                a = self.generator.generate(rarity=rarity, difficulty=difficulty, level=level)
+                a = self.generator.generate(rarity=rarity, difficulty=difficulty)
                 payload = {
                     "name": a["name"],
                     "item_type": a["item_type"],
@@ -282,11 +419,12 @@ class InventoryManager:
         return items
 
     def upgrade_artifact(self, artifact_id: Any) -> Optional[Dict[str, Any]]:
-        """Apply one workshop upgrade: a low/high roll into a random stat.
+        """Apply one workshop upgrade: a low/mid/high roll into a random
+        stat, growing a little per upgrade level already on the artifact.
 
-        Returns {'item', 'stat', 'amount', 'high', 'cost'} on success,
-        or None when the artifact is missing, already maxed, or has no
-        stats to grow."""
+        Returns {'item', 'stat', 'amount', 'tier', 'high', 'cost'} on
+        success, or None when the artifact is missing, already maxed, or
+        has no stats to grow."""
         try:
             aid = int(artifact_id)
         except (TypeError, ValueError):
@@ -302,12 +440,12 @@ class InventoryManager:
                 return None
             rarity = row["rarity"]
             stat = random.choice(list(stats.keys()))
-            roll = self.generator.upgrade_roll(stat, rarity)
+            roll = self.generator.upgrade_roll(stat, rarity, upgrade_level)
             cost = self.generator.upgrade_cost(rarity, upgrade_level)
             stats[stat] = max(1, int(stats.get(stat, 0)) + roll["amount"])
             log = self._parse_upgrade_log(row["upgrade_log"])
             log.append({
-                "stat": stat, "amount": roll["amount"],
+                "stat": stat, "amount": roll["amount"], "tier": roll["tier"],
                 "high": bool(roll["high"]), "cost": cost,
             })
             conn.execute(
@@ -319,6 +457,7 @@ class InventoryManager:
             "item": self.get_artifact_by_id(aid),
             "stat": stat,
             "amount": roll["amount"],
+            "tier": roll["tier"],
             "high": bool(roll["high"]),
             "cost": cost,
         }
@@ -357,7 +496,7 @@ class InventoryManager:
 
     def reroll_artifact_stats(self, artifact_id: Any) -> Optional[InventoryItem]:
         """Reroll the stat types entirely, with fresh random starting
-        numbers. The item type, rarity and level stay; upgrades are reset."""
+        numbers. The item type and rarity stay; upgrades are reset."""
         try:
             aid = int(artifact_id)
         except (TypeError, ValueError):
@@ -367,9 +506,7 @@ class InventoryManager:
             row = conn.execute("SELECT * FROM artifacts WHERE id = ?", (aid,)).fetchone()
             if row is None:
                 return None
-            stats = self.generator._roll_stats(
-                row["item_type"], row["rarity"], int(row["level"] or 1),
-            )
+            stats = self.generator._roll_stats(row["item_type"], row["rarity"])
             conn.execute(
                 "UPDATE artifacts SET stats = ?, upgrade_level = 0, upgrade_log = '[]' WHERE id = ?",
                 (json.dumps(stats), aid),
@@ -378,8 +515,11 @@ class InventoryManager:
         return self.get_artifact_by_id(aid)
 
     def reroll_artifact_values(self, artifact_id: Any) -> Optional[InventoryItem]:
-        """Keep the current stat types but re-roll where the numbers went,
-        Genshin-style. Upgrades are reset — their gold is spent either way."""
+        """Keep the current stat types and the upgrade level, but re-roll
+        where the numbers went — Genshin-style. Every upgrade is then
+        applied again from scratch, each with a fresh low/mid/high roll, so
+        a new reroll has a new chance at better numbers. The gold is
+        spent either way."""
         try:
             aid = int(artifact_id)
         except (TypeError, ValueError):
@@ -392,12 +532,24 @@ class InventoryManager:
             stats = self._parse_stats(row["stats"])
             if not stats:
                 return None
-            stats = self.generator.reroll_stat_values(
-                stats, row["rarity"], int(row["level"] or 1),
-            )
+            rarity = row["rarity"]
+            upgrade_level = int(row["upgrade_level"] or 0)
+            # Fresh starting numbers for the same stat types…
+            stats = self.generator.reroll_stat_values(stats, rarity)
+            # …then re-apply every upgrade level with a brand-new roll.
+            log = []
+            for step in range(upgrade_level):
+                stat = random.choice(list(stats.keys()))
+                roll = self.generator.upgrade_roll(stat, rarity, step)
+                stats[stat] = max(1, int(stats.get(stat, 0)) + roll["amount"])
+                log.append({
+                    "stat": stat, "amount": roll["amount"], "tier": roll["tier"],
+                    "high": bool(roll["high"]),
+                    "cost": self.generator.upgrade_cost(rarity, step),
+                })
             conn.execute(
-                "UPDATE artifacts SET stats = ?, upgrade_level = 0, upgrade_log = '[]' WHERE id = ?",
-                (json.dumps(stats), aid),
+                "UPDATE artifacts SET stats = ?, upgrade_log = ? WHERE id = ?",
+                (json.dumps(stats), json.dumps(log), aid),
             )
             conn.commit()
         return self.get_artifact_by_id(aid)
@@ -490,13 +642,14 @@ class InventoryManager:
         ]
 
     def restock_shop(self, player_level: int = 1, count: Optional[int] = None):
-        """Reroll the shop shelves with fresh generated artifacts."""
+        """Reroll the shop shelves with fresh generated artifacts.
+        Artifacts have no level — `player_level` is accepted for
+        compatibility and ignored."""
         count = self.SHOP_STOCK_SIZE if count is None else max(0, int(count))
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute("DELETE FROM shop_stock")
             for _ in range(count):
-                level = random.randint(1, max(1, int(player_level)))
-                a = self.generator.generate(rarity=self.generator.roll_shop_rarity(), level=level)
+                a = self.generator.generate(rarity=self.generator.roll_shop_rarity())
                 conn.execute("""
                     INSERT INTO shop_stock
                         (name, item_type, rarity, level, stats, price, description, story)
@@ -505,7 +658,7 @@ class InventoryManager:
                 """, {
                     **a,
                     "stats": json.dumps(a["stats"]),
-                    "price": self.generator.price(a["rarity"], a["level"]),
+                    "price": self.generator.price(a["rarity"]),
                 })
             conn.commit()
 
@@ -552,14 +705,98 @@ class InventoryManager:
         )
 
     def buy_common_package(self, player_level: int = 1) -> List[InventoryItem]:
-        """The shop's bulk deal: PACKAGE_SIZE common artifacts at once."""
+        """The shop's bulk deal: PACKAGE_SIZE common artifacts at once.
+        Artifacts have no level — `player_level` is accepted for
+        compatibility and ignored."""
         items: List[InventoryItem] = []
         for _ in range(self.PACKAGE_SIZE):
-            level = random.randint(1, max(1, int(player_level)))
             items.extend(self.generate_artifacts(
-                count=1, rarity="Common", level=level, source="shop",
+                count=1, rarity="Common", source="shop",
             ))
         return items
+
+    # --- Supplies (shop catalogue from shop/*.json, stored as counts) ---
+    def supply_catalog(self) -> List[Dict[str, Any]]:
+        """The shop's supply list (id, name, price, description) — loaded
+        from the shop folder's JSON files, with the built-ins as fallback."""
+        return self.supplies
+
+    def get_supply_counts(self) -> Dict[str, int]:
+        with sqlite3.connect(str(self.db_path)) as conn:
+            rows = conn.execute("SELECT id, count FROM supplies").fetchall()
+        return {row[0]: int(row[1] or 0) for row in rows}
+
+    def get_supplies(self) -> List[InventoryItem]:
+        """The whole supply catalogue with the player's owned counts."""
+        counts = self.get_supply_counts()
+        return [
+            InventoryItem(
+                uid=f"supply:{spec['id']}",
+                name=spec["name"],
+                category="supply",
+                item_type="Supply",
+                description=spec["description"],
+                story="",
+                rarity="Common",
+                image_path="",
+                stats={},
+                count=counts.get(spec["id"], 0),
+                level=1,
+                source="shop",
+            )
+            for spec in self.supplies
+        ]
+
+    def buy_supply(self, supply_id: str, amount: int = 1) -> Optional[InventoryItem]:
+        """Add supplies to the player's stash; returns the updated entry."""
+        amount = max(1, int(amount))
+        spec = next((s for s in self.supplies if s["id"] == supply_id), None)
+        if spec is None:
+            return None
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute(
+                "INSERT INTO supplies (id, count) VALUES (?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET count = count + ?",
+                (supply_id, amount, amount),
+            )
+            conn.commit()
+        return self.get_supply(supply_id)
+
+    def get_supply(self, supply_id: str) -> Optional[InventoryItem]:
+        counts = self.get_supply_counts()
+        spec = next((s for s in self.supplies if s["id"] == supply_id), None)
+        if spec is None:
+            return None
+        return InventoryItem(
+            uid=f"supply:{spec['id']}",
+            name=spec["name"],
+            category="supply",
+            item_type="Supply",
+            description=spec["description"],
+            story="",
+            rarity="Common",
+            image_path="",
+            stats={},
+            count=counts.get(spec["id"], 0),
+            level=1,
+            source="shop",
+        )
+
+    def consume_supply(self, supply_id: str, amount: int = 1) -> Optional[InventoryItem]:
+        """Use up supplies; the entry disappears once the count hits 0."""
+        amount = max(1, int(amount))
+        counts = self.get_supply_counts()
+        if supply_id not in counts:
+            return None
+        with sqlite3.connect(str(self.db_path)) as conn:
+            remaining = max(0, counts[supply_id] - amount)
+            if remaining <= 0:
+                conn.execute("DELETE FROM supplies WHERE id = ?", (supply_id,))
+            else:
+                conn.execute("UPDATE supplies SET count = ? WHERE id = ?", (remaining, supply_id))
+            conn.commit()
+        item = self.get_supply(supply_id)
+        return item if item is not None and item.count > 0 else None
 
     def sacrifice_artifacts(self, ids: List[Any]) -> Optional[InventoryItem]:
         """Fuse SACRIFICE_PER_FUSION artifacts of one rarity into a single
@@ -589,11 +826,10 @@ class InventoryManager:
             rarity = rarities.pop()
             if rarity not in RARITIES or rarity == RARITIES[-1]:
                 return None  # Mythic has no higher rank
-            forge_level = max(1, max(int(row["level"] or 1) for row in rows))
             conn.execute(f"DELETE FROM artifacts WHERE id IN ({placeholders})", clean)
             conn.commit()
         next_rarity = RARITIES[RARITIES.index(rarity) + 1]
         forged = self.generate_artifacts(
-            count=1, rarity=next_rarity, level=forge_level, source="forge",
+            count=1, rarity=next_rarity, source="forge",
         )
         return forged[0] if forged else None

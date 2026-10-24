@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGraphicsDropShadowEffect,
 )
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPainter, QPen
 
 from athas.styles import CYAN, WHITE, GOLD
 
@@ -23,7 +23,7 @@ class RewardPopup(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("RewardPopup")
-        self.setFixedSize(460, 240)
+        self.setFixedSize(480, 300)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet(f"""
@@ -77,6 +77,17 @@ class RewardPopup(QFrame):
         self._lock_timer.timeout.connect(self._unlock)
 
         self.hide()
+
+    def paintEvent(self, event):
+        """Paint the card background by hand. Stylesheets alone can leave
+        the popup transparent on some setups; this way the dark System
+        background and gold border always render."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        painter.setPen(QPen(QColor(GOLD), 2))
+        painter.setBrush(QColor(5, 5, 8, 242))
+        painter.drawRoundedRect(rect, 6, 6)
 
     def show_message(self, title: str, message: str):
         """Show the popup; the OK button unlocks after LOCKOUT_MS."""

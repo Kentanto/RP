@@ -1,4 +1,4 @@
-# Athas
+﻿# Athas
 
 A PySide6-powered "System" style UI.
 
@@ -16,24 +16,25 @@ python main.py
 | `cache/` | Player cache and inventory database (synced by git) |
 | `skills/` | Authored skill definitions stored as JSON |
 | `icons/` | `background_menu.png` used as fullscreen background |
-| `sounds/` | SFX files reserved for future use |
-| `library/` | `item_types.txt` — the item types artifacts are generated from |
-| `drops/` | Local hand-out files (gold, points, notifications) — git-ignored, processed once, then deleted |
+| `sounds/` | SFX files played by the central audio map (`athas/audio.py`), plus `songs/` for background music |
+| `library/` | `item_types.txt` â€” the item types artifacts are generated from |
+| `shop/` | Shop supply items as JSON files (git-synced, backed up); `_template.json` is a ready-to-edit starting point |
+| `drops/` | Local hand-out files (gold, points, artifacts, notifications) â€” git-ignored, processed once, then deleted; `_template.json` is a ready-to-edit starting point |
 | `backups/` | Local snapshots of the JSON data files (git-ignored) |
 
 ## Backups
-On startup and every 30 minutes the app copies every `*.json` data file —
-plus `cache/inventory.db` — into a new `backups/<date_time>/` folder,
+On startup and every 30 minutes the app copies every `*.json` data file â€”
+plus `cache/inventory.db` â€” into a new `backups/<date_time>/` folder,
 mirroring each file's original folder structure (e.g.
 `backups/2026-10-22_15-30-00/missions/<file>.json`). Every backup gets its
 own folder, and folders older than 30 days are deleted automatically. The
 `backups/` folder is git-ignored, so it is never committed or pushed.
 
 ## How the mission pipeline works
-1. You work on mission files inside `draft_missions/` — they stay local.
+1. You work on mission files inside `draft_missions/` â€” they stay local.
 2. When ready, move them into `missions/`.
 3. The app commits and pushes the new mission after 30 seconds without another change.
-4. Other users' apps pull on the configured interval — new files trigger a "New Mission Detected" notification.
+4. Other users' apps pull on the configured interval â€” new files trigger a "New Mission Detected" notification.
 
 Changes to `.json` or `.db` files in `cache/`, `missions/`, or
 `completed_missions/` are automatically committed as `save file` and pushed
@@ -41,7 +42,7 @@ after 30 seconds without another change. The app pauses pulling while a local
 save is waiting to commit or push.
 
 ### Completing a mission (author only)
-There is no "complete" button or checkbox in the UI — players cannot finish
+There is no "complete" button or checkbox in the UI â€” players cannot finish
 missions themselves. To complete one for your users:
 1. Open its JSON and set `"completed": true` (the hidden author mark), or move
    the file straight into `completed_missions/`.
@@ -56,19 +57,19 @@ To undo a completion, set `"completed": false` in its file under
 recorded XP and unspent point rewards from the player's balances. The same
 revocation happens when a credited mission file leaves the completed state any
 other way (moved back into `missions/`, reworked, or deleted), and a completed
-file whose content changed since it was credited counts as a fresh completion —
+file whose content changed since it was credited counts as a fresh completion â€”
 the old reward is revoked and the new one granted.
 
 Git-ignored files (such as `cache/seen_missions.json`) are never committed or
 pushed, and their changes never delay the autosave.
 
 ### Mission zoom
-The MISSIONS tab has `- / % / + / RESET` zoom controls (60%–200%). The chosen
+The MISSIONS tab has `- / % / + / RESET` zoom controls (60%â€“200%). The chosen
 size is saved in each player's config and also scales the mission detail view.
 
 ### Skills
 The dashboard's SKILLS button opens a skill catalogue separate from the
-constellation ability tree. Every `*.json` file inside `skills/` is loaded —
+constellation ability tree. Every `*.json` file inside `skills/` is loaded â€”
 one skill per file is the simplest format:
 ```json
 {
@@ -104,14 +105,14 @@ A file may also hold a plain list of skills or the wrapped
 alphabetical order, and image paths are relative to the `skills/` folder.
 The app reads these definitions through `SkillManager.load_skills()`; the
 catalogue reloads automatically whenever a skill file is added, removed, or
-edited — including changes arriving through git sync. Files that fail
+edited â€” including changes arriving through git sync. Files that fail
 validation, or repeat a skill id that an earlier file already defined, are
 skipped with an orange warning shown on the skills page, so one bad file
 never breaks the rest.
 
 Each skill defines its own upgrade tree in `upgrades`. Every node has an
 `id`, `title`, `description`, `x`/`y` position on the map, and `max_rank`;
-optionally `parents` (a list of node ids that must be unlocked first — a
+optionally `parents` (a list of node ids that must be unlocked first â€” a
 node without parents is a tree root) and a `color`. Node ids must be unique
 within the skill, parents must exist in the same tree, and parent chains may
 not form a cycle.
@@ -135,74 +136,99 @@ autosave when sync is enabled.
 Artifacts are auto-generated gear (weapons, armor, accessories) stored in
 `cache/inventory.db`. Every artifact rolls:
 * an **item type** from `library/item_types.txt` (Sword, Shield,
-  Chestplate, Ring, ...) — the type also names the artifact and biases
+  Chestplate, Ring, ...) â€” the type also names the artifact and biases
   which stats it rolls
-* a **rarity** — Common, Uncommon, Rare, Epic, Legendary, Mythic — which
+* a **rarity** â€” Common, Uncommon, Rare, Epic, Legendary, Mythic â€” which
   sets the power multiplier, how many stats are rolled, and the shop price
-* a **level** that scales the rolled stats (mission rewards roll at the
-  player's current level)
+
+Artifacts have **no level** â€” all their power comes from the rarity and
+the workshop's upgrade levels (+1/20 up to +20/20). Every roll, starting
+or upgrade, is a **low, mid or high roll** (50% / 30% / 20% â€” edit
+`ROLL_TIER_WEIGHTS` in `athas/artifact_generator.py`), and upgrade rolls
+grow 5% stronger for every upgrade level already on the artifact, so
+late upgrades land noticeably harder.
 
 Rolled stats come in four kinds:
-* **main stats** (health, magic, attack, defense, speed) — granted directly
-* **crit stats** (crit chance, crit damage) — granted directly
-* **point-worth stats** (`worth_attack`, ...) — every point allocated into
-  that stat is worth extra DG on the DETAILED STATS page (the base is 60
-  DG per point). Two artifacts raising different stats' worth can make
-  very different builds out of the same point budget.
-* **temp points** — extra allocatable temporary points granted while the
+* **main stats** (health, magic, attack, defense, speed) â€” granted directly
+* **crit stats** (crit chance, crit damage) â€” granted directly
+* **point-worth stats** (`worth_attack`, ...) â€” the bonus is added straight
+  onto that stat's per-point DG rating on the DETAILED STATS page, and the
+  level multiplier then scales the whole thing: 1 point = (60 + bonus) DG,
+  then × 1.05 per level past the first (a worth bonus of 5 makes a point
+  worth 65 DG at level 1, 65 x 1.05 at level 2, ...). Two artifacts raising
+  different stats' worth can make very different builds out of the same point
+  budget. Worth rolls are small and flat (+1/+2/+3) because the bonus sits
+  on top of every single allocated point.
+* **temp points** â€” extra allocatable temporary points granted while the
   artifact is equipped.
 
-Rarity decides how many *different* stats sit on one artifact (Common 1 …
+Rarity decides how many *different* stats sit on one artifact (Common 1 â€¦
 Mythic 5); special stats roll with a lower weight than plain ones.
 
-**Equipment** — artifacts must be **equipped** for their stats to apply,
+**Equipment** â€” artifacts must be **equipped** for their stats to apply,
 and there are only **5 equipment slots**. The loadout lives in the player
 config (`player.equipped_artifacts`) and shows as a clickable slot bar at
 the top of the inventory ARTIFACTS tab (click a filled slot to unequip).
 Unequipped gear gives nothing, and artifacts that leave the inventory
 (forged away or revoked by an un-completed mission) leave their slot too.
 
-**Workshop** — open any artifact to work on it (all prices are gold, all
+**Workshop** â€” open any artifact to work on it (all prices are gold, all
 rolls are random):
-* **UPGRADE** — a low or high roll into a random stat on the artifact,
+* **UPGRADE** â€” a low, mid or high roll into a random stat on the artifact,
   up to **+20** (baseline; edit `MAX_UPGRADE_LEVEL`). The price grows with
   the rarity and the current upgrade level.
-* **DOWNGRADE** — takes the last upgrade back off and refunds half its gold.
-* **REROLL STATS** — completely new random stat types with random starting
+* **DOWNGRADE** â€” takes the last upgrade back off and refunds half its gold.
+* **REROLL STATS** â€” completely new random stat types with random starting
   numbers. Upgrades reset.
-* **REROLL VALUES** — keeps the current stat types but re-rolls where the
+* **REROLL VALUES** â€” keeps the current stat types but re-rolls where the
   numbers went (like the artifact reroll in Genshin). Deliberately
-  expensive, and the gold is never recoverable. Upgrades reset.
+  expensive, and the gold is never recoverable. The upgrade level stays:
+  every upgrade is applied again from scratch, each with a fresh
+  low/mid/high roll, so a reroll is a new chance at better numbers.
 
-Artifacts don't use pictures — their cards show the rolled stat lines
-directly. Hand-made JSON items in `items/` keep their images.
+Artifacts don't use pictures â€” their cards show the rolled stat lines
+directly. Hand-made JSON items in `items/` keep their images. Clicking a
+card opens a detail view: a centered, rarity-lit card with description,
+lore, the bonus list, the full upgrade history, and the workshop buttons.
 
 There are only two ways to obtain artifacts:
-1. **Mission rewards** — add `"artifact_reward": <count>` to a mission JSON.
+1. **Mission rewards** â€” add `"artifact_reward": <count>` to a mission JSON.
    The rarity is rolled from the mission difficulty's loot table (E-rank
-   missions drop Common–Rare, S-rank drop Epic–Mythic) unless you pin it
+   missions drop Commonâ€“Rare, S-rank drop Epicâ€“Mythic) unless you pin it
    with `"artifact_rarity": "Rare"`.
-2. **The Shop** — the SHOP tab sells 6 generated artifacts for gold, plus a
-   fixed **PACKAGE: 10 common artifacts for 400 gold**. Shelf stock is
-   almost always Common, sometimes Uncommon, rarely Rare — anything higher
-   must be earned or fused. The stock lives in the database (so it syncs
-   and persists), RESTOCK rerolls it, and buying moves the artifact into
-   the inventory with its origin recorded.
+2. **The Shop** â€” the PACKAGE: 10 random common artifacts for 400 gold.
 
-**Sacrifice / Forge** — on the inventory ARTIFACTS tab, press SACRIFICE and
+The shop's shelves no longer sell random artifacts â€” they carry a fixed
+supply catalogue instead, defined by the JSON files in `shop/` (one file
+per supply; a file may also hold a list or `{"items": [...]}`, and names
+starting with `_` â€” like `_template.json` â€” are never stocked). The
+shipped catalogue: Bandage (50), Field Ration (80), Antidote (150),
+Smoke Bomb (250), Mana Draught (400), Medkit (800), Elixir of Vigor
+(1500), and a Healing Potion (5000) â€” a rare miracle medicine, hence the
+price. The folder is git-synced and backed up like the other content
+folders, so curating it locally and committing it updates the shop for
+everyone; the built-in list is the fallback when the folder is empty.
+Supplies are always in stock (no restock), and buying adds to the
+player's stash, which lives in the database (so it syncs and persists) and
+shows on the inventory SUPPLIES tab with the owned counts. Opening a
+supply shows what it does and offers a USE button that spends one.
+
+**Sacrifice / Forge** â€” on the inventory ARTIFACTS tab, press SACRIFICE and
 select 3 artifacts of the same rarity, then FORGE consumes them and creates
 1 artifact of the next rarity with fresh random stats (Mythic cannot be
-fused — there is nothing higher).
+fused â€” there is nothing higher).
 
-**Detailed stats** — the DASHBOARD's DETAILED STATS button opens a page
-that turns every regular stat into a simple, linear DG power rating — no
+**Detailed stats** â€” the DASHBOARD's DETAILED STATS button opens a page
+that turns every regular stat into a simple, linear DG power rating â€” no
 real-world units. Each stat awards DG per point (60 for every stat right
 now; edit `STAT_DG_PER_POINT` in `athas/detailed_stats.py` to scale stats
-differently), scaled by a compounding level multiplier: x1.10 for every
-level past the first (1.10^(level-1)), so a level-12 hero measures
-everything at x2.85. **Only equipped artifacts** add their bonuses, and
-equipped point-worth artifacts raise the per-point DG rating itself. The
-page also shows the two
+differently), scaled by a compounding level multiplier: x1.05 for every
+level past the first (1.05^(level-1)), so a level-12 hero measures
+everything at x1.71. **Only equipped artifacts** add their bonuses, and
+equipped point-worth artifacts add their bonus onto the per-point DG
+rating before the level multiplier (a worth bonus of N makes every point
+worth 60 + N DG, then scaled by the level multiplier). The page also
+shows the two
 crit stats, derived from the stat totals (crit chance: 3% + Speed x 0.45%,
 crit damage: 50% + Attack x 1.50%) with direct artifact crit rolls stacked
 on top. Crit chance caps at 75% and crit damage at 300%. Below the crit
@@ -222,13 +248,19 @@ and committing it updates the loot pool for everyone.
 ## Drops folder
 Drop a `*.json` or `*.txt` file into `drops/` to hand the local player
 gold, xp, skill points, constellation points, temp points, permanent
-points, or a notification — the app scans the folder every 2 seconds,
-applies the grants, and **deletes the file**. A reward popup confirms
-what was granted; its OK button stays disabled for the first **2 seconds**
-so a popup that appears suddenly cannot be clicked away by accident.
+points, generated artifacts, or a message â€” the app scans the folder
+every 2 seconds, applies the grants, and **deletes the file**. A reward
+popup confirms what was granted; its OK button stays disabled for the
+first **2 seconds** so a popup that appears suddenly cannot be clicked
+away by accident.
+
+The folder always contains `_template.json` â€” a ready-to-edit template
+with every supported key sitting at `0`. Copy it, rename the copy (the
+new name must **not** start with an underscore â€” files that do are never
+processed), fill in the values, save, and the app grants it once.
 
 The folder is git-ignored, outside every git-sync path, and never backed
-up — the app can never upload from it. Sharing a drop file with someone
+up â€” the app can never upload from it. Sharing a drop file with someone
 happens manually from the IDE, nothing else.
 
 JSON format (any subset of the keys):
@@ -240,10 +272,16 @@ JSON format (any subset of the keys):
   "constellation_points": 2,
   "temp_points": 3,
   "perm_points": 1,
+  "artifact_reward": 1,
+  "artifact_rarity": "Rare",
+  "message": "Well done, Wanderer.",
   "notification": { "title": "System Message", "message": "Well done." }
 }
 ```
-TXT format — one `key: value` pair per line (`key = value` works too,
+`artifact_reward` grants that many generated artifacts;
+`artifact_rarity` optionally pins their rarity. `message`
+(or `msg` / `text`) shows as plain System text.
+TXT format â€” one `key: value` pair per line (`key = value` works too,
 spacing and case are free, and friendly aliases like `con points`,
 `exp`, `money`, or `points` are accepted):
 ```
@@ -286,13 +324,20 @@ JSON files (`*.json`) inside `missions/`:
    without a `"completed"` property still counts as completed. Setting the
    property to `false` there restores the mission to `missions/`.
 
-Random ideas:
-- the drops folder should have a ready json file in there that isnt processed by default, so i can write any given reward be it gold, con points, skill points or even artifacts is supported, they are all in the ignored json file by default at 0 so i can change it copy the file and rename it, it should also support text so i can write messages
+## Audio (SFX map)
+Every sound effect goes through `athas/audio.py`: an event name maps to
+a wav file in `sounds/`, and unmapped or missing files stay silent.
+The `audio` settings section controls it â€” `enabled` mutes everything,
+`volume` is the background music and `sfx_volume` the effects.
 
-- instead of random artifacts in the store, keep the 10 packaged deal but replace the random ones with instead regular shop items such as bandages, medkits, healing potion in rising price, healing potion being significantly higher, like 5k gold. think of other supplies too i guess 
+Currently mapped events: `click`, `hover` and `back` (UI), `upgrade`,
+`upgrade_max`, `equip`, `refund`, `reroll` and `forge` (workshop),
+`buy` (shop), `level_up`, `mission_complete`, `reward` (progression
+and drops) and `skill_unlock` (skill tree). To wire a new sound, drop
+the wav into `sounds/` and add it to `EVENT_SOUNDS`.
 
-- the detailed view of artifacts by clicking on them is a little bad, could you make the interface look better still adhering to the systems look
+random ideas:
 
-- drops messages has no background when it processes something that wasnt supported,
-
-- rerolling artifact values doesnt reset the artifact to level 0, but since each upgrade has a chance to hit a high or low number to add to it, it does that again for all levels with a new chance to get a higher number, the 
+(none right now â€” the previous five ideas were implemented: tiered
+artifact rolls, upgrade-only artifacts, the JSON shop folder,
+level-scaling point-worth bonuses, and the SFX map above.)

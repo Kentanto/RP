@@ -1,0 +1,15 @@
+{
+    "_readme": [
+        "Copy this file, rename the copy (no leading underscore),",
+        "fill in name, price and description, and save. The shop",
+        "picks the file up on its next refresh. Files whose name",
+        "starts with an underscore are never stocked.",
+        "",
+        "A file may hold one item, a list of items, or",
+        "{\"items\": [ ... ]}. The id defaults to the file name."
+    ],
+    "id": "",
+    "name": "",
+    "price": 0,
+    "description": ""
+}

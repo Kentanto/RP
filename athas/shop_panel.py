@@ -1,10 +1,12 @@
 """
 Shop Panel — the System Shop.
 
-Sells auto-generated artifacts for gold. The stock lives in the SQLite
-inventory database (shop_stock table), so it persists and syncs like the
-rest of the inventory. Buying moves the artifact from the shelves into the
-player's artifact inventory.
+Sells regular supplies (bandages, medkits, healing potions, ...) for
+gold — a fixed catalogue that never rerolls, plus the bulk artifact
+package. Owned supply counts live in the SQLite inventory database
+(supplies table), so they persist and sync like the rest of the
+inventory. Buying adds to the player's stash, shown in the inventory's
+SUPPLIES tab.
 """
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -12,51 +14,45 @@ from PySide6.QtWidgets import (
     QPushButton, QScrollArea,
 )
 
-from athas.styles import CYAN, WHITE, GOLD
-from athas.artifact_generator import PCT_DETAILED_STATS, stat_display
-from athas.inventory_panel import RARITY_COLORS
-
-
-def _rarity_color(rarity: str) -> str:
-    return RARITY_COLORS.get(rarity, CYAN)
+from athas import audio
+from athas.styles import CYAN, WHITE, GOLD, button_style
 
 
 class ShopCard(QFrame):
-    """One shelf card: the artifact for sale with its price and BUY button."""
+    """One shelf card: a supply for sale with its price and BUY button."""
 
-    def __init__(self, entry: dict, affordable: bool, on_buy, parent=None):
+    def __init__(self, entry: dict, owned: int, affordable: bool, on_buy, parent=None):
         super().__init__(parent)
         self.entry = entry
-        col = _rarity_color(entry.get("rarity", ""))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet(f"""
             QFrame {{
                 background-color: rgba(10,10,10,200);
-                border: 1px solid {col}44;
+                border: 1px solid {CYAN}44;
                 border-radius: 4px;
             }}
             QFrame:hover {{
                 background-color: rgba(20,20,30,220);
-                border: 1px solid {col};
+                border: 1px solid {CYAN};
             }}
         """)
-        self.setMinimumSize(180, 240)
-        self.setMaximumSize(220, 300)
+        self.setMinimumSize(180, 220)
+        self.setMaximumSize(220, 280)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
 
         top = QHBoxLayout()
-        type_badge = QLabel(entry.get("item_type", "Artifact").upper())
+        type_badge = QLabel("SUPPLY")
         type_badge.setStyleSheet(
-            f"font-size: 9px; color: {col}; font-weight: bold; background: transparent; border: none;"
+            f"font-size: 9px; color: {CYAN}; font-weight: bold; background: transparent; border: none;"
         )
         top.addWidget(type_badge)
         top.addStretch()
-        lvl = QLabel(f"Lv.{entry.get('level', 1)}")
-        lvl.setStyleSheet("font-size: 9px; color: #666; background: transparent; border: none;")
-        top.addWidget(lvl)
+        owned_lbl = QLabel(f"OWNED x{owned}")
+        owned_lbl.setStyleSheet("font-size: 9px; color: #666; background: transparent; border: none;")
+        top.addWidget(owned_lbl)
         layout.addLayout(top)
 
         name = QLabel(entry.get("name", "Unknown"))
@@ -67,21 +63,11 @@ class ShopCard(QFrame):
         )
         layout.addWidget(name)
 
-        rar = QLabel(entry.get("rarity", "Common"))
-        rar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        rar.setStyleSheet(f"font-size: 10px; color: {col}; background: transparent; border: none;")
-        layout.addWidget(rar)
-
-        stat_lines = [
-            stat_display(k, v)
-            for k, v in (entry.get("stats") or {}).items() if v
-        ]
-        stats_lbl = QLabel("\n".join(stat_lines) if stat_lines else "No bonuses")
-        stats_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        stats_lbl.setStyleSheet(f"font-size: 10px; color: {CYAN}; background: transparent; border: none;")
-        layout.addWidget(stats_lbl)
-
-        layout.addStretch()
+        desc = QLabel(entry.get("description", ""))
+        desc.setWordWrap(True)
+        desc.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        desc.setStyleSheet("font-size: 10px; color: #aaa; background: transparent; border: none;")
+        layout.addWidget(desc, 1)
 
         price = QLabel(f"{entry.get('price', 0)} GOLD")
         price.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -92,20 +78,13 @@ class ShopCard(QFrame):
 
         buy = QPushButton("BUY")
         buy.setCursor(Qt.CursorShape.PointingHandCursor)
-        buy.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {CYAN}11; border: 1px solid {CYAN}44;
-                color: {CYAN}; padding: 6px; font-weight: bold; border-radius: 2px;
-            }}
-            QPushButton:hover {{ background-color: {CYAN}33; }}
-            QPushButton:disabled {{ color: #555; border-color: #333; background: transparent; }}
-        """)
+        buy.setStyleSheet(button_style(CYAN))
         buy.setEnabled(affordable)
         buy.clicked.connect(lambda _=False: on_buy(entry))
         layout.addWidget(buy)
 
 class ShopPanel(QWidget):
-    """Grid of for-sale artifacts with a gold balance and a restock button."""
+    """Grid of for-sale supplies with a gold balance and the bulk package."""
 
     gold_changed = Signal()
 
@@ -128,19 +107,6 @@ class ShopPanel(QWidget):
         self._gold_lbl = QLabel("GOLD 0")
         self._gold_lbl.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {GOLD};")
         header_row.addWidget(self._gold_lbl)
-
-        restock = QPushButton("RESTOCK")
-        restock.setCursor(Qt.CursorShape.PointingHandCursor)
-        restock.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {CYAN}11; border: 1px solid {CYAN};
-                color: {CYAN}; padding: 8px 20px; border-radius: 2px;
-                font-size: 12px; letter-spacing: 2px; font-weight: bold;
-            }}
-            QPushButton:hover {{ background-color: {CYAN}; color: #0a0a0a; }}
-        """)
-        restock.clicked.connect(self._restock)
-        header_row.addWidget(restock)
         layout.addLayout(header_row)
 
         line = QFrame()
@@ -171,19 +137,12 @@ class ShopPanel(QWidget):
         self._pkg_btn = QPushButton("BUY PACKAGE")
         self._pkg_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._pkg_btn.setEnabled(False)
-        self._pkg_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {GOLD}11; border: 1px solid {GOLD}66;
-                color: {GOLD}; padding: 6px 16px; font-weight: bold; border-radius: 2px;
-            }}
-            QPushButton:hover {{ background-color: {GOLD}; color: #0a0a0a; }}
-            QPushButton:disabled {{ color: #555; border-color: #333; background: transparent; }}
-        """)
+        self._pkg_btn.setStyleSheet(button_style(GOLD))
         self._pkg_btn.clicked.connect(self._buy_package)
         pkg_layout.addWidget(self._pkg_btn)
         layout.addWidget(package)
 
-        self._status = QLabel("Spend gold earned from missions. RESTOCK rerolls the shelves.")
+        self._status = QLabel("Spend gold earned from missions on supplies for the road ahead.")
         self._status.setStyleSheet("color: #888; font-size: 12px;")
         layout.addWidget(self._status)
 
@@ -219,11 +178,9 @@ class ShopPanel(QWidget):
         price = self.inv_manager.PACKAGE_PRICE if self.inv_manager else 0
         self._pkg_price_lbl.setText(f"{price} GOLD")
         self._pkg_btn.setEnabled(self.inv_manager is not None and self._player_gold() >= price)
-        stock = self.inv_manager.get_shop_stock() if self.inv_manager else []
-        if not stock and self.inv_manager is not None:
-            # First run — fill the shelves automatically.
-            self.inv_manager.restock_shop(player_level=self._player_level())
-            stock = self.inv_manager.get_shop_stock()
+
+        catalogue = self.inv_manager.supply_catalog() if self.inv_manager else []
+        owned = self.inv_manager.get_supply_counts() if self.inv_manager else {}
         gold = self._player_gold()
 
         while self._grid.count():
@@ -231,19 +188,22 @@ class ShopPanel(QWidget):
             if it.widget():
                 it.widget().deleteLater()
 
-        if not stock:
+        if not catalogue:
             empty = QLabel("The shop shelves are empty.")
             empty.setStyleSheet("color: #555; font-size: 14px; padding: 20px;")
             self._grid.addWidget(empty, 0, 0)
             return
 
         cols = max(1, self.width() // 240)
-        for i, entry in enumerate(stock):
+        for i, entry in enumerate(catalogue):
             try:
                 affordable = gold >= int(entry.get("price", 0) or 0)
             except (TypeError, ValueError):
                 affordable = False
-            card = ShopCard(entry, affordable=affordable, on_buy=self._buy)
+            card = ShopCard(
+                entry, owned=owned.get(entry.get("id"), 0),
+                affordable=affordable, on_buy=self._buy,
+            )
             self._grid.addWidget(card, i // cols, i % cols)
 
     def _buy(self, entry: dict):
@@ -257,13 +217,16 @@ class ShopPanel(QWidget):
         if gold < price:
             self._status.setText(f"Not enough gold — {entry.get('name')} costs {price} gold.")
             return
-        item = self.inv_manager.buy_from_shop(entry.get("id"))
+        item = self.inv_manager.buy_supply(entry.get("id"))
         if item is None:
-            self._status.setText("That item was already sold.")
+            self._status.setText("That item is no longer stocked.")
             self.refresh()
             return
         self.config.set("player", "gold", gold - price)
-        self._status.setText(f"Purchased {item.name} ({item.rarity}). Check your inventory.")
+        audio.play("buy")
+        self._status.setText(
+            f"Purchased {item.name} for {price} gold — you now own x{item.count}."
+        )
         self.gold_changed.emit()
         self.refresh()
 
@@ -279,13 +242,7 @@ class ShopPanel(QWidget):
         if not items:
             return
         self.config.set("player", "gold", gold - price)
+        audio.play("buy")
         self._status.setText(f"Package opened — {len(items)} common artifacts added to your inventory.")
         self.gold_changed.emit()
-        self.refresh()
-
-    def _restock(self):
-        if self.inv_manager is None:
-            return
-        self.inv_manager.restock_shop(player_level=self._player_level())
-        self._status.setText("The shop restocked its shelves.")
         self.refresh()

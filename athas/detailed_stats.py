@@ -7,10 +7,16 @@ total (base + temp points + every owned artifact's bonuses) is multiplied
 by that stat's per-point DG rating, times the level multiplier:
 
     DG rating = stat total x per-point DG rating x level multiplier
-    level multiplier = 1.10 ** (level - 1)    (x1.0 at level 1, x1.1 at 2)
+    level multiplier = 1.05 ** (level - 1)    (x1.0 at level 1, x1.05 at 2)
 
 Every stat currently awards 60 DG per point; tune STAT_DG_PER_POINT to
 scale individual stats differently.
+
+Artifacts can roll worth_<stat> bonuses: the bonus is added straight onto
+that stat's per-point DG rating, and the level multiplier applies to the
+whole thing — 1 point = (60 + bonus) DG, then × level multiplier (a
+worth bonus of 5 makes a point worth 65 DG at level 1, 65 × 1.05 at
+level 2, and so on).
 
 Crit chance and crit damage stay percentage stats derived from the main
 stat totals; artifacts can also grant them directly, stacking on top.
@@ -165,7 +171,7 @@ STAT_CAPABILITY_RANGES = {
 
 
 def level_multiplier(level) -> float:
-    """Compounding level multiplier — x1.0 at level 1, x1.10 at level 2, ..."""
+    """Compounding level multiplier — x1.0 at level 1, x1.05 at level 2, ..."""
     return LEVEL_GROWTH ** (max(1, _as_int(level, 1)) - 1)
 
 
@@ -267,21 +273,25 @@ def detailed_stat_values(main_totals, artifacts):
 def measured_stat_values(main_totals, level, worth=None):
     """Per regular stat: point totals plus the linear DG power rating.
 
-    `worth` maps a stat to extra DG per point granted by equipped
-    artifacts (worth_<stat> bonuses) — it stacks onto the base rating."""
+    `worth` maps a stat to the DG bonus granted by equipped artifacts
+    (worth_<stat> bonuses): the bonus is added straight onto that stat's
+    per-point DG rating, and the level multiplier then scales the whole
+    thing — 1 point = (per-point DG + bonus) × level multiplier."""
     mult = level_multiplier(level)
     worth = worth or {}
     values = {}
     for key in MAIN_STATS:
         if key not in STAT_DG_PER_POINT:
             continue
-        dg = STAT_DG_PER_POINT[key] + worth.get(key, 0)
+        base_dg = STAT_DG_PER_POINT[key]
+        worth_pts = max(0, worth.get(key, 0))
+        dg = base_dg + worth_pts
         data = main_totals[key]
         total = data["total"]
         values[key] = {
             "base": data["base"], "temp": data["temp"],
             "artifact": data["artifact"], "total": total,
-            "per_point": dg, "worth": worth.get(key, 0), "unit": "DG",
+            "per_point": dg, "worth": worth_pts, "unit": "DG",
             "label": STAT_DG_DESCRIPTIONS.get(key, "Power rating"),
             "mult": mult, "value": total * dg * mult,
         }
@@ -422,7 +432,7 @@ class DetailedStatsPanel(QWidget):
         lvl_lbl.setStyleSheet(f"color: {WHITE}; font-size: 20px; font-weight: bold; letter-spacing: 2px;")
         left.addWidget(lvl_lbl)
         lvl_sub = QLabel(
-            "×1.00 at level 1 · ×1.10 at level 2 · +10% compounding every level after"
+            "×1.00 at level 1 · ×1.05 at level 2 · +5% compounding every level after"
         )
         lvl_sub.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px; letter-spacing: 1px;")
         left.addWidget(lvl_sub)
@@ -447,8 +457,8 @@ class DetailedStatsPanel(QWidget):
         right.addWidget(mult_lbl)
         row.addLayout(right)
         frame.setToolTip(
-            "Level multiplier = 1.10^(level - 1): ×1.00 at level 1, ×1.10 at "
-            "level 2, compounding an extra 10% for every level after that. "
+            "Level multiplier = 1.05^(level - 1): ×1.00 at level 1, ×1.05 at "
+            "level 2, compounding an extra 5% for every level after that. "
             "It multiplies every DG rating shown below."
         )
         return frame
@@ -513,7 +523,7 @@ class DetailedStatsPanel(QWidget):
             parts.append(f"<span style='color:{GOLD};'>+{data['artifact']} artifacts</span>")
         if data.get("worth"):
             parts.append(
-                f"<span style='color:{GOLD};'>+{data['worth']} DG/pt point worth</span>"
+                f"<span style='color:{GOLD};'>+{data['worth']} point worth (+{data['worth']:g} DG/pt)</span>"
             )
         pts = QLabel(
             f"<span style='color:{WHITE}; font-weight:bold;'>{data['total']} pts</span>"
@@ -529,7 +539,8 @@ class DetailedStatsPanel(QWidget):
         formula.setToolTip(
             f"{data['total']} stat points × {data['per_point']:g} DG per point "
             f"× level multiplier {data['mult']:.2f}"
-            + (f" (includes +{data['worth']} DG/pt from equipped artifacts)"
+            + (f" (includes +{data['worth']:g} DG per point of point worth "
+               f"from equipped artifacts)"
                if data.get("worth") else "")
         )
         col.addWidget(formula)
@@ -707,9 +718,9 @@ class DetailedStatsPanel(QWidget):
         footer = QLabel(
             f"Every stat converts into a linear DG power rating: your stat total "
             f"(base + temporary points + equipped artifact bonuses) × that stat's per-point "
-            f"DG rating (60 for every stat right now, raised by equipped point-worth "
-            f"artifacts) × the level multiplier — "
-            f"×{mult:.2f} at your current level, compounding 10% for every level past "
+            f"DG rating (60 for every stat right now, plus the point-worth bonus of "
+            f"equipped artifacts) × the level multiplier — "
+            f"×{mult:.2f} at your current level, compounding 5% for every level past "
             f"the first. Crit chance and crit damage derive from your Speed and "
             f"Attack totals; equipped artifact rolls add on top, capped at 75% and 300%. "
             f"Only equipped artifacts count — unequipped gear gives nothing."

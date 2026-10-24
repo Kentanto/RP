@@ -30,12 +30,19 @@ from athas.stats_widget import LEVEL_PERM_BONUS, LEVEL_TEMP_BONUS, StatsWidget
 from athas.ability_tree_panel import AbilityTreePanel
 from athas.skills_manager import SkillManager
 from athas.skills_panel import SkillsPanel
+from athas import audio
 
 
 class HoverButton(QPushButton):
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Every hover button clicks and hovers audibly.
+        self.clicked.connect(lambda _=False: audio.play("click"))
+
+    def enterEvent(self, event):
+        audio.play("hover")
+        super().enterEvent(event)
 
 
 class MissionCard(QFrame):
@@ -303,6 +310,10 @@ class MainWindow(QMainWindow):
         self._fade_timer = None
         self._fade_target_duration_ms = 13000
 
+        # The shared SFX player follows the audio settings from here on.
+        if config is not None:
+            audio.player.set_config(config)
+
         self._loading_screen = None
         self._last_missions_state = {}
 
@@ -360,14 +371,14 @@ class MainWindow(QMainWindow):
         if self.config.get("git_sync", "enabled", True):
             folders = self.config.get(
                 "git_sync", "folders",
-                "missions,completed_missions,items,icons,cache,skills,library",
+                "missions,completed_missions,items,icons,cache,skills,library,shop",
             )
             sync_paths = [p.strip() for p in str(folders).split(",") if p.strip()]
             # The completed-missions folder is part of the mission pipeline —
             # always sync it alongside the active missions folder.
             if "missions" in sync_paths and "completed_missions" not in sync_paths:
                 sync_paths.append("completed_missions")
-            for required_path in ("missions", "completed_missions", "cache", "skills", "library"):
+            for required_path in ("missions", "completed_missions", "cache", "skills", "library", "shop"):
                 if required_path not in sync_paths:
                     sync_paths.append(required_path)
             self._git_sync = GitSyncWorker(
@@ -552,7 +563,7 @@ class MainWindow(QMainWindow):
         self._content_pages.addWidget(self._inv_panel)
 
         # ── Page 3 : ABILITY TREE ──
-        self._ability_panel = AbilityTreePanel(self.config, on_back=lambda: self._show_page(0))
+        self._ability_panel = AbilityTreePanel(self.config, on_back=self._back_to_dashboard)
         self._content_pages.addWidget(self._ability_panel)
         self._skills_manager = SkillManager(Path(__file__).parent.parent / "skills")
         self._skills_panel = SkillsPanel(self.config, self._skills_manager)
@@ -567,7 +578,7 @@ class MainWindow(QMainWindow):
 
         # ── Page 6 : DETAILED STATS ──
         self._details_panel = DetailedStatsPanel(
-            self.config, None, on_back=lambda: self._show_page(0),
+            self.config, None, on_back=self._back_to_dashboard,
         )
         self._stats_widget.details_clicked.connect(self._show_details)
         self._content_pages.addWidget(self._details_panel)
@@ -582,6 +593,11 @@ class MainWindow(QMainWindow):
         if self._details_panel is not None:
             self._details_panel.refresh()
         self._show_page(6)
+
+    def _back_to_dashboard(self):
+        """Return to the dashboard from a detail page — audibly."""
+        audio.play("back")
+        self._show_page(0)
 
     def _show_page(self, index: int):
         """Switch the content area between pages."""
@@ -839,6 +855,17 @@ class MainWindow(QMainWindow):
             self.config.set("player", "perm_points", perm + perm_points)
             self._stats_widget.refresh()
             summary.append(f"+{perm_points} permanent point{'s' if perm_points != 1 else ''}")
+        loot_lines: list = []
+        artifact_reward = int(grant.get("artifact_reward", 0) or 0)
+        if artifact_reward > 0 and self._inv_manager is not None:
+            rarity = str(grant.get("artifact_rarity") or "").strip() or None
+            artifacts = self._inv_manager.generate_artifacts(
+                count=artifact_reward, rarity=rarity, source="drop",
+            )
+            for artifact in artifacts:
+                loot_lines.append(f"ARTIFACT ACQUIRED - {artifact.name} ({artifact.rarity})")
+            if self._inv_panel is not None:
+                self._inv_panel.refresh()
         if levels > 0:
             summary.append(f"LEVEL UP - Level {self.config.get('player', 'level', 1)}")
 
@@ -850,9 +877,13 @@ class MainWindow(QMainWindow):
             lines.append(message)
         if summary:
             lines.append("  ".join(summary))
+        lines.extend(loot_lines)
         if not lines:
             lines.append("The System acknowledged a drop file - nothing was granted.")
         self.reward_popup.show_message(title, "  |  ".join(lines))
+        audio.play("reward")
+        if levels > 0:
+            audio.play("level_up")
 
     def _on_mission_completed(self, mission: Mission):
         """The author marked a mission as done — grant its rewards once.
@@ -875,16 +906,10 @@ class MainWindow(QMainWindow):
         granted_ids: list = []
         loot_lines: list = []
         if mission.artifact_reward > 0 and self._inv_manager is not None:
-            level = 1
-            try:
-                level = max(1, int(self.config.get("player", "level", 1) or 1))
-            except (TypeError, ValueError):
-                pass
             artifacts = self._inv_manager.generate_artifacts(
                 count=mission.artifact_reward,
                 rarity=mission.artifact_rarity or None,
                 difficulty=mission.difficulty,
-                level=level,
                 source="mission",
             )
             for artifact in artifacts:
@@ -894,6 +919,9 @@ class MainWindow(QMainWindow):
                 self._inv_panel.refresh()
         if not self.config.get("notifications", "enabled", True):
             return granted_ids
+        audio.play("mission_complete")
+        if levels_gained > 0:
+            audio.play("level_up")
         description = f"Reward: {mission.reward}" if mission.reward else "The System acknowledges your success."
         if mission.gold > 0:
             description += f"  +{mission.gold} gold."

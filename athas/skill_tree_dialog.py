@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from athas import audio
 from athas.ability_tree_panel import SkillNode
 from athas.styles import CYAN, WHITE
 
@@ -248,6 +249,7 @@ class SkillTreeCanvas(QWidget):
         self._set_skill_points(self._skill_points() - self._cost_per_rank)
         self._save_ranks()
         self._update_tooltip()
+        audio.play("skill_unlock")
         self.update()
         return True
 

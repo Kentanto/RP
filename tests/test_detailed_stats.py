@@ -17,11 +17,11 @@ def _totals(**over):
     return totals
 
 
-def test_level_growth_is_1_10_per_level():
+def test_level_growth_is_1_05_per_level():
     assert LEVEL_GROWTH == 1.05
     assert level_multiplier(1) == 1.0
-    assert abs(level_multiplier(2) - 1.1) < 1e-9
-    assert abs(level_multiplier(12) - 1.1 ** 11) < 1e-9
+    assert abs(level_multiplier(2) - 1.05) < 1e-9
+    assert abs(level_multiplier(12) - 1.05 ** 11) < 1e-9
 
 
 def test_capability_comparison_uses_the_matching_attack_band():
@@ -30,7 +30,9 @@ def test_capability_comparison_uses_the_matching_attack_band():
 
 
 def test_capability_comparison_uses_open_ended_final_band():
-    assert capability_comparison("attack", 300_000) == STAT_CAPABILITY_RANGES["attack"][-1][2]
+    last = STAT_CAPABILITY_RANGES["attack"][-1]
+    assert capability_comparison("attack", last[0]) == last[2]
+    assert capability_comparison("attack", last[0] * 100) == last[2]
 
 
 def test_capability_ranges_cover_zero_and_negative_measurements():
@@ -43,8 +45,20 @@ def test_measurements_are_linear_dg_ratings():
     assert vals["attack"]["value"] == 600.0  # 10 pts × 60 DG × 1.00
     assert vals["attack"]["unit"] == "DG"
     vals = measured_stat_values(_totals(attack=10, health=5), 3)
-    assert abs(vals["attack"]["value"] - 10 * 60 * 1.1 ** 2) < 1e-6
-    assert abs(vals["health"]["value"] - 5 * 60 * 1.1 ** 2) < 1e-6
+    assert abs(vals["attack"]["value"] - 10 * 60 * 1.05 ** 2) < 1e-6
+    assert abs(vals["health"]["value"] - 5 * 60 * 1.05 ** 2) < 1e-6
+
+
+def test_worth_points_scale_with_the_character_level():
+    """A worth bonus is added onto the per-point DG rating, and the level
+    multiplier then scales the whole thing."""
+    # Level 1: worth 1 → each attack point is worth 60 + 1 = 61 DG.
+    vals = measured_stat_values(_totals(attack=10), 1, {"attack": 1})
+    assert vals["attack"]["value"] == 10 * 61
+    assert vals["attack"]["worth"] == 1
+    # Level 2: the same artifact now gives 61 × 1.05 per point.
+    vals = measured_stat_values(_totals(attack=10), 2, {"attack": 1})
+    assert abs(vals["attack"]["value"] - 10 * 61 * 1.05) < 1e-6
 
 
 def test_measurement_formatter_uses_dg():
@@ -56,9 +70,10 @@ def test_total_dg_rating_sums_all_stats():
     vals = measured_stat_values(_totals(attack=10, health=5), 1)
     assert total_dg_rating(vals) == 900.0  # 600 + 300
     vals = measured_stat_values(_totals(attack=10), 3)
-    assert abs(total_dg_rating(vals) - 10 * 60 * 1.1 ** 2) < 1e-6
+    assert abs(total_dg_rating(vals) - 10 * 60 * 1.05 ** 2) < 1e-6
 
 
 def test_total_capability_band_exists():
-    assert capability_comparison("total", 80_457) == STAT_CAPABILITY_RANGES["total"][2][2]
-    assert capability_comparison("total", 5_000) == STAT_CAPABILITY_RANGES["total"][0][2]
+    band = STAT_CAPABILITY_RANGES["total"][2]
+    assert capability_comparison("total", band[0]) == band[2]
+    assert capability_comparison("total", 500) == STAT_CAPABILITY_RANGES["total"][0][2]
